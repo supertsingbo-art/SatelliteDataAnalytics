@@ -1,0 +1,11 @@
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\bin\Debug\net8.0\SatelliteData.Domain.deps.json
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\bin\Debug\net8.0\SatelliteData.Domain.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\bin\Debug\net8.0\SatelliteData.Domain.pdb
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\SatelliteData.Domain.GeneratedMSBuildEditorConfig.editorconfig
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\SatelliteData.Domain.AssemblyInfoInputs.cache
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\SatelliteData.Domain.AssemblyInfo.cs
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\SatelliteData.Domain.csproj.CoreCompileInputs.cache
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\SatelliteData.Domain.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\refint\SatelliteData.Domain.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\SatelliteData.Domain.pdb
+c:\Source\SatelliteData\backend\src\SatelliteData.Domain\obj\Debug\net8.0\ref\SatelliteData.Domain.dll

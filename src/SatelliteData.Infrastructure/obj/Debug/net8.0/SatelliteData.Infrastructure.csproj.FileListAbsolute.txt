@@ -1,0 +1,17 @@
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Infrastructure.deps.json
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Infrastructure.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Infrastructure.pdb
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Application.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Domain.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Application.pdb
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\bin\Debug\net8.0\SatelliteData.Domain.pdb
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.csproj.AssemblyReference.cache
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.AssemblyInfoInputs.cache
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.AssemblyInfo.cs
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.csproj.CoreCompileInputs.cache
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\Satellit.B5A1C2B9.Up2Date
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\refint\SatelliteData.Infrastructure.dll
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\SatelliteData.Infrastructure.pdb
+c:\Source\SatelliteData\backend\src\SatelliteData.Infrastructure\obj\Debug\net8.0\ref\SatelliteData.Infrastructure.dll

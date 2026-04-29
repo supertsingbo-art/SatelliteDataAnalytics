@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "SatelliteData.IntegrationTests/1.0.0": {
+        "runtime": {
+          "SatelliteData.IntegrationTests.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SatelliteData.IntegrationTests/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
