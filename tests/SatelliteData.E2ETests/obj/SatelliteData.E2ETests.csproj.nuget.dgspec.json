@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj": {}
+    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj": {}
   },
   "projects": {
-    "c:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj": {
+    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
+        "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
         "projectName": "SatelliteData.E2ETests",
-        "projectPath": "c:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
+        "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
         "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-        "outputPath": "c:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.E2ETests\\obj\\",
+        "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"

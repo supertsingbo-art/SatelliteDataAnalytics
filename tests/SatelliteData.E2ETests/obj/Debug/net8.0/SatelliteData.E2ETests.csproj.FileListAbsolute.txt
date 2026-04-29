@@ -9,3 +9,15 @@ c:\Source\SatelliteData\backend\tests\SatelliteData.E2ETests\obj\Debug\net8.0\Sa
 c:\Source\SatelliteData\backend\tests\SatelliteData.E2ETests\obj\Debug\net8.0\refint\SatelliteData.E2ETests.dll
 c:\Source\SatelliteData\backend\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.pdb
 c:\Source\SatelliteData\backend\tests\SatelliteData.E2ETests\obj\Debug\net8.0\ref\SatelliteData.E2ETests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\bin\Debug\net8.0\SatelliteData.E2ETests.deps.json
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\bin\Debug\net8.0\SatelliteData.E2ETests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\bin\Debug\net8.0\SatelliteData.E2ETests.pdb
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.GeneratedMSBuildEditorConfig.editorconfig
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.AssemblyInfoInputs.cache
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.AssemblyInfo.cs
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.csproj.CoreCompileInputs.cache
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.sourcelink.json
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\refint\SatelliteData.E2ETests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\SatelliteData.E2ETests.pdb
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.E2ETests\obj\Debug\net8.0\ref\SatelliteData.E2ETests.dll

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "kbiGcRjj6Bs=",
+  "dgSpecHash": "erEUXRU2n3w=",
   "success": true,
-  "projectFilePath": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj",
+  "projectFilePath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

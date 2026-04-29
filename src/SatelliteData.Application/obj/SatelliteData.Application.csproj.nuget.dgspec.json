@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Application\\SatelliteData.Application.csproj": {}
+    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj": {}
   },
   "projects": {
-    "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Application\\SatelliteData.Application.csproj": {
+    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Application\\SatelliteData.Application.csproj",
+        "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj",
         "projectName": "SatelliteData.Application",
-        "projectPath": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Application\\SatelliteData.Application.csproj",
+        "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj",
         "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-        "outputPath": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Application\\obj\\",
+        "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -26,8 +26,8 @@
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj": {
-                "projectPath": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj"
+              "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj": {
+                "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj"
               }
             }
           }
@@ -69,14 +69,14 @@
         }
       }
     },
-    "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj": {
+    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj",
+        "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj",
         "projectName": "SatelliteData.Domain",
-        "projectPath": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj",
+        "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj",
         "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-        "outputPath": "c:\\Source\\SatelliteData\\backend\\src\\SatelliteData.Domain\\obj\\",
+        "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"

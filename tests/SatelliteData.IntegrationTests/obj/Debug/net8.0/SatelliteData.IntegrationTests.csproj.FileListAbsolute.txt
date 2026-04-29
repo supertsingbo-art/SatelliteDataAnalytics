@@ -9,3 +9,15 @@ c:\Source\SatelliteData\backend\tests\SatelliteData.IntegrationTests\obj\Debug\n
 c:\Source\SatelliteData\backend\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\refint\SatelliteData.IntegrationTests.dll
 c:\Source\SatelliteData\backend\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.pdb
 c:\Source\SatelliteData\backend\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\ref\SatelliteData.IntegrationTests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\bin\Debug\net8.0\SatelliteData.IntegrationTests.deps.json
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\bin\Debug\net8.0\SatelliteData.IntegrationTests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\bin\Debug\net8.0\SatelliteData.IntegrationTests.pdb
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.GeneratedMSBuildEditorConfig.editorconfig
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.AssemblyInfoInputs.cache
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.AssemblyInfo.cs
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.csproj.CoreCompileInputs.cache
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.sourcelink.json
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\refint\SatelliteData.IntegrationTests.dll
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\SatelliteData.IntegrationTests.pdb
+c:\Source\SatelliteData\SatelliteDataAnalytics\tests\SatelliteData.IntegrationTests\obj\Debug\net8.0\ref\SatelliteData.IntegrationTests.dll

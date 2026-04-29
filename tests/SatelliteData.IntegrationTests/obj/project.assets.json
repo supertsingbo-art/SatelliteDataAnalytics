@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
+      "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
       "projectName": "SatelliteData.IntegrationTests",
-      "projectPath": "C:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
+      "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
       "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "C:\\Source\\SatelliteData\\backend\\tests\\SatelliteData.IntegrationTests\\obj\\",
+      "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
