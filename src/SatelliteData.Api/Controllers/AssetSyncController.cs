@@ -6,9 +6,7 @@ namespace SatelliteData.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/asset")]
-public sealed class AssetSyncController(
-    AssetSyncService syncService,
-    IAssetCacheRepository cacheRepository) : ControllerBase
+public sealed class AssetSyncController(AssetSyncService syncService) : ControllerBase
 {
     [HttpPost("sync")]
     public async Task<ActionResult<ApiResponse<AssetSyncResult>>> SyncAll(
@@ -31,7 +29,7 @@ public sealed class AssetSyncController(
     [HttpDelete("cache")]
     public async Task<ActionResult<ApiResponse<object>>> ClearCache(CancellationToken cancellationToken)
     {
-        await cacheRepository.ClearAsync(cancellationToken);
+        await syncService.ClearAllCacheAsync(cancellationToken);
         return Ok(ApiResponse<object>.Ok(new { cleared = true }, HttpContext));
     }
 }

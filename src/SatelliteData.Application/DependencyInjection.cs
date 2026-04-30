@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<DataScopeAuthorizer>();
         services.AddScoped<DataSourceConfigService>();
         services.AddScoped<AssetSyncService>();
+        services.AddScoped<AssetQueryService>();
         services.AddSingleton<MongoConnectionPool>();
 
         return services;

@@ -65,4 +65,9 @@ public sealed class AssetSyncService(
             await SyncSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
         }
     }
+
+    public Task ClearAllCacheAsync(CancellationToken cancellationToken)
+    {
+        return cacheRepository.ClearAsync(cancellationToken);
+    }
 }

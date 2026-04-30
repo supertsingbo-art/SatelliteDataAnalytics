@@ -6,15 +6,13 @@ namespace SatelliteData.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/asset/satellites")]
-public sealed class AssetSatellitesController(
-    IAssetCacheRepository repository,
-    MongoConnectionPool mongoConnectionPool) : ControllerBase
+public sealed class AssetSatellitesController(AssetQueryService queryService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<ApiResponse<IReadOnlyCollection<SatelliteCache>>>> GetSatellites(
         CancellationToken cancellationToken)
     {
-        var satellites = await repository.GetSatellitesAsync(cancellationToken);
+        var satellites = await queryService.GetSatellitesAsync(cancellationToken);
         return Ok(ApiResponse<IReadOnlyCollection<SatelliteCache>>.Ok(satellites, HttpContext));
     }
 
@@ -24,7 +22,7 @@ public sealed class AssetSatellitesController(
         string satelliteNo,
         CancellationToken cancellationToken)
     {
-        var satellite = await repository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
+        var satellite = await queryService.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
         if (satellite is null)
         {
             return NotFound(ApiResponse<object>.Fail("ASSET_SATELLITE_NOT_FOUND", "satellite cache not found", HttpContext));
@@ -42,23 +40,11 @@ public sealed class AssetSatellitesController(
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        pageNo = pageNo <= 0 ? 1 : pageNo;
-        pageSize = pageSize <= 0 ? 50 : Math.Min(pageSize, 500);
-
-        var parameters = await repository.GetParametersAsync(tasookNo, satelliteNo, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            parameters = parameters
-                .Where(item => item.ParamId.Contains(keyword, StringComparison.OrdinalIgnoreCase)
-                    || item.ParamName.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-        }
-
-        var page = new PagedResult<ParamCache>(
-            pageNo,
-            pageSize,
-            parameters.Count,
-            parameters.Skip((pageNo - 1) * pageSize).Take(pageSize).ToArray());
+        var page = await queryService.GetParametersAsync(
+            tasookNo,
+            satelliteNo,
+            new AssetPageRequest(keyword, pageNo, pageSize),
+            cancellationToken);
 
         return Ok(ApiResponse<PagedResult<ParamCache>>.Ok(page, HttpContext));
     }
@@ -69,43 +55,24 @@ public sealed class AssetSatellitesController(
         string satelliteNo,
         CancellationToken cancellationToken)
     {
-        var testBatches = await repository.GetTestBatchesAsync(tasookNo, satelliteNo, cancellationToken);
+        var testBatches = await queryService.GetTestBatchesAsync(tasookNo, satelliteNo, cancellationToken);
         return Ok(ApiResponse<IReadOnlyCollection<TestBatchCache>>.Ok(testBatches, HttpContext));
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}/mongo-info")]
-    public async Task<ActionResult<ApiResponse<object>>> GetMongoInfo(
+    public async Task<ActionResult<ApiResponse<MongoConnectionSummary>>> GetMongoInfo(
         string tasookNo,
         string satelliteNo,
         CancellationToken cancellationToken)
     {
         try
         {
-            var mongoInfo = await mongoConnectionPool.GetConnectionInfoAsync(tasookNo, satelliteNo, cancellationToken);
-            var summary = new
-            {
-                mongoInfo.DbName,
-                mongoInfo.AuthRef,
-                MongoUri = MaskMongoUri(mongoInfo.MongoUri)
-            };
-
-            return Ok(ApiResponse<object>.Ok(summary, HttpContext));
+            var summary = await queryService.GetMongoInfoSummaryAsync(tasookNo, satelliteNo, cancellationToken);
+            return Ok(ApiResponse<MongoConnectionSummary>.Ok(summary, HttpContext));
         }
         catch (InvalidOperationException ex)
         {
             return NotFound(ApiResponse<object>.Fail("ASSET_MONGO_NOT_FOUND", ex.Message, HttpContext));
         }
-    }
-
-    private static string MaskMongoUri(string uri)
-    {
-        var at = uri.IndexOf('@', StringComparison.Ordinal);
-        var scheme = uri.IndexOf("://", StringComparison.Ordinal);
-        if (at > 0 && scheme > 0 && at > scheme)
-        {
-            return uri[..(scheme + 3)] + "***:***" + uri[at..];
-        }
-
-        return uri;
     }
 }
