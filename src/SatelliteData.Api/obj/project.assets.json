@@ -417,11 +417,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\SatelliteData.Api.csproj",
+      "projectUniqueName": "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\SatelliteData.Api.csproj",
       "projectName": "SatelliteData.Api",
-      "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\SatelliteData.Api.csproj",
+      "projectPath": "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\SatelliteData.Api.csproj",
       "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\obj\\",
+      "outputPath": "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -436,14 +436,14 @@
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
-            "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj": {
-              "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj"
+            "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj": {
+              "projectPath": "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Application\\SatelliteData.Application.csproj"
             },
-            "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj": {
-              "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj"
+            "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj": {
+              "projectPath": "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Domain\\SatelliteData.Domain.csproj"
             },
-            "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Infrastructure\\SatelliteData.Infrastructure.csproj": {
-              "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\src\\SatelliteData.Infrastructure\\SatelliteData.Infrastructure.csproj"
+            "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Infrastructure\\SatelliteData.Infrastructure.csproj": {
+              "projectPath": "C:\\Source\\SatelliteDataAnalytics\\src\\SatelliteData.Infrastructure\\SatelliteData.Infrastructure.csproj"
             }
           }
         }
@@ -487,7 +487,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.420/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

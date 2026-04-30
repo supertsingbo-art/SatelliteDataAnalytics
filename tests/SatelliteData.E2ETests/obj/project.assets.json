@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
+      "projectUniqueName": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
       "projectName": "SatelliteData.E2ETests",
-      "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
+      "projectPath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\SatelliteData.E2ETests.csproj",
       "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-      "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\obj\\",
+      "outputPath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.E2ETests\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -64,7 +64,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.420/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

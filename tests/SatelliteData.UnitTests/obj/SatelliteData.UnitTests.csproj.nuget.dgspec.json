@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj": {}
+    "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj": {}
   },
   "projects": {
-    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj": {
+    "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj",
+        "projectUniqueName": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj",
         "projectName": "SatelliteData.UnitTests",
-        "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj",
+        "projectPath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\SatelliteData.UnitTests.csproj",
         "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-        "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\obj\\",
+        "outputPath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.UnitTests\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -58,7 +58,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.420/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

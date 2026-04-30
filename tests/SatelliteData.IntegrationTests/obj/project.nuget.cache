@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "+9KUY+5EC8c=",
+  "dgSpecHash": "JLZtt9u58+o=",
   "success": true,
-  "projectFilePath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
+  "projectFilePath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

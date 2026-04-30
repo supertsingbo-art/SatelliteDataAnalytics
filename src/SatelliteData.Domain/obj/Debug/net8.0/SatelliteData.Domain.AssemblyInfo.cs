@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SatelliteData.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5a1d0b2c0ddd9428ef0f4f32e60208e53139e855")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+499775da10dd011a5a78e7a1173b27f570c6cc91")]
 [assembly: System.Reflection.AssemblyProductAttribute("SatelliteData.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SatelliteData.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

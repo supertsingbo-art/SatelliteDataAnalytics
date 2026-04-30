@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj": {}
+    "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj": {}
   },
   "projects": {
-    "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj": {
+    "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
+        "projectUniqueName": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
         "projectName": "SatelliteData.IntegrationTests",
-        "projectPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
+        "projectPath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\SatelliteData.IntegrationTests.csproj",
         "packagesPath": "C:\\Users\\Administrator\\.nuget\\packages\\",
-        "outputPath": "c:\\Source\\SatelliteData\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\obj\\",
+        "outputPath": "C:\\Source\\SatelliteDataAnalytics\\tests\\SatelliteData.IntegrationTests\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Administrator\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -58,7 +58,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.420/PortableRuntimeIdentifierGraph.json"
         }
       }
     }
