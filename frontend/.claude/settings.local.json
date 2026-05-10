@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(rm -rf \"C:/Source/SatelliteTest/SatelliteDataAnalytics/frontend/node_modules\")",
+      "Bash(npm install *)"
+    ]
+  }
+}

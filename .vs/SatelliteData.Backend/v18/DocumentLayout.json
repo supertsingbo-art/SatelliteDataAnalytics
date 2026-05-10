@@ -1,0 +1,94 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{D97F33D3-2A79-4156-9F0A-D463FCCC4066}|src\\SatelliteData.Api\\SatelliteData.Api.csproj|c:\\source\\satellitetest\\satellitedataanalytics\\src\\satellitedata.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{D97F33D3-2A79-4156-9F0A-D463FCCC4066}|src\\SatelliteData.Api\\SatelliteData.Api.csproj|solutionrelative:src\\satellitedata.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D97F33D3-2A79-4156-9F0A-D463FCCC4066}|src\\SatelliteData.Api\\SatelliteData.Api.csproj|c:\\source\\satellitetest\\satellitedataanalytics\\src\\satellitedata.api\\controllers\\assetsourcescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D97F33D3-2A79-4156-9F0A-D463FCCC4066}|src\\SatelliteData.Api\\SatelliteData.Api.csproj|solutionrelative:src\\satellitedata.api\\controllers\\assetsourcescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D97F33D3-2A79-4156-9F0A-D463FCCC4066}|src\\SatelliteData.Api\\SatelliteData.Api.csproj|c:\\source\\satellitetest\\satellitedataanalytics\\src\\satellitedata.api\\controllers\\apiresponse.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D97F33D3-2A79-4156-9F0A-D463FCCC4066}|src\\SatelliteData.Api\\SatelliteData.Api.csproj|solutionrelative:src\\satellitedata.api\\controllers\\apiresponse.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 6,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{13b12e3e-c1b4-4539-9371-4fe9a0d523fc}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:129:0:{116d2292-e37d-41cd-a077-ebacac4c8cc4}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{aa2115a1-9712-457b-9047-dbb71ca2cde3}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{aa2115a1-9712-457b-9047-dbb71ca2cdd2}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\appsettings.json",
+              "RelativeDocumentMoniker": "src\\SatelliteData.Api\\appsettings.json",
+              "ToolTip": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\appsettings.json",
+              "RelativeToolTip": "src\\SatelliteData.Api\\appsettings.json",
+              "ViewState": "AgIAAA8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-05-10T09:09:47.751Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "AssetSourcesController.cs",
+              "DocumentMoniker": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\Controllers\\AssetSourcesController.cs",
+              "RelativeDocumentMoniker": "src\\SatelliteData.Api\\Controllers\\AssetSourcesController.cs",
+              "ToolTip": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\Controllers\\AssetSourcesController.cs",
+              "RelativeToolTip": "src\\SatelliteData.Api\\Controllers\\AssetSourcesController.cs",
+              "ViewState": "AgIAADYAAAAAAAAAAAAowEAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-06T07:39:13.179Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "ApiResponse.cs",
+              "DocumentMoniker": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\Controllers\\ApiResponse.cs",
+              "RelativeDocumentMoniker": "src\\SatelliteData.Api\\Controllers\\ApiResponse.cs",
+              "ToolTip": "C:\\Source\\SatelliteTest\\SatelliteDataAnalytics\\src\\SatelliteData.Api\\Controllers\\ApiResponse.cs",
+              "RelativeToolTip": "src\\SatelliteData.Api\\Controllers\\ApiResponse.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-05-06T07:39:10.098Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
