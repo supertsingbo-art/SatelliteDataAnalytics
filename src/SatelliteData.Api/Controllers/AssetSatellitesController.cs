@@ -9,11 +9,16 @@ namespace SatelliteData.Api.Controllers;
 public sealed class AssetSatellitesController(AssetQueryService queryService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IReadOnlyCollection<SatelliteCache>>>> GetSatellites(
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<PagedResult<SatelliteCache>>>> GetSatellites(
+        [FromQuery] string? keyword,
+        [FromQuery] int pageNo = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
     {
-        var satellites = await queryService.GetSatellitesAsync(cancellationToken);
-        return Ok(ApiResponse<IReadOnlyCollection<SatelliteCache>>.Ok(satellites, HttpContext));
+        var page = await queryService.GetSatellitesAsync(
+            new AssetPageRequest(keyword, pageNo, pageSize),
+            cancellationToken);
+        return Ok(ApiResponse<PagedResult<SatelliteCache>>.Ok(page, HttpContext));
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}")]
@@ -25,7 +30,10 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
         var satellite = await queryService.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
         if (satellite is null)
         {
-            return NotFound(ApiResponse<object>.Fail("ASSET_SATELLITE_NOT_FOUND", "satellite cache not found", HttpContext));
+            return NotFound(ApiResponse<object>.Fail(
+                "ASSET_SATELLITE_NOT_FOUND",
+                "卫星缓存不存在",
+                HttpContext));
         }
 
         return Ok(ApiResponse<SatelliteCache>.Ok(satellite, HttpContext));
@@ -49,14 +57,14 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
         return Ok(ApiResponse<PagedResult<ParamCache>>.Ok(page, HttpContext));
     }
 
-    [HttpGet("{tasookNo}/{satelliteNo}/test-batches")]
-    public async Task<ActionResult<ApiResponse<IReadOnlyCollection<TestBatchCache>>>> GetTestBatches(
+    [HttpGet("{tasookNo}/{satelliteNo}/test-phases")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyCollection<TestBatchCache>>>> GetTestPhases(
         string tasookNo,
         string satelliteNo,
         CancellationToken cancellationToken)
     {
-        var testBatches = await queryService.GetTestBatchesAsync(tasookNo, satelliteNo, cancellationToken);
-        return Ok(ApiResponse<IReadOnlyCollection<TestBatchCache>>.Ok(testBatches, HttpContext));
+        var phases = await queryService.GetTestPhasesAsync(tasookNo, satelliteNo, cancellationToken);
+        return Ok(ApiResponse<IReadOnlyCollection<TestBatchCache>>.Ok(phases, HttpContext));
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}/mongo-info")]

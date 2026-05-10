@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
 using SatelliteData.Application.Integration;
+using SatelliteData.Application.Templates;
 
 namespace SatelliteData.Application;
 
@@ -11,10 +12,19 @@ public static class DependencyInjection
     {
         services.AddScoped<OAuthTokenService>();
         services.AddScoped<DataScopeAuthorizer>();
+
+        // 资产配置中心（6.1）
         services.AddScoped<DataSourceConfigService>();
         services.AddScoped<AssetSyncService>();
         services.AddScoped<AssetQueryService>();
         services.AddSingleton<MongoConnectionPool>();
+
+        // 模板治理（6.2）
+        services.AddScoped<SatelliteGroupService>();
+        services.AddScoped<FilterTemplateService>();
+        services.AddScoped<AlgorithmTemplateService>();
+        services.AddScoped<AlgorithmTemplateValidator>();
+        services.AddScoped<AlgorithmRegistryService>();
 
         return services;
     }

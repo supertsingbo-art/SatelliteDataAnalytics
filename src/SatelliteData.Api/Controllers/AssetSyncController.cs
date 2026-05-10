@@ -13,7 +13,12 @@ public sealed class AssetSyncController(AssetSyncService syncService) : Controll
         CancellationToken cancellationToken)
     {
         var result = await syncService.SyncAllAsync(cancellationToken);
-        return Ok(ApiResponse<AssetSyncResult>.Ok(result, HttpContext));
+        return result.Status == AssetSyncStatus.Failed
+            ? StatusCode(500, ApiResponse<AssetSyncResult>.Fail(
+                result.ErrorCode ?? "ASSET_001",
+                result.ErrorMessage ?? "资产同步失败",
+                HttpContext))
+            : Ok(ApiResponse<AssetSyncResult>.Ok(result, HttpContext));
     }
 
     [HttpPost("satellites/{tasookNo}/{satelliteNo}/sync")]

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
+using SatelliteData.Application.Templates;
 using SatelliteData.Infrastructure.HttpClients;
 using SatelliteData.Infrastructure.PostgreSql;
 using SatelliteData.Infrastructure.Security;
@@ -20,9 +21,17 @@ public static class DependencyInjection
         services.AddSingleton<IAccessTokenIssuer, ManualJwtTokenService>();
         services.AddSingleton<IAccessTokenValidator, ManualJwtTokenService>();
         services.AddSingleton<IApiClientRepository, InMemoryApiClientRepository>();
+
         services.Configure<AssetProviderOptions>(configuration.GetSection("AssetProviders"));
         services.AddSingleton<IDataSourceConfigRepository, InMemoryDataSourceConfigRepository>();
         services.AddSingleton<IAssetCacheRepository, InMemoryAssetCacheRepository>();
+
+        services.AddSingleton<ISatelliteGroupRepository, InMemorySatelliteGroupRepository>();
+        services.AddSingleton<ISatelliteGroupMemberRepository, InMemorySatelliteGroupMemberRepository>();
+        services.AddSingleton<IFilterTemplateRepository, InMemoryFilterTemplateRepository>();
+        services.AddSingleton<IAlgorithmTemplateRepository, InMemoryAlgorithmTemplateRepository>();
+        services.AddSingleton<IAlgorithmPackageRepository, InMemoryAlgorithmPackageRepository>();
+
         services.AddHttpClient<IMassDataAssetProvider, MassDataApiClient>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AssetProviderOptions>>().Value;

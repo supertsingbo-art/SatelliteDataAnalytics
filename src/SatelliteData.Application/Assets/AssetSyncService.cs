@@ -1,26 +1,79 @@
+using Microsoft.Extensions.Logging;
 using SatelliteData.Domain.Assets;
 
 namespace SatelliteData.Application.Assets;
 
+/// <summary>
+/// 资产同步编排服务。严格按照 6.1.2 的三步骤流程执行：
+/// Step 1：拉取全量卫星列表，确定 (taskNo, satNo, dbStage) 三元组并 upsert <c>satellite_cache</c>；
+/// Step 2：每星拉取参数元数据 → upsert <c>param_cache</c>；
+/// Step 3：每星拉取测试阶段 → upsert <c>test_batch_cache</c>；
+/// Step 4：每星拉取 Mongo 连接配置 → 更新 <c>satellite_cache.mongo_uri</c> 等列。
+///
+/// 故障隔离：Step 1 失败整体退出；Step 2/3/4 单星失败仅记录该星，不影响其它星；
+/// 失败比例 ≥ <see cref="FailureRatioThreshold"/> 时整体标记 <see cref="AssetSyncStatus.PartialSucceeded"/>。
+/// </summary>
 public sealed class AssetSyncService(
     IMassDataAssetProvider massDataProvider,
     ISatelliteAssetProvider satelliteAssetProvider,
-    IAssetCacheRepository cacheRepository)
+    IAssetCacheRepository cacheRepository,
+    MongoConnectionPool mongoConnectionPool,
+    ILogger<AssetSyncService> logger)
 {
+    private const double FailureRatioThreshold = 0.5d;
+
     public async Task<AssetSyncResult> SyncAllAsync(CancellationToken cancellationToken)
     {
-        var satellites = await massDataProvider.GetSatellitesAsync(cancellationToken);
-        var parameterCount = 0;
-        var testBatchCount = 0;
+        IReadOnlyCollection<SatelliteCache> satellites;
+        try
+        {
+            satellites = await massDataProvider.GetSatellitesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "全量卫星列表拉取失败 (Step 1)");
+            return new AssetSyncResult(
+                AssetSyncStatus.Failed,
+                0, 0, 0, 0,
+                DateTimeOffset.UtcNow,
+                "ASSET_001",
+                "Step 1 全量卫星列表拉取失败：" + ex.Message,
+                Array.Empty<SatelliteSyncOutcome>());
+        }
+
+        var outcomes = new List<SatelliteSyncOutcome>(satellites.Count);
+        var totalParameters = 0;
+        var totalTestPhases = 0;
+        var failedCount = 0;
 
         foreach (var satellite in satellites)
         {
-            var result = await SyncSatelliteAsync(satellite.TasookNo, satellite.SatelliteNo, cancellationToken);
-            parameterCount += result.ParameterCount;
-            testBatchCount += result.TestBatchCount;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await cacheRepository.UpsertSatelliteAsync(satellite, cancellationToken);
+
+            var outcome = await SyncSubstepsAsync(satellite, cancellationToken);
+            outcomes.Add(outcome);
+            totalParameters += outcome.ParameterCount;
+            totalTestPhases += outcome.TestPhaseCount;
+            if (!outcome.FullySucceeded)
+            {
+                failedCount++;
+            }
         }
 
-        return new AssetSyncResult(satellites.Count, parameterCount, testBatchCount, DateTimeOffset.UtcNow);
+        var status = ResolveStatus(satellites.Count, failedCount);
+
+        return new AssetSyncResult(
+            status,
+            satellites.Count,
+            totalParameters,
+            totalTestPhases,
+            failedCount,
+            DateTimeOffset.UtcNow,
+            ErrorCode: null,
+            ErrorMessage: null,
+            outcomes);
     }
 
     public async Task<AssetSyncResult> SyncSatelliteAsync(
@@ -28,29 +81,39 @@ public sealed class AssetSyncService(
         string satelliteNo,
         CancellationToken cancellationToken)
     {
-        var satellites = await massDataProvider.GetSatellitesAsync(cancellationToken);
-        var satellite = satellites.SingleOrDefault(item =>
-            string.Equals(item.TasookNo, tasookNo, StringComparison.Ordinal)
-            && string.Equals(item.SatelliteNo, satelliteNo, StringComparison.Ordinal));
-
-        var parameters = await massDataProvider.GetParametersAsync(tasookNo, satelliteNo, cancellationToken);
-        var mongoInfo = await massDataProvider.GetMongoInfoAsync(tasookNo, satelliteNo, cancellationToken);
-        var testBatches = await satelliteAssetProvider.GetTestBatchesAsync(
-            tasookNo,
-            satelliteNo,
-            null,
-            null,
-            cancellationToken);
-
-        if (satellite is not null)
+        var cached = await cacheRepository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
+        if (cached is null)
         {
-            await cacheRepository.UpsertSatelliteAsync(satellite with { MongoInfo = mongoInfo }, cancellationToken);
+            // 无缓存时尝试从全量列表中找一次
+            var satellites = await massDataProvider.GetSatellitesAsync(cancellationToken);
+            cached = satellites.SingleOrDefault(s =>
+                s.TasookNo == tasookNo && s.SatelliteNo == satelliteNo);
+
+            if (cached is null)
+            {
+                return new AssetSyncResult(
+                    AssetSyncStatus.Failed,
+                    0, 0, 0, 1,
+                    DateTimeOffset.UtcNow,
+                    "ASSET_002",
+                    $"卫星不存在：{tasookNo}/{satelliteNo}",
+                    Array.Empty<SatelliteSyncOutcome>());
+            }
+
+            await cacheRepository.UpsertSatelliteAsync(cached, cancellationToken);
         }
 
-        await cacheRepository.UpsertParametersAsync(parameters, cancellationToken);
-        await cacheRepository.UpsertTestBatchesAsync(testBatches, cancellationToken);
-
-        return new AssetSyncResult(satellite is null ? 0 : 1, parameters.Count, testBatches.Count, DateTimeOffset.UtcNow);
+        var outcome = await SyncSubstepsAsync(cached, cancellationToken);
+        return new AssetSyncResult(
+            outcome.FullySucceeded ? AssetSyncStatus.Succeeded : AssetSyncStatus.PartialSucceeded,
+            1,
+            outcome.ParameterCount,
+            outcome.TestPhaseCount,
+            outcome.FullySucceeded ? 0 : 1,
+            DateTimeOffset.UtcNow,
+            ErrorCode: null,
+            ErrorMessage: outcome.FailureReason,
+            new[] { outcome });
     }
 
     public async Task RefreshIfExpiredAsync(
@@ -69,5 +132,98 @@ public sealed class AssetSyncService(
     public Task ClearAllCacheAsync(CancellationToken cancellationToken)
     {
         return cacheRepository.ClearAsync(cancellationToken);
+    }
+
+    private async Task<SatelliteSyncOutcome> SyncSubstepsAsync(
+        SatelliteCache satellite,
+        CancellationToken cancellationToken)
+    {
+        var (tasookNo, satelliteNo, dbStage) = (satellite.TasookNo, satellite.SatelliteNo, satellite.DbStage);
+
+        var parametersOk = false;
+        var phasesOk = false;
+        var mongoOk = false;
+        var paramCount = 0;
+        var phaseCount = 0;
+        string? failureReason = null;
+
+        try
+        {
+            var parameters = await massDataProvider.GetParametersAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
+            await cacheRepository.UpsertParametersAsync(parameters, cancellationToken);
+            paramCount = parameters.Count;
+            parametersOk = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            failureReason = AppendReason(failureReason, $"Step 2 参数同步失败：{ex.Message}");
+            logger.LogWarning(ex, "参数同步失败 {TasookNo}/{SatelliteNo}", tasookNo, satelliteNo);
+        }
+
+        try
+        {
+            var phases = await satelliteAssetProvider.GetTestPhasesAsync(tasookNo, satelliteNo, cancellationToken);
+            await cacheRepository.UpsertTestBatchesAsync(phases, cancellationToken);
+            phaseCount = phases.Count;
+            phasesOk = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            failureReason = AppendReason(failureReason, $"Step 3 测试阶段同步失败：{ex.Message}");
+            logger.LogWarning(ex, "测试阶段同步失败 {TasookNo}/{SatelliteNo}", tasookNo, satelliteNo);
+        }
+
+        try
+        {
+            var mongoInfo = await massDataProvider.GetMongoInfoAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
+            if (mongoInfo is not null)
+            {
+                var refreshed = satellite with { MongoInfo = mongoInfo, LastSyncedAt = DateTimeOffset.UtcNow };
+                await cacheRepository.UpsertSatelliteAsync(refreshed, cancellationToken);
+
+                if (satellite.MongoInfo is null
+                    || !string.Equals(satellite.MongoInfo.MongoUri, mongoInfo.MongoUri, StringComparison.Ordinal)
+                    || !string.Equals(satellite.SourceVersion, refreshed.SourceVersion, StringComparison.Ordinal))
+                {
+                    mongoConnectionPool.Invalidate(tasookNo, satelliteNo);
+                }
+            }
+
+            mongoOk = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            failureReason = AppendReason(failureReason, $"Step 4 Mongo 配置同步失败：{ex.Message}");
+            logger.LogWarning(ex, "Mongo 配置同步失败 {TasookNo}/{SatelliteNo}", tasookNo, satelliteNo);
+        }
+
+        return new SatelliteSyncOutcome(
+            tasookNo, satelliteNo,
+            parametersOk, phasesOk, mongoOk,
+            paramCount, phaseCount,
+            failureReason);
+    }
+
+    private static AssetSyncStatus ResolveStatus(int total, int failed)
+    {
+        if (total == 0)
+        {
+            return AssetSyncStatus.Succeeded;
+        }
+
+        if (failed == 0)
+        {
+            return AssetSyncStatus.Succeeded;
+        }
+
+        var ratio = (double)failed / total;
+        return ratio >= FailureRatioThreshold
+            ? AssetSyncStatus.Failed
+            : AssetSyncStatus.PartialSucceeded;
+    }
+
+    private static string AppendReason(string? existing, string newReason)
+    {
+        return string.IsNullOrEmpty(existing) ? newReason : existing + "; " + newReason;
     }
 }

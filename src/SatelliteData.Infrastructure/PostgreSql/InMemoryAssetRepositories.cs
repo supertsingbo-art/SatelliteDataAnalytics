@@ -40,8 +40,9 @@ public sealed class InMemoryDataSourceConfigRepository : IDataSourceConfigReposi
         return Task.CompletedTask;
     }
 
-    public Task DeleteAllAssetCacheAsync(CancellationToken cancellationToken)
+    public Task DeleteAsync(Guid sourceId, CancellationToken cancellationToken)
     {
+        _configs.Remove(sourceId);
         return Task.CompletedTask;
     }
 

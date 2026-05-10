@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SatelliteData.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+499775da10dd011a5a78e7a1173b27f570c6cc91")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d20119f8803d13332f516e957181236b056cb818")]
 [assembly: System.Reflection.AssemblyProductAttribute("SatelliteData.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SatelliteData.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

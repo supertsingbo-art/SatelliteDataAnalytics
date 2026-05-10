@@ -3,17 +3,41 @@ using SatelliteData.Domain.Assets;
 namespace SatelliteData.Application.Assets;
 
 /// <summary>
-/// 资产查询应用服务。负责封装资产中心的只读查询用例，
-/// 屏蔽 Controller 与 <see cref="IAssetCacheRepository"/> 之间的直接依赖，
-/// 便于后续叠加权限过滤、字段脱敏、统一日志等业务逻辑。
+/// 资产查询应用服务。封装资产中心的只读查询用例：卫星列表 / 单星 / 参数 / 测试阶段 / Mongo 摘要。
 /// </summary>
 public sealed class AssetQueryService(
     IAssetCacheRepository cacheRepository,
     MongoConnectionPool mongoConnectionPool)
 {
-    public Task<IReadOnlyCollection<SatelliteCache>> GetSatellitesAsync(CancellationToken cancellationToken)
+    public async Task<PagedResult<SatelliteCache>> GetSatellitesAsync(
+        AssetPageRequest request,
+        CancellationToken cancellationToken)
     {
-        return cacheRepository.GetSatellitesAsync(cancellationToken);
+        var pageNo = request.PageNo <= 0 ? 1 : request.PageNo;
+        var pageSize = request.PageSize <= 0 ? 50 : Math.Min(request.PageSize, 500);
+
+        var satellites = await cacheRepository.GetSatellitesAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword!;
+            satellites = satellites
+                .Where(item => item.SatelliteName.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || item.SatelliteNo.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || item.TasookNo.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+
+        var ordered = satellites
+            .OrderBy(item => item.TasookNo, StringComparer.Ordinal)
+            .ThenBy(item => item.SatelliteNo, StringComparer.Ordinal)
+            .ToArray();
+
+        var items = ordered
+            .Skip((pageNo - 1) * pageSize)
+            .Take(pageSize)
+            .ToArray();
+
+        return new PagedResult<SatelliteCache>(pageNo, pageSize, ordered.Length, items);
     }
 
     public Task<SatelliteCache?> GetSatelliteAsync(
@@ -50,7 +74,7 @@ public sealed class AssetQueryService(
         return new PagedResult<ParamCache>(pageNo, pageSize, parameters.Count, items);
     }
 
-    public Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(
+    public Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(
         string tasookNo,
         string satelliteNo,
         CancellationToken cancellationToken)
@@ -67,19 +91,7 @@ public sealed class AssetQueryService(
         return new MongoConnectionSummary(
             mongoInfo.DbName,
             mongoInfo.AuthRef,
-            MaskMongoUri(mongoInfo.MongoUri));
-    }
-
-    private static string MaskMongoUri(string uri)
-    {
-        var at = uri.IndexOf('@', StringComparison.Ordinal);
-        var scheme = uri.IndexOf("://", StringComparison.Ordinal);
-        if (at > 0 && scheme > 0 && at > scheme)
-        {
-            return uri[..(scheme + 3)] + "***:***" + uri[at..];
-        }
-
-        return uri;
+            MongoUriSanitizer.MaskCredentials(mongoInfo.MongoUri));
     }
 }
 

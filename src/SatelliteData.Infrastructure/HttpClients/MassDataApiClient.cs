@@ -23,13 +23,15 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
             {
                 var tasookNo = item.GetStringOrNull("tasookNo", "taskNo", "taskno") ?? "";
                 var satelliteNo = item.GetStringOrNull("satelliteNo", "satNo", "satno") ?? "";
+                var dbStage = item.GetStringOrNull("dbStage", "stage") ?? _options.DefaultDbStage;
                 return new SatelliteCache(
                     tasookNo,
                     satelliteNo,
                     item.GetStringOrNull("satelliteName", "satName", "satname", "name") ?? satelliteNo,
                     item.GetStringOrNull("satelliteType", "satType", "type"),
+                    dbStage,
                     null,
-                    item.GetStringOrNull("sourceVersion", "version", "dbStage") ?? _options.DefaultDbStage,
+                    item.GetStringOrNull("sourceVersion", "version") ?? dbStage,
                     now,
                     item.Clone());
             })
@@ -40,15 +42,16 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
     public async Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(
         string tasookNo,
         string satelliteNo,
+        string? dbStage,
         CancellationToken cancellationToken)
     {
-        var request = CreateLookupRequest(tasookNo, satelliteNo);
+        var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
         using var response = await httpClient.PostAsJsonAsync("/api/mass-data/basic/parameters", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? _options.DefaultDbStage;
+        var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? dbStage ?? _options.DefaultDbStage;
 
         return root.GetArrayItems("items", "datas", "parameters", "paras")
             .Select(item =>
@@ -58,7 +61,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
                     tasookNo,
                     satelliteNo,
                     paramId,
-                    item.GetStringOrNull("paramName", "name", "paraName", "parameterName", "pc") ?? paramId,
+                    item.GetStringOrNull("paramName", "name", "paraName", "parameterName") ?? paramId,
                     item.GetStringOrNull("unit", "unitName"),
                     item.GetStringOrNull("valueType", "dataType", "type") ?? "DOUBLE",
                     item.GetDoubleOrNull("valueMin", "min", "minValue"),
@@ -74,54 +77,38 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
     public async Task<MongoConnectionInfo?> GetMongoInfoAsync(
         string tasookNo,
         string satelliteNo,
+        string? dbStage,
         CancellationToken cancellationToken)
     {
-        var request = CreateLookupRequest(tasookNo, satelliteNo);
+        var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
         using var response = await httpClient.PostAsJsonAsync("/api/mass-data/satellite/config", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
-        var mongoUri = root.GetStringOrNull("mongoUri", "mongoQueryConn", "mongoqueryconn", "cfgConn");
-        if (string.IsNullOrWhiteSpace(mongoUri))
+        var rawUri = root.GetStringOrNull("mongoUri", "mongoQueryConn", "mongoqueryconn", "cfgConn");
+        if (string.IsNullOrWhiteSpace(rawUri))
         {
             return null;
         }
 
-        var dbName = TryGetDatabaseName(mongoUri) ?? $"{tasookNo}_{satelliteNo}";
+        var sanitizedUri = MongoUriSanitizer.StripCredentials(rawUri);
+        var dbName = root.GetStringOrNull("dbName", "mongoDbName")
+                     ?? MongoUriSanitizer.ExtractDatabaseName(sanitizedUri)
+                     ?? $"{tasookNo}_{satelliteNo}";
+
         return new MongoConnectionInfo(
-            mongoUri,
-            root.GetStringOrNull("dbName", "mongoDbName") ?? dbName,
+            sanitizedUri,
+            dbName,
             root.GetStringOrNull("authRef", "mongoAuthRef"));
     }
 
-    public Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(
-        string tasookNo,
-        string satelliteNo,
-        DateTimeOffset? start,
-        DateTimeOffset? end,
-        CancellationToken cancellationToken)
-    {
-        return Task.FromResult<IReadOnlyCollection<TestBatchCache>>(Array.Empty<TestBatchCache>());
-    }
-
-    private object CreateLookupRequest(string tasookNo, string satelliteNo)
+    private object CreateLookupRequest(string tasookNo, string satelliteNo, string? dbStage)
     {
         return new
         {
             taskNo = tasookNo,
             satNo = satelliteNo,
-            dbStage = _options.DefaultDbStage
+            dbStage = string.IsNullOrWhiteSpace(dbStage) ? _options.DefaultDbStage : dbStage
         };
-    }
-
-    private static string? TryGetDatabaseName(string mongoUri)
-    {
-        if (!Uri.TryCreate(mongoUri, UriKind.Absolute, out var uri))
-        {
-            return null;
-        }
-
-        var db = uri.AbsolutePath.Trim('/');
-        return string.IsNullOrWhiteSpace(db) ? null : db;
     }
 }

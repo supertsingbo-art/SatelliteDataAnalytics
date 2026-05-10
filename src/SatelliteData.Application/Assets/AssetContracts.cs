@@ -40,7 +40,7 @@ public interface IDataSourceConfigRepository
 
     Task SaveAsync(DataSourceConfig config, CancellationToken cancellationToken);
 
-    Task DeleteAllAssetCacheAsync(CancellationToken cancellationToken);
+    Task DeleteAsync(Guid sourceId, CancellationToken cancellationToken);
 }
 
 public interface IAssetCacheRepository
@@ -62,28 +62,34 @@ public interface IAssetCacheRepository
     Task ClearAsync(CancellationToken cancellationToken);
 }
 
-public interface IAssetProvider
+/// <summary>
+/// 海量数据接口。仅服务于 6.1.2 同步流程的 Step 1 / 2 / 4。
+/// Step 3「测试阶段」由 <see cref="ISatelliteAssetProvider"/> 提供。
+/// </summary>
+public interface IMassDataAssetProvider
 {
     Task<IReadOnlyCollection<SatelliteCache>> GetSatellitesAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(
         string tasookNo,
         string satelliteNo,
+        string? dbStage,
         CancellationToken cancellationToken);
 
     Task<MongoConnectionInfo?> GetMongoInfoAsync(
         string tasookNo,
         string satelliteNo,
-        CancellationToken cancellationToken);
-
-    Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(
-        string tasookNo,
-        string satelliteNo,
-        DateTimeOffset? start,
-        DateTimeOffset? end,
+        string? dbStage,
         CancellationToken cancellationToken);
 }
 
-public interface IMassDataAssetProvider : IAssetProvider;
-
-public interface ISatelliteAssetProvider : IAssetProvider;
+/// <summary>
+/// 卫星资产接口。仅服务于 Step 3「测试阶段」拉取。
+/// </summary>
+public interface ISatelliteAssetProvider
+{
+    Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(
+        string tasookNo,
+        string satelliteNo,
+        CancellationToken cancellationToken);
+}
