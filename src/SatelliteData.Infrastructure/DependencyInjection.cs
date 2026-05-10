@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddSingleton<IApiClientRepository, InMemoryApiClientRepository>();
 
         services.Configure<AssetProviderOptions>(configuration.GetSection("AssetProviders"));
+        services.Configure<DatabaseConnectionOptions>(configuration.GetSection(DatabaseConnectionOptions.SectionName));
         services.AddSingleton<IDataSourceConfigRepository, InMemoryDataSourceConfigRepository>();
         services.AddSingleton<IAssetCacheRepository, InMemoryAssetCacheRepository>();
 

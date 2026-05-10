@@ -1,5 +1,8 @@
+using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
 using SatelliteData.Domain.Assets;
+using SatelliteData.Infrastructure.HttpClients;
+using SatelliteData.Infrastructure;
 
 namespace SatelliteData.Infrastructure.PostgreSql;
 
@@ -7,13 +10,18 @@ public sealed class InMemoryDataSourceConfigRepository : IDataSourceConfigReposi
 {
     private readonly Dictionary<Guid, DataSourceConfig> _configs = [];
 
-    public InMemoryDataSourceConfigRepository()
+    public InMemoryDataSourceConfigRepository(
+        IOptions<AssetProviderOptions> assetProviders,
+        IOptions<DatabaseConnectionOptions> databaseConnections)
     {
-        Seed(DataSourceTypes.MassDataApi, "海量数据接口服务-开发", "http://localhost:5000", "DEV");
-        Seed(DataSourceTypes.SatelliteAssetApi, "卫星资产服务-开发", "http://localhost:5001", "DEV");
-        Seed(DataSourceTypes.ClickHouse, "ClickHouse 分析库-开发", "http://localhost:8123", "DEV");
-        Seed(DataSourceTypes.Minio, "MinIO 对象存储-开发", "http://localhost:9000", "DEV");
-        Seed(DataSourceTypes.PgMeta, "PostgreSQL 元数据库-开发", "Host=localhost;Database=satellite_meta", "DEV");
+        var assets = assetProviders.Value;
+        var connections = databaseConnections.Value;
+
+        Seed(DataSourceTypes.MassDataApi, "海量数据接口服务-开发", assets.MassDataApiBaseUrl, assets.DefaultDbStage);
+        Seed(DataSourceTypes.SatelliteAssetApi, "卫星资产服务-开发", assets.SatelliteAssetApiBaseUrl, assets.DefaultDbStage);
+        Seed(DataSourceTypes.ClickHouse, "ClickHouse 分析库-开发", connections.ClickHouse, assets.DefaultDbStage);
+        Seed(DataSourceTypes.Minio, "MinIO 对象存储-开发", assets.MinioBaseUrl, assets.DefaultDbStage);
+        Seed(DataSourceTypes.PgMeta, "PostgreSQL 元数据库-开发", connections.Postgres, assets.DefaultDbStage);
     }
 
     public Task<IReadOnlyCollection<DataSourceConfig>> GetAllAsync(CancellationToken cancellationToken)

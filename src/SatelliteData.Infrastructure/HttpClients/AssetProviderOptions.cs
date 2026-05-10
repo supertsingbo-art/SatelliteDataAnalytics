@@ -6,5 +6,7 @@ public sealed class AssetProviderOptions
 
     public string SatelliteAssetApiBaseUrl { get; init; } = "http://localhost:5001";
 
+    public string MinioBaseUrl { get; init; } = "http://localhost:9000";
+
     public string DefaultDbStage { get; init; } = "DEV";
 }
