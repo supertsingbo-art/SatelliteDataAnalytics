@@ -1,12 +1,15 @@
 using System.Text.Json;
 using SatelliteData.Application.Assets;
+using SatelliteData.Application.Tasks;
+using SatelliteData.Domain.Tasks;
 using SatelliteData.Domain.Templates;
 
 namespace SatelliteData.Application.Templates;
 
 public sealed class AlgorithmTemplateService(
     IAlgorithmTemplateRepository templateRepository,
-    AlgorithmTemplateValidator validator)
+    AlgorithmTemplateValidator validator,
+    TaskOrchestrator taskOrchestrator)
 {
     public async Task<PagedResult<AlgorithmTemplateView>> ListAsync(
         AlgorithmTemplateListRequest request,
@@ -252,10 +255,7 @@ public sealed class AlgorithmTemplateService(
         await templateRepository.DeleteAsync(templateId, version, cancellationToken);
     }
 
-    /// <summary>
-    /// 测试运行。本阶段任务编排尚未实现，此处仅为占位：
-    /// 校验 DAG → 返回 trial runId 占位；后续接入 <c>TaskOrchestrator.CreateAlgorithm(trigger='TRIAL')</c> 时仅替换实现。
-    /// </summary>
+    /// <summary>测试运行：校验 DAG 后创建 <c>PIPELINE</c> 任务（TRIAL 触发），默认筛选模板见 <see cref="PipelineDevIds"/>。</summary>
     public async Task<AlgorithmTemplateTrialRunResponse> TrialRunAsync(
         Guid templateId,
         int version,
@@ -273,10 +273,24 @@ public sealed class AlgorithmTemplateService(
                 "DAG 校验未通过，无法测试运行");
         }
 
+        var cmd = new PipelineCreateCommand(
+            request.TasookNo,
+            request.SatelliteNo,
+            request.TestBatchId,
+            request.WindowStart,
+            request.WindowEnd,
+            PipelineDevIds.DefaultFilterTemplateId,
+            1,
+            templateId,
+            version,
+            IdempotencyKey: null,
+            TaskTriggerType.Trial);
+
+        var result = await taskOrchestrator.CreatePipelineAsync(cmd, createdBy: null, cancellationToken);
         return new AlgorithmTemplateTrialRunResponse(
-            RunId: Guid.NewGuid(),
-            Status: "Queued",
-            Message: $"已创建测试任务（trigger=TRIAL），目标 {request.TasookNo}/{request.SatelliteNo}");
+            RunId: result.RunId,
+            Status: result.Status.ToString(),
+            Message: $"已创建 PIPELINE 测试任务（trigger=TRIAL），目标 {request.TasookNo}/{request.SatelliteNo}，runId={result.RunId}");
     }
 
     private static AlgorithmTemplateView ToView(AlgorithmTemplate template)

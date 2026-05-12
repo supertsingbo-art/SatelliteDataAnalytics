@@ -31,6 +31,13 @@ public sealed record FilterTemplateDetail(
     FilterTemplateView View,
     JsonElement ConfigJson);
 
+/// <summary>
+/// 将筛选模板中「参考卫星」下的 param_id 映射到目标卫星的 param_cache 后的配置快照。
+/// </summary>
+public sealed record FilterTemplateResolvedDetail(
+    JsonElement ConfigJson,
+    IReadOnlyList<string> ResolutionWarnings);
+
 public sealed record FilterTemplateListRequest(
     Guid? GroupId,
     TemplateStatus? Status,

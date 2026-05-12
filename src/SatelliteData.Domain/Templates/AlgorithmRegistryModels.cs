@@ -63,4 +63,7 @@ public sealed record AlgorithmPackage(
     Guid? UploadedBy,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? PublishedAt);
+    DateTimeOffset? PublishedAt,
+    Guid ObjectId,
+    string Entrypoint,
+    JsonElement ManifestJson);

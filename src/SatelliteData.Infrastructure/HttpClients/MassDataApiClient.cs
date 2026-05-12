@@ -33,6 +33,8 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
                     null,
                     item.GetStringOrNull("sourceVersion", "version") ?? dbStage,
                     now,
+                    CachedParameterCount: 0,
+                    CachedCommandCount: 0,
                     item.Clone());
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.TasookNo) && !string.IsNullOrWhiteSpace(item.SatelliteNo))
@@ -71,6 +73,37 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
                     item.Clone());
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.ParamId))
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string? dbStage,
+        CancellationToken cancellationToken)
+    {
+        var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
+        using var response = await httpClient.PostAsJsonAsync("/api/mass-data/basic/commands", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? dbStage ?? _options.DefaultDbStage;
+
+        return root.GetArrayItems("items", "datas", "commands", "cmds", "instructions")
+            .Select(item =>
+            {
+                var commandId = item.GetStringOrNull("commandId", "cmdId", "id", "code", "instructionId") ?? "";
+                return new CommandCache(
+                    tasookNo,
+                    satelliteNo,
+                    commandId,
+                    item.GetStringOrNull("commandName", "cmdName", "name", "instructionName", "description") ?? commandId,
+                    sourceVersion,
+                    now,
+                    item.Clone());
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.CommandId))
             .ToArray();
     }
 

@@ -69,6 +69,33 @@ public sealed class FilterTemplatesController(FilterTemplateService templateServ
         }
     }
 
+    /// <summary>
+    /// 将模板内参数 ID 从「参考卫星」语义映射到指定目标卫星（同组内按参数名 / 描述匹配）。
+    /// </summary>
+    [HttpGet("{templateId:guid}/versions/{version:int}/resolved-config")]
+    public async Task<ActionResult<ApiResponse<FilterTemplateResolvedDetail>>> GetResolvedConfig(
+        Guid templateId,
+        int version,
+        [FromQuery] string taskNo,
+        [FromQuery] string satNo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var detail = await templateService.ResolveForSatelliteAsync(
+                templateId,
+                version,
+                taskNo,
+                satNo,
+                cancellationToken);
+            return Ok(ApiResponse<FilterTemplateResolvedDetail>.Ok(detail, HttpContext));
+        }
+        catch (TemplateGovernanceException ex)
+        {
+            return MapError<FilterTemplateResolvedDetail>(ex);
+        }
+    }
+
     [HttpPost]
     public async Task<ActionResult<ApiResponse<FilterTemplateDetail>>> Create(
         [FromBody] CreateFilterTemplateRequest request,
@@ -186,6 +213,7 @@ public sealed class FilterTemplatesController(FilterTemplateService templateServ
             TemplateErrorCodes.FilterTemplateNotEditable => StatusCodes.Status409Conflict,
             TemplateErrorCodes.FilterTemplateInvalidState => StatusCodes.Status409Conflict,
             TemplateErrorCodes.FilterTemplateConfigInvalid => StatusCodes.Status422UnprocessableEntity,
+            TemplateErrorCodes.FilterTemplateResolveFailed => StatusCodes.Status422UnprocessableEntity,
             _ => StatusCodes.Status400BadRequest
         };
         return StatusCode(status, ApiResponse<T>.Fail(ex.ErrorCode, ex.Message, HttpContext));

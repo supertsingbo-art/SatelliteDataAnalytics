@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SatelliteData.Application.Assets;
+using SatelliteData.Domain.Assets;
 using SatelliteData.Domain.Templates;
 
 namespace SatelliteData.Application.Templates;
@@ -7,7 +9,8 @@ namespace SatelliteData.Application.Templates;
 public sealed class FilterTemplateService(
     IFilterTemplateRepository templateRepository,
     ISatelliteGroupRepository groupRepository,
-    SatelliteGroupService groupService)
+    SatelliteGroupService groupService,
+    IAssetCacheRepository assetCacheRepository)
 {
     public async Task<PagedResult<FilterTemplateView>> ListAsync(
         FilterTemplateListRequest request,
@@ -98,6 +101,7 @@ public sealed class FilterTemplateService(
         var configJson = NormalizeConfigJson(request.ConfigJson, request.GroupId,
             await groupRepository.GetByIdAsync(request.GroupId, cancellationToken));
         FilterTemplateValidator.Validate(configJson);
+        await EnsureReferenceSatelliteInGroupAsync(request.GroupId, configJson, cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
         var template = new FilterTemplate(
@@ -140,6 +144,7 @@ public sealed class FilterTemplateService(
         var configJson = NormalizeConfigJson(request.ConfigJson, request.GroupId,
             await groupRepository.GetByIdAsync(request.GroupId, cancellationToken));
         FilterTemplateValidator.Validate(configJson);
+        await EnsureReferenceSatelliteInGroupAsync(request.GroupId, configJson, cancellationToken);
 
         var updated = existing with
         {
@@ -291,6 +296,143 @@ public sealed class FilterTemplateService(
             .OrderBy(t => t.TemplateName, StringComparer.Ordinal);
 
         return grouped.Select(t => ToView(t, groupMap)).ToArray();
+    }
+
+    /// <summary>
+    /// 将模板中参考卫星的 param_id 映射到目标卫星（同组内按名称 / 描述语义匹配），供单星消费组级模板时使用。
+    /// </summary>
+    public async Task<FilterTemplateResolvedDetail> ResolveForSatelliteAsync(
+        Guid templateId,
+        int version,
+        string targetTasookNo,
+        string targetSatelliteNo,
+        CancellationToken cancellationToken)
+    {
+        var template = await templateRepository.GetVersionAsync(templateId, version, cancellationToken)
+            ?? throw new TemplateGovernanceException(TemplateErrorCodes.FilterTemplateNotFound, "筛选模板版本不存在");
+
+        if (!await groupService.IsSatelliteInGroupSubtreeAsync(
+                template.GroupId,
+                targetTasookNo,
+                targetSatelliteNo,
+                cancellationToken))
+        {
+            throw new TemplateGovernanceException(
+                TemplateErrorCodes.FilterTemplateResolveFailed,
+                "目标卫星不在该模板归属分组（含子分组）的成员范围内，无法解析");
+        }
+
+        var config = template.ConfigJson;
+        var (refTasook, refSat) = ReadScopeReference(config);
+        if (string.Equals(refTasook, targetTasookNo, StringComparison.Ordinal)
+            && string.Equals(refSat, targetSatelliteNo, StringComparison.Ordinal))
+        {
+            return new FilterTemplateResolvedDetail(config, Array.Empty<string>());
+        }
+
+        var refParams = (await assetCacheRepository.GetParametersAsync(refTasook, refSat, cancellationToken)).ToArray();
+        var targetParams = (await assetCacheRepository.GetParametersAsync(targetTasookNo, targetSatelliteNo, cancellationToken))
+            .ToArray();
+        var refById = refParams.ToDictionary(p => p.ParamId, StringComparer.Ordinal);
+
+        var warnings = new List<string>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        FilterTemplateConfigMapper.CollectParamIds(config, ids);
+
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var id in ids)
+        {
+            var mapped = FilterTemplateConfigMapper.MapParamId(id, refById, targetParams, warnings);
+            if (mapped is null)
+            {
+                throw new TemplateGovernanceException(
+                    TemplateErrorCodes.FilterTemplateResolveFailed,
+                    $"参数映射失败：{warnings[^1]}");
+            }
+
+            map[id] = mapped;
+        }
+
+        var remapped = FilterTemplateConfigMapper.ApplyParamIdMap(config, map);
+        PatchTargetParamNames(remapped, targetParams, out var finalConfig);
+        return new FilterTemplateResolvedDetail(finalConfig, warnings);
+    }
+
+    private static void PatchTargetParamNames(
+        JsonElement remapped,
+        IReadOnlyList<ParamCache> targetParams,
+        out JsonElement result)
+    {
+        var targetById = targetParams.ToDictionary(p => p.ParamId, StringComparer.Ordinal);
+        var node = JsonNode.Parse(remapped.GetRawText())!;
+        if (node is not JsonObject root || !root.TryGetPropertyValue("targetParams", out var tpNode)
+            || tpNode is not JsonArray arr)
+        {
+            result = remapped;
+            return;
+        }
+
+        foreach (var item in arr)
+        {
+            if (item is not JsonObject o || !o.TryGetPropertyValue("paramId", out var pidNode)
+                || pidNode is not JsonValue pv)
+            {
+                continue;
+            }
+
+            var pid = pv.GetValue<string>();
+            if (string.IsNullOrEmpty(pid))
+            {
+                continue;
+            }
+
+            if (targetById.TryGetValue(pid, out var meta))
+            {
+                o["paramName"] = meta.ParamName;
+            }
+        }
+
+        using var doc = JsonDocument.Parse(root.ToJsonString());
+        result = doc.RootElement.Clone();
+    }
+
+    private async Task EnsureReferenceSatelliteInGroupAsync(
+        Guid groupId,
+        JsonElement configJson,
+        CancellationToken cancellationToken)
+    {
+        var (tasook, sat) = ReadScopeReference(configJson);
+        if (!await groupService.IsSatelliteInGroupSubtreeAsync(groupId, tasook, sat, cancellationToken))
+        {
+            throw new TemplateGovernanceException(
+                TemplateErrorCodes.FilterTemplateConfigInvalid,
+                "参考卫星必须属于模板归属分组及其子分组下的成员（请先在分组中维护卫星成员）");
+        }
+    }
+
+    private static (string TasookNo, string SatelliteNo) ReadScopeReference(JsonElement configJson)
+    {
+        if (!configJson.TryGetProperty("scope", out var scope) || scope.ValueKind != JsonValueKind.Object)
+        {
+            throw new TemplateGovernanceException(
+                TemplateErrorCodes.FilterTemplateConfigInvalid,
+                "config_json 缺少 scope");
+        }
+
+        var t = scope.TryGetProperty("referenceTasookNo", out var tn) && tn.ValueKind == JsonValueKind.String
+            ? tn.GetString()
+            : null;
+        var s = scope.TryGetProperty("referenceSatelliteNo", out var sn) && sn.ValueKind == JsonValueKind.String
+            ? sn.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(t) || string.IsNullOrWhiteSpace(s))
+        {
+            throw new TemplateGovernanceException(
+                TemplateErrorCodes.FilterTemplateConfigInvalid,
+                "scope 缺少 referenceTasookNo / referenceSatelliteNo");
+        }
+
+        return (t.Trim(), s.Trim());
     }
 
     private async Task EnsureGroupExistsAsync(Guid groupId, CancellationToken cancellationToken)

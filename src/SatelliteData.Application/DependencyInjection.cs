@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SatelliteData.Application.Algorithms;
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
 using SatelliteData.Application.Integration;
@@ -25,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<AlgorithmTemplateService>();
         services.AddScoped<AlgorithmTemplateValidator>();
         services.AddScoped<AlgorithmRegistryService>();
+        services.AddScoped<AlgorithmPackageUploadService>();
 
         return services;
     }

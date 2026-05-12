@@ -20,6 +20,7 @@ public static class TemplateErrorCodes
     public const string FilterTemplateNotEditable = "TPL_002";
     public const string FilterTemplateInvalidState = "TPL_003";
     public const string FilterTemplateConfigInvalid = "TPL_004";
+    public const string FilterTemplateResolveFailed = "TPL_005";
 
     public const string AlgorithmTemplateNotFound = "ALGO_TPL_001";
     public const string AlgorithmTemplateNotEditable = "ALGO_TPL_002";
@@ -28,4 +29,7 @@ public static class TemplateErrorCodes
 
     public const string AlgorithmPackageNotFound = "PKG_001";
     public const string AlgorithmPackageNotPublished = "PKG_002";
+    public const string AlgorithmPackageNameRejected = "PKG_003";
+    public const string AlgorithmPackageDuplicateVersion = "PKG_004";
+    public const string AlgorithmPackageManifestInvalid = "PKG_005";
 }

@@ -1,11 +1,14 @@
-import { request } from './client';
+import { http, request } from './client';
+import type { ApiResponse } from './client';
 import {
+  AlgorithmPackageView,
   AlgorithmRegistryEntry,
   AlgorithmTemplateDetail,
   AlgorithmTemplateValidationResult,
   AlgorithmTemplateView,
   FilterTemplateConfigJson,
   FilterTemplateDetail,
+  FilterTemplateResolvedDetail,
   FilterTemplateView,
   PagedResult,
   TemplateStatus
@@ -32,6 +35,13 @@ export const filterTemplatesApi = {
   versions: (templateId: string) => request<FilterTemplateView[]>('get', `${FILTER_BASE}/${templateId}/versions`),
   detail: (templateId: string, version: number) =>
     request<FilterTemplateDetail>('get', `${FILTER_BASE}/${templateId}/versions/${version}`),
+  resolvedConfig: (templateId: string, version: number, taskNo: string, satNo: string) =>
+    request<FilterTemplateResolvedDetail>(
+      'get',
+      `${FILTER_BASE}/${templateId}/versions/${version}/resolved-config`,
+      undefined,
+      { taskNo, satNo }
+    ),
   create: (body: CreateFilterTemplateRequest) => request<FilterTemplateDetail>('post', FILTER_BASE, body),
   update: (templateId: string, version: number, body: UpdateFilterTemplateRequest) =>
     request<FilterTemplateDetail>('put', `${FILTER_BASE}/${templateId}/versions/${version}`, body),
@@ -89,5 +99,16 @@ export const algoTemplatesApi = {
 };
 
 export const algoRegistryApi = {
-  registry: () => request<AlgorithmRegistryEntry[]>('get', `${ALGO_REGISTRY_BASE}/registry`)
+  registry: () => request<AlgorithmRegistryEntry[]>('get', `${ALGO_REGISTRY_BASE}/registry`),
+  packages: (params?: { status?: string; runtime?: string; category?: string }) =>
+    request<AlgorithmPackageView[]>('get', `${ALGO_REGISTRY_BASE}/packages`, undefined, params as Record<string, unknown>),
+  uploadPackage: async (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await http.post<ApiResponse<{ package_id: string }>>(`${ALGO_REGISTRY_BASE}/packages/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    if (!res.data.success) throw new Error(res.data.message);
+    return res.data.data!;
+  }
 };

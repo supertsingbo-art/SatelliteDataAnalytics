@@ -5,8 +5,11 @@ using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
 using SatelliteData.Application.Templates;
 using SatelliteData.Infrastructure.HttpClients;
+using SatelliteData.Infrastructure.Pipeline;
 using SatelliteData.Infrastructure.PostgreSql;
 using SatelliteData.Infrastructure.Security;
+using SatelliteData.Infrastructure.Storage;
+using SatelliteData.Application.Algorithms;
 
 namespace SatelliteData.Infrastructure;
 
@@ -25,7 +28,15 @@ public static class DependencyInjection
         services.Configure<AssetProviderOptions>(configuration.GetSection("AssetProviders"));
         services.Configure<DatabaseConnectionOptions>(configuration.GetSection(DatabaseConnectionOptions.SectionName));
         services.AddSingleton<IDataSourceConfigRepository, InMemoryDataSourceConfigRepository>();
-        services.AddSingleton<IAssetCacheRepository, InMemoryAssetCacheRepository>();
+        var usePgAssetCache = configuration.GetValue("AssetCache:UsePostgreSql", false);
+        if (usePgAssetCache)
+        {
+            services.AddSingleton<IAssetCacheRepository, PgAssetCacheRepository>();
+        }
+        else
+        {
+            services.AddSingleton<IAssetCacheRepository, InMemoryAssetCacheRepository>();
+        }
 
         services.AddSingleton<ISatelliteGroupRepository, InMemorySatelliteGroupRepository>();
         services.AddSingleton<ISatelliteGroupMemberRepository, InMemorySatelliteGroupMemberRepository>();
@@ -43,6 +54,10 @@ public static class DependencyInjection
             var options = serviceProvider.GetRequiredService<IOptions<AssetProviderOptions>>().Value;
             client.BaseAddress = new Uri(options.SatelliteAssetApiBaseUrl.TrimEnd('/'));
         });
+
+        services.AddSingleton<IObjectStorageService, InMemoryObjectStorageService>();
+
+        services.AddSatellitePipeline(configuration);
 
         return services;
     }

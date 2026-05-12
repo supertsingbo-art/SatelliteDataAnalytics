@@ -46,6 +46,18 @@ public static class FilterTemplateValidator
         {
             throw Invalid("scope.groupId 必须为字符串 (UUID)");
         }
+
+        if (!scope.TryGetProperty("referenceTasookNo", out var refT) || refT.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(refT.GetString()))
+        {
+            throw Invalid("scope.referenceTasookNo 必须为非空字符串（参考卫星型号代号）");
+        }
+
+        if (!scope.TryGetProperty("referenceSatelliteNo", out var refS) || refS.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(refS.GetString()))
+        {
+            throw Invalid("scope.referenceSatelliteNo 必须为非空字符串（参考卫星代号）");
+        }
     }
 
     private static void ValidateTimeWindow(JsonElement root)

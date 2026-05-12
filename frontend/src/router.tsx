@@ -8,6 +8,10 @@ import { FilterTemplateEditor } from './pages/templates/FilterTemplateEditor';
 import { AlgorithmTemplatesPage } from './pages/templates/AlgorithmTemplatesPage';
 import { AlgorithmTemplateEditor } from './pages/templates/AlgorithmTemplateEditor';
 import { AlgorithmRegistryPage } from './pages/algorithms/AlgorithmRegistryPage';
+import { AlgorithmPackagesPage } from './pages/algorithms/AlgorithmPackagesPage';
+import { PipelineTasksPage } from './pages/tasks/PipelineTasksPage';
+import { PreprocessTasksPage } from './pages/tasks/PreprocessTasksPage';
+import { TasksListPage } from './pages/tasks/TasksListPage';
 
 export const router = createBrowserRouter([
   {
@@ -24,7 +28,11 @@ export const router = createBrowserRouter([
       { path: 'templates/algorithms', element: <AlgorithmTemplatesPage /> },
       { path: 'templates/algorithms/new', element: <AlgorithmTemplateEditor /> },
       { path: 'templates/algorithms/:templateId/versions/:version', element: <AlgorithmTemplateEditor /> },
-      { path: 'algorithms/registry', element: <AlgorithmRegistryPage /> }
+      { path: 'algorithms/registry', element: <AlgorithmRegistryPage /> },
+      { path: 'algorithms/packages', element: <AlgorithmPackagesPage /> },
+      { path: 'tasks/pipeline', element: <PipelineTasksPage /> },
+      { path: 'tasks/preprocess', element: <PreprocessTasksPage /> },
+      { path: 'tasks', element: <TasksListPage /> }
     ]
   }
 ]);

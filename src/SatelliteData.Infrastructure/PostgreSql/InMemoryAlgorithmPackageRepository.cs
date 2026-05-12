@@ -84,12 +84,14 @@ public sealed class InMemoryAlgorithmPackageRepository : IAlgorithmPackageReposi
         var inputsSchema = JsonDocument.Parse("{\"series\":\"TimeSeries\"}").RootElement.Clone();
         var outputsSchema = JsonDocument.Parse("{\"value\":\"Scalar\"}").RootElement.Clone();
         var resources = JsonDocument.Parse("{\"cpu\":1,\"memory\":\"1024MB\",\"timeoutSeconds\":600}").RootElement.Clone();
+        var emptyManifest = JsonDocument.Parse("{}").RootElement.Clone();
 
         foreach (var seed in seeds)
         {
             var paramsSchema = JsonDocument.Parse(seed.ParamsSchema).RootElement.Clone();
+            var packageId = Guid.NewGuid();
             var package = new AlgorithmPackage(
-                PackageId: Guid.NewGuid(),
+                PackageId: packageId,
                 AlgorithmCode: seed.Code,
                 DisplayName: seed.DisplayName,
                 Version: "1.0.0",
@@ -105,7 +107,10 @@ public sealed class InMemoryAlgorithmPackageRepository : IAlgorithmPackageReposi
                 UploadedBy: null,
                 CreatedAt: now,
                 UpdatedAt: now,
-                PublishedAt: now);
+                PublishedAt: now,
+                ObjectId: packageId,
+                Entrypoint: "__builtin__",
+                ManifestJson: emptyManifest.Clone());
             _packages[package.PackageId] = package;
         }
     }

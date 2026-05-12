@@ -4,6 +4,8 @@ using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using SatelliteData.Application.Identity;
 using SatelliteData.Application.Integration;
+using SatelliteData.Application.Tasks;
+using SatelliteData.Domain.Tasks;
 
 namespace SatelliteData.Api.Controllers;
 
@@ -67,6 +69,7 @@ public static class OAuthEndpoints
             [FromBody] CreatePipelineJobRequest request,
             ClaimsPrincipal user,
             DataScopeAuthorizer dataScopeAuthorizer,
+            TaskOrchestrator orchestrator,
             CancellationToken cancellationToken) =>
         {
             if (!HasScope(user, "job:create"))
@@ -89,12 +92,122 @@ public static class OAuthEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
-            return Results.Accepted(
-                $"/openapi/v1/jobs/JOB-{DateTime.UtcNow:yyyyMMddHHmmss}",
-                new AcceptedJobResponse(
-                    $"JOB-{DateTime.UtcNow:yyyyMMddHHmmss}",
-                    Guid.NewGuid(),
-                    "Queued"));
+            var trigger = ParseTrigger(request.Trigger);
+            var cmd = new PipelineCreateCommand(
+                request.TasookNo,
+                request.SatelliteNo,
+                request.TestBatchId,
+                request.WindowStart,
+                request.WindowEnd,
+                request.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
+                request.FilterTemplateVersion ?? 1,
+                request.AlgorithmTemplateId ?? PipelineDevIds.DefaultAlgorithmTemplateId,
+                request.AlgorithmTemplateVersion ?? 1,
+                request.IdempotencyKey,
+                trigger);
+
+            PipelineCreateResult result;
+            try
+            {
+                result = await orchestrator.CreatePipelineAsync(cmd, clientId, cancellationToken);
+            }
+            catch (InvalidTaskWindowException ex)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("invalid_request", ex.Message),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var body = new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString());
+            return Results.Accepted($"/openapi/v1/jobs/{result.RunId}", body);
+        })
+        .RequireAuthorization();
+
+        endpoints.MapPost("/openapi/v1/jobs/preprocess", async (
+            [FromBody] CreatePreprocessJobRequest request,
+            ClaimsPrincipal user,
+            DataScopeAuthorizer dataScopeAuthorizer,
+            TaskOrchestrator orchestrator,
+            CancellationToken cancellationToken) =>
+        {
+            if (!HasScope(user, "job:create"))
+            {
+                return Results.Json(
+                    new OAuthErrorContract("insufficient_scope", "job:create scope is required"),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var clientId = Guid.Parse(user.FindFirstValue("client_id")!);
+            var allowed = await dataScopeAuthorizer.IsAllowedAsync(
+                clientId,
+                new DataScopeCheckRequest(request.TasookNo, request.SatelliteNo, request.TestBatchId),
+                cancellationToken);
+
+            if (!allowed)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("access_denied", "client data scope is not allowed"),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var trigger = ParseTrigger(request.Trigger);
+            var cmd = new PreprocessCreateCommand(
+                request.TasookNo,
+                request.SatelliteNo,
+                request.TestBatchId,
+                request.WindowStart,
+                request.WindowEnd,
+                request.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
+                request.FilterTemplateVersion ?? 1,
+                request.IdempotencyKey,
+                trigger);
+
+            PipelineCreateResult result;
+            try
+            {
+                result = await orchestrator.CreatePreprocessAsync(cmd, clientId, cancellationToken);
+            }
+            catch (InvalidTaskWindowException ex)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("invalid_request", ex.Message),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var body = new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString());
+            return Results.Accepted($"/openapi/v1/jobs/{result.RunId}", body);
+        })
+        .RequireAuthorization();
+
+        endpoints.MapGet("/openapi/v1/jobs/{runId:guid}", async (
+            Guid runId,
+            ClaimsPrincipal user,
+            ITaskRunRepository taskRuns,
+            CancellationToken cancellationToken) =>
+        {
+            if (!HasScope(user, "job:read"))
+            {
+                return Results.Json(
+                    new OAuthErrorContract("insufficient_scope", "job:read scope is required"),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken);
+            if (run is null)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("not_found", "job not found"),
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            return Results.Ok(new JobStatusResponse(
+                run.RunId,
+                run.JobId,
+                run.Status.ToString(),
+                run.ProgressPercent,
+                run.CurrentStep,
+                run.ErrorCode,
+                run.ErrorMsg));
         })
         .RequireAuthorization();
 
@@ -139,5 +252,16 @@ public static class OAuthEndpoints
     {
         var scopes = user.FindFirstValue("scope") ?? "";
         return scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(requiredScope, StringComparer.Ordinal);
+    }
+
+    private static TaskTriggerType ParseTrigger(string? trigger)
+    {
+        if (string.IsNullOrWhiteSpace(trigger)) return TaskTriggerType.Api;
+        return trigger.Trim().ToUpperInvariant() switch
+        {
+            "TRIAL" => TaskTriggerType.Trial,
+            "SCHEDULED" => TaskTriggerType.Scheduled,
+            _ => TaskTriggerType.Api
+        };
     }
 }

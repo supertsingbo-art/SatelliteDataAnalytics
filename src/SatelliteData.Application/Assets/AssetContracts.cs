@@ -49,6 +49,12 @@ public interface IAssetCacheRepository
 
     Task UpsertParametersAsync(IReadOnlyCollection<ParamCache> parameters, CancellationToken cancellationToken);
 
+    Task UpsertCommandsAsync(
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyCollection<CommandCache> commands,
+        CancellationToken cancellationToken);
+
     Task UpsertTestBatchesAsync(IReadOnlyCollection<TestBatchCache> testBatches, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<SatelliteCache>> GetSatellitesAsync(CancellationToken cancellationToken);
@@ -63,7 +69,7 @@ public interface IAssetCacheRepository
 }
 
 /// <summary>
-/// 海量数据接口。仅服务于 6.1.2 同步流程的 Step 1 / 2 / 4。
+/// 海量数据接口。仅服务于 6.1.2 同步流程的 Step 1 / 2 / 2b / 4。
 /// Step 3「测试阶段」由 <see cref="ISatelliteAssetProvider"/> 提供。
 /// </summary>
 public interface IMassDataAssetProvider
@@ -71,6 +77,12 @@ public interface IMassDataAssetProvider
     Task<IReadOnlyCollection<SatelliteCache>> GetSatellitesAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(
+        string tasookNo,
+        string satelliteNo,
+        string? dbStage,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(
         string tasookNo,
         string satelliteNo,
         string? dbStage,

@@ -37,6 +37,8 @@ public sealed record SatelliteCache(
     MongoConnectionInfo? MongoInfo,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt,
+    int CachedParameterCount,
+    int CachedCommandCount,
     JsonElement RawJson);
 
 public sealed record ParamCache(
@@ -48,6 +50,18 @@ public sealed record ParamCache(
     string? ValueType,
     double? ValueMin,
     double? ValueMax,
+    string? SourceVersion,
+    DateTimeOffset LastSyncedAt,
+    JsonElement RawJson);
+
+/// <summary>
+/// 指令元数据缓存，对应海量接口 <c>POST /api/mass-data/basic/commands</c> 返回清单。
+/// </summary>
+public sealed record CommandCache(
+    string TasookNo,
+    string SatelliteNo,
+    string CommandId,
+    string CommandName,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt,
     JsonElement RawJson);
@@ -82,13 +96,16 @@ public sealed record SatelliteSyncOutcome(
     string TasookNo,
     string SatelliteNo,
     bool ParametersSucceeded,
+    bool CommandsSucceeded,
     bool TestPhasesSucceeded,
     bool MongoConfigSucceeded,
     int ParameterCount,
+    int CommandCount,
     int TestPhaseCount,
     string? FailureReason)
 {
-    public bool FullySucceeded => ParametersSucceeded && TestPhasesSucceeded && MongoConfigSucceeded;
+    public bool FullySucceeded =>
+        ParametersSucceeded && CommandsSucceeded && TestPhasesSucceeded && MongoConfigSucceeded;
 }
 
 public enum AssetSyncStatus
@@ -106,6 +123,7 @@ public sealed record AssetSyncResult(
     AssetSyncStatus Status,
     int SatelliteCount,
     int ParameterCount,
+    int CommandCount,
     int TestBatchCount,
     int FailedSatelliteCount,
     DateTimeOffset SyncedAt,

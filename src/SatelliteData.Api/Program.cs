@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using Hangfire;
+using Hangfire.Dashboard;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.OpenApi;
 using SatelliteData.Api.Controllers;
@@ -9,7 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(o =>
+{
+    o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -17,7 +23,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Satellite Data Analytics API",
         Version = "v1",
-        Description = "卫星测试数据预处理与一致性比对平台后端接口"
+        Description = "卫星测试数据预处理与数据分析平台后端接口"
     });
 });
 builder.Services
@@ -37,6 +43,7 @@ app.UseSwaggerUI(options =>
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseHangfireDashboard("/hangfire", new DashboardOptions { Authorization = [new LocalRequestsOnlyAuthorizationFilter()] });
 
 app.MapGet("/health/live", () => Results.Ok(new
 {

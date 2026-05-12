@@ -25,7 +25,19 @@ const menuItems = [
   {
     key: '/algorithms',
     label: '算法仓库',
-    children: [{ key: '/algorithms/registry', label: '内置算法注册表' }]
+    children: [
+      { key: '/algorithms/registry', label: '内置算法注册表' },
+      { key: '/algorithms/packages', label: '算法包列表' }
+    ]
+  },
+  {
+    key: 'group-tasks',
+    label: '任务编排',
+    children: [
+      { key: '/tasks', label: '任务列表' },
+      { key: '/tasks/pipeline', label: '新建 PIPELINE' },
+      { key: '/tasks/preprocess', label: '仅预处理入仓' }
+    ]
   }
 ];
 
@@ -48,8 +60,12 @@ export function AppLayout() {
     if (path.startsWith('/assets/groups')) return '资产配置中心 / 卫星分组管理';
     if (path.startsWith('/templates/filters')) return '模板治理 / 筛选模板';
     if (path.startsWith('/templates/algorithms')) return '模板治理 / 算法模板';
-    if (path.startsWith('/algorithms')) return '算法仓库 / 内置算法注册表';
-    return '卫星测试数据预处理与一致性比对平台';
+    if (path.startsWith('/algorithms/registry')) return '算法仓库 / 内置算法注册表';
+    if (path.startsWith('/algorithms/packages')) return '算法仓库 / 算法包列表';
+    if (path === '/tasks') return '任务编排 / 任务列表';
+    if (path.startsWith('/tasks/pipeline')) return '任务编排 / 新建 PIPELINE';
+    if (path.startsWith('/tasks/preprocess')) return '任务编排 / 仅预处理入仓';
+    return '卫星测试数据预处理与数据分析平台';
   }, [location.pathname]);
 
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -28,6 +28,7 @@ import {
   RuleLeaf,
   RuleOperator,
   SatelliteCache,
+  SatelliteGroupMemberDto,
   SatelliteGroupNode
 } from '@/api/types';
 
@@ -68,11 +69,6 @@ function cryptoRandomId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-interface SelectedSatellite {
-  tasookNo: string;
-  satelliteNo: string;
-}
-
 export function FilterTemplateEditor() {
   const params = useParams();
   const navigate = useNavigate();
@@ -83,17 +79,21 @@ export function FilterTemplateEditor() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<SatelliteGroupNode[]>([]);
   const [satellites, setSatellites] = useState<SatelliteCache[]>([]);
+  const [groupMembers, setGroupMembers] = useState<SatelliteGroupMemberDto[]>([]);
   const [paramOptions, setParamOptions] = useState<ParamCache[]>([]);
-  const [referenceSatellite, setReferenceSatellite] = useState<SelectedSatellite | null>(null);
 
   const [form] = Form.useForm<{
     templateName: string;
     description?: string;
     groupId: string;
+    referenceSatelliteKey?: string;
     bufferBeforeSeconds: number;
     bufferAfterSeconds: number;
     durationSeconds: number;
   }>();
+
+  const watchedGroupId = Form.useWatch('groupId', form);
+  const watchedRefKey = Form.useWatch('referenceSatelliteKey', form);
 
   const [rows, setRows] = useState<FlatRuleRow[]>([]);
   const [logicOp, setLogicOp] = useState<'AND' | 'OR'>('AND');
@@ -116,10 +116,17 @@ export function FilterTemplateEditor() {
           const detail = await filterTemplatesApi.detail(templateId, version);
           setStatus(detail.view.status);
           setEditable(detail.view.status === 'Draft');
+          const refT = detail.configJson.scope.referenceTasookNo;
+          const refS = detail.configJson.scope.referenceSatelliteNo;
+          const refKey =
+            refT && refS ? `${refT}||${refS}` : undefined;
+          const mems = await groupsApi.listMembers(detail.view.groupId, true);
+          setGroupMembers(mems);
           form.setFieldsValue({
             templateName: detail.view.templateName,
             description: detail.view.description ?? undefined,
             groupId: detail.view.groupId,
+            referenceSatelliteKey: refKey,
             bufferBeforeSeconds: detail.configJson.timeWindow.bufferBeforeSeconds ?? 0,
             bufferAfterSeconds: detail.configJson.timeWindow.bufferAfterSeconds ?? 0,
             durationSeconds: detail.configJson.durationSeconds ?? 10
@@ -129,10 +136,24 @@ export function FilterTemplateEditor() {
           if ('op' in detail.configJson.ruleTree) {
             setLogicOp(detail.configJson.ruleTree.op === 'OR' ? 'OR' : 'AND');
           }
+          if (!refKey) {
+            message.warning('该版本 config 缺少参考卫星，请补选「适用数据范围」中的具体星后再保存。');
+          }
         } else {
+          const defaultGid = tree[0]?.groupId;
+          let initialRef: string | undefined;
+          if (defaultGid) {
+            const mems = await groupsApi.listMembers(defaultGid, true);
+            setGroupMembers(mems);
+            const first = mems[0];
+            if (first) {
+              initialRef = `${first.tasookNo}||${first.satelliteNo}`;
+            }
+          }
           form.setFieldsValue({
             templateName: '',
-            groupId: tree[0]?.groupId,
+            groupId: defaultGid,
+            referenceSatelliteKey: initialRef,
             bufferBeforeSeconds: 5,
             bufferAfterSeconds: 5,
             durationSeconds: 10
@@ -145,22 +166,66 @@ export function FilterTemplateEditor() {
   }, [templateId, version]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      if (!referenceSatellite) {
+      if (!watchedGroupId) {
+        if (!cancelled) {
+          setGroupMembers([]);
+        }
+        return;
+      }
+      const m = await groupsApi.listMembers(watchedGroupId, true);
+      if (cancelled) {
+        return;
+      }
+      setGroupMembers(m);
+      const currentKey = form.getFieldValue('referenceSatelliteKey') as string | undefined;
+      if (currentKey && !m.some((x) => `${x.tasookNo}||${x.satelliteNo}` === currentKey)) {
+        form.setFieldsValue({ referenceSatelliteKey: undefined });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [watchedGroupId, form]);
+
+  useEffect(() => {
+    (async () => {
+      if (!watchedRefKey) {
         setParamOptions([]);
         return;
       }
-      const result = await assetsApi.listParams(
-        referenceSatellite.tasookNo,
-        referenceSatellite.satelliteNo,
-        { pageNo: 1, pageSize: 500 }
-      );
+      const parts = watchedRefKey.split('||');
+      const t = parts[0];
+      const s = parts[1];
+      if (!t || !s) {
+        setParamOptions([]);
+        return;
+      }
+      const result = await assetsApi.listParams(t, s, { pageNo: 1, pageSize: 500 });
       setParamOptions(result.items);
     })();
-  }, [referenceSatellite?.tasookNo, referenceSatellite?.satelliteNo]);
+  }, [watchedRefKey]);
+
+  const memberSelectOptions = useMemo(
+    () =>
+      groupMembers.map((m) => {
+        const sat = satellites.find((x) => x.tasookNo === m.tasookNo && x.satelliteNo === m.satelliteNo);
+        const label = sat?.satelliteName
+          ? `${m.tasookNo} / ${m.satelliteNo} · ${sat.satelliteName}`
+          : `${m.tasookNo} / ${m.satelliteNo}`;
+        return { value: `${m.tasookNo}||${m.satelliteNo}`, label };
+      }),
+    [groupMembers, satellites]
+  );
 
   const buildPayload = (): FilterTemplateConfigJson => {
     const groupId = form.getFieldValue('groupId');
+    const refKey = form.getFieldValue('referenceSatelliteKey') as string | undefined;
+    if (!refKey) {
+      throw new Error('MISSING_REF_SAT');
+    }
+    const [refTasook, refSat] = refKey.split('||');
     const ruleTree =
       rows.length === 1
         ? { paramId: rows[0].paramId, operator: rows[0].operator, value: rows[0].value }
@@ -173,7 +238,11 @@ export function FilterTemplateEditor() {
             }))
           };
     return {
-      scope: { groupId },
+      scope: {
+        groupId,
+        referenceTasookNo: refTasook,
+        referenceSatelliteNo: refSat
+      },
       timeWindow: {
         mode: 'TEST_BATCH',
         bufferBeforeSeconds: form.getFieldValue('bufferBeforeSeconds') ?? 0,
@@ -187,6 +256,10 @@ export function FilterTemplateEditor() {
 
   const onSave = async () => {
     const values = await form.validateFields();
+    if (!values.referenceSatelliteKey) {
+      message.error('请选择适用数据范围中的具体参考卫星');
+      return;
+    }
     if (rows.length === 0) {
       message.error('至少需要 1 条参数条件');
       return;
@@ -196,7 +269,13 @@ export function FilterTemplateEditor() {
       return;
     }
 
-    const config = buildPayload();
+    let config: FilterTemplateConfigJson;
+    try {
+      config = buildPayload();
+    } catch {
+      message.error('请选择适用数据范围中的具体参考卫星');
+      return;
+    }
     if (isNew) {
       const created = await filterTemplatesApi.create({
         templateName: values.templateName,
@@ -269,6 +348,14 @@ export function FilterTemplateEditor() {
           />
         )}
 
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="分组与参考星"
+          description="卫星分组用于把单星编制的模板提升到组级复用：模板归属某分组后，该分组及子分组下的成员星均可选用。筛选条件与目标参数列表均绑定「参考卫星」在 param_cache 中的元数据。其它成员星在运行前应调用后端 GET /api/v1/templates/filters/{templateId}/versions/{version}/resolved-config?taskNo=…&satNo=…，按参数名称（忽略大小写）及原始 JSON 中的描述类字段做语义匹配，映射到本星参数 ID，避免同名不同码的错配。"
+        />
+
         <Form form={form} layout="vertical" disabled={!editable}>
           <Card type="inner" title="基本信息" style={{ marginBottom: 16 }}>
             <Row gutter={16}>
@@ -278,20 +365,40 @@ export function FilterTemplateEditor() {
                 </Form.Item>
               </Col>
               <Col span={14}>
-                <Form.Item
-                  label="适用数据范围（卫星分组）"
-                  name="groupId"
-                  rules={[{ required: true, message: '请选择归属分组' }]}
-                  extra="模板对该分组及其所有后代分组下的卫星可用"
-                >
-                  <TreeSelect
-                    treeData={groupTreeData(groups)}
-                    placeholder="请选择归属分组"
-                    treeDefaultExpandAll
-                    showSearch
-                    treeNodeFilterProp="title"
-                  />
-                </Form.Item>
+                <Row gutter={12}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="归属卫星分组"
+                      name="groupId"
+                      rules={[{ required: true, message: '请选择归属分组' }]}
+                      extra="模板归属该分组；子分组内卫星继承可用模板"
+                    >
+                      <TreeSelect
+                        treeData={groupTreeData(groups)}
+                        placeholder="请选择归属分组"
+                        treeDefaultExpandAll
+                        showSearch
+                        treeNodeFilterProp="title"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      label="参考卫星（适用数据范围）"
+                      name="referenceSatelliteKey"
+                      rules={[{ required: true, message: '请选择分组内的一颗具体卫星' }]}
+                      extra="下列筛选条件与目标参数均来自该星；须为当前分组（含子分组）成员"
+                    >
+                      <Select
+                        showSearch
+                        optionFilterProp="label"
+                        placeholder={watchedGroupId ? '选择分组内卫星' : '请先选择归属分组'}
+                        options={memberSelectOptions}
+                        disabled={!watchedGroupId || memberSelectOptions.length === 0}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
               </Col>
             </Row>
             <Form.Item label="描述" name="description">
@@ -299,33 +406,7 @@ export function FilterTemplateEditor() {
             </Form.Item>
           </Card>
 
-          <Card
-            type="inner"
-            title="1. 有效时间段提取规则"
-            extra={
-              <Space>
-                <Text type="secondary">参考卫星（仅用于参数候选）：</Text>
-                <Select
-                  style={{ width: 220 }}
-                  allowClear
-                  placeholder="选择参考卫星"
-                  options={satellites.map((sat) => ({
-                    value: `${sat.tasookNo}||${sat.satelliteNo}`,
-                    label: `${sat.tasookNo} / ${sat.satelliteNo}`
-                  }))}
-                  onChange={(v) => {
-                    if (!v) {
-                      setReferenceSatellite(null);
-                      return;
-                    }
-                    const [t, s] = v.split('||');
-                    setReferenceSatellite({ tasookNo: t, satelliteNo: s });
-                  }}
-                />
-              </Space>
-            }
-            style={{ marginBottom: 16 }}
-          >
+          <Card type="inner" title="1. 有效时间段提取规则" style={{ marginBottom: 16 }}>
             <Space style={{ marginBottom: 12 }}>
               <Text type="secondary">条件之间的逻辑算子：</Text>
               <Select

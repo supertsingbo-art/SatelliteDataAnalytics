@@ -203,6 +203,21 @@ public sealed class SatelliteGroupService(
             .ToArray();
     }
 
+    /// <summary>
+    /// 判断卫星是否出现在该分组及其所有后代分组下的成员列表中（与筛选模板「归属分组」语义一致）。
+    /// </summary>
+    public async Task<bool> IsSatelliteInGroupSubtreeAsync(
+        Guid groupId,
+        string tasookNo,
+        string satelliteNo,
+        CancellationToken cancellationToken)
+    {
+        var members = await GetMembersAsync(groupId, includeDescendants: true, cancellationToken);
+        return members.Any(m =>
+            string.Equals(m.TasookNo, tasookNo, StringComparison.Ordinal)
+            && string.Equals(m.SatelliteNo, satelliteNo, StringComparison.Ordinal));
+    }
+
     public async Task AddMembersAsync(
         Guid groupId,
         AddGroupMembersRequest request,

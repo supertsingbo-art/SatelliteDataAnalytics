@@ -78,6 +78,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
 {
     private readonly Dictionary<(string TasookNo, string SatelliteNo), SatelliteCache> _satellites = [];
     private readonly Dictionary<(string TasookNo, string SatelliteNo, string ParamId), ParamCache> _parameters = [];
+    private readonly Dictionary<(string TasookNo, string SatelliteNo, string CommandId), CommandCache> _commands = [];
     private readonly Dictionary<(string TasookNo, string SatelliteNo, string TestBatchId), TestBatchCache> _testBatches = [];
 
     public Task UpsertSatelliteAsync(SatelliteCache satellite, CancellationToken cancellationToken)
@@ -91,6 +92,27 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
         foreach (var parameter in parameters)
         {
             _parameters[(parameter.TasookNo, parameter.SatelliteNo, parameter.ParamId)] = parameter;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertCommandsAsync(
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyCollection<CommandCache> commands,
+        CancellationToken cancellationToken)
+    {
+        foreach (var key in _commands.Keys
+                     .Where(k => k.TasookNo == tasookNo && k.SatelliteNo == satelliteNo)
+                     .ToList())
+        {
+            _commands.Remove(key);
+        }
+
+        foreach (var command in commands)
+        {
+            _commands[(command.TasookNo, command.SatelliteNo, command.CommandId)] = command;
         }
 
         return Task.CompletedTask;
@@ -141,6 +163,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
     {
         _satellites.Clear();
         _parameters.Clear();
+        _commands.Clear();
         _testBatches.Clear();
         return Task.CompletedTask;
     }

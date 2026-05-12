@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using SatelliteData.Application.Algorithms;
 using SatelliteData.Application.Templates;
 using SatelliteData.Domain.Templates;
 
@@ -6,7 +7,9 @@ namespace SatelliteData.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/algorithms")]
-public sealed class AlgorithmRegistryController(AlgorithmRegistryService registryService) : ControllerBase
+public sealed class AlgorithmRegistryController(
+    AlgorithmRegistryService registryService,
+    AlgorithmPackageUploadService uploadService) : ControllerBase
 {
     [HttpGet("registry")]
     public async Task<ActionResult<ApiResponse<IReadOnlyCollection<AlgorithmRegistryEntry>>>> GetRegistry(
@@ -38,5 +41,28 @@ public sealed class AlgorithmRegistryController(AlgorithmRegistryService registr
             return NotFound(ApiResponse<object>.Fail(TemplateErrorCodes.AlgorithmPackageNotFound, "算法包不存在", HttpContext));
         }
         return Ok(ApiResponse<AlgorithmPackageDetail>.Ok(detail, HttpContext));
+    }
+
+    [HttpPost("packages/upload")]
+    [RequestSizeLimit(52_428_800)]
+    public async Task<ActionResult<ApiResponse<object>>> UploadPackage(
+        IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        if (file.Length == 0)
+        {
+            return BadRequest(ApiResponse<object>.Fail(TemplateErrorCodes.AlgorithmPackageManifestInvalid, "空文件", HttpContext));
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var id = await uploadService.UploadZipAsync(stream, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<object>.Ok(new { package_id = id }, HttpContext));
+        }
+        catch (TemplateGovernanceException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
     }
 }

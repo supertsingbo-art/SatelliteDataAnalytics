@@ -35,6 +35,9 @@ export function SatellitesPage() {
   const [syncing, setSyncing] = useState(false);
   const [drawer, setDrawer] = useState<SatelliteCache | null>(null);
   const [params, setParams] = useState<PagedResult<ParamCache> | null>(null);
+  const [paramPageNo, setParamPageNo] = useState(1);
+  const [paramPageSize, setParamPageSize] = useState(20);
+  const [paramsLoading, setParamsLoading] = useState(false);
   const [paramKeyword, setParamKeyword] = useState('');
   const [phases, setPhases] = useState<TestPhase[]>([]);
   const [mongoSummary, setMongoSummary] = useState<MongoConnectionSummary | null>(null);
@@ -61,7 +64,7 @@ export function SatellitesPage() {
       setLastSync(result);
       const text =
         result.status === 'Succeeded'
-          ? `资产同步完成：${result.satelliteCount} 颗卫星 / ${result.parameterCount} 个参数 / ${result.testBatchCount} 个测试阶段`
+          ? `资产同步完成：${result.satelliteCount} 颗卫星 / ${result.parameterCount} 条参数 / ${result.commandCount} 条指令 / ${result.testBatchCount} 个测试阶段`
           : `资产同步状态 ${result.status}：${result.failedSatelliteCount} 颗卫星部分失败`;
       if (result.status === 'Succeeded') {
         message.success(text);
@@ -84,17 +87,37 @@ export function SatellitesPage() {
     reload();
   };
 
+  const fetchParamsPage = async (
+    satellite: SatelliteCache,
+    pageNo: number,
+    pageSize: number,
+    keyword: string
+  ) => {
+    setParamsLoading(true);
+    try {
+      const result = await assetsApi.listParams(satellite.tasookNo, satellite.satelliteNo, {
+        keyword: keyword.trim() || undefined,
+        pageNo,
+        pageSize
+      });
+      setParams(result);
+    } finally {
+      setParamsLoading(false);
+    }
+  };
+
   const openDrawer = async (record: SatelliteCache) => {
     setDrawer(record);
     setParams(null);
     setPhases([]);
     setMongoSummary(null);
     setParamKeyword('');
-    const [pageData, phaseList] = await Promise.all([
-      assetsApi.listParams(record.tasookNo, record.satelliteNo, { pageNo: 1, pageSize: 20 }),
+    setParamPageNo(1);
+    setParamPageSize(20);
+    const [, phaseList] = await Promise.all([
+      fetchParamsPage(record, 1, 20, ''),
       assetsApi.listTestPhases(record.tasookNo, record.satelliteNo)
     ]);
-    setParams(pageData);
     setPhases(phaseList);
     if (record.mongoInfo) {
       try {
@@ -108,12 +131,18 @@ export function SatellitesPage() {
 
   const refreshParams = async () => {
     if (!drawer) return;
-    const result = await assetsApi.listParams(drawer.tasookNo, drawer.satelliteNo, {
-      keyword: paramKeyword,
-      pageNo: 1,
-      pageSize: 20
-    });
-    setParams(result);
+    setParamPageNo(1);
+    await fetchParamsPage(drawer, 1, paramPageSize, paramKeyword);
+  };
+
+  const closeDrawer = () => {
+    setDrawer(null);
+    setParams(null);
+    setParamKeyword('');
+    setParamPageNo(1);
+    setParamPageSize(20);
+    setPhases([]);
+    setMongoSummary(null);
   };
 
   return (
@@ -146,8 +175,10 @@ export function SatellitesPage() {
       }
     >
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-        本页展示 satellite_cache、param_cache、test_batch_cache 三张表的同步快照。同步流程严格遵循
-        6.1.2「全量卫星 → 每星参数 → 每星测试阶段 → 每星 Mongo 配置」四步骤；测试阶段语义与 test_batch_cache 表一致。
+        本页展示 satellite_cache、param_cache、command_cache、test_batch_cache 的同步快照。流程为：全量卫星 → 每星参数
+        （POST /api/mass-data/basic/parameters）→ 每星指令（POST /api/mass-data/basic/commands）→ 每星测试阶段 → 每星
+        Mongo 配置。两列「参数 / 指令同步总量」为最近一次成功写入缓存的条数；在 appsettings 中将 AssetCache:UsePostgreSql
+        设为 true 时，数据写入 ConnectionStrings:Postgres 所配置的库（如 demo_db）中的同名表。
       </Text>
 
       {lastSync && (
@@ -164,7 +195,8 @@ export function SatellitesPage() {
           message={`最近一次同步：${dayjs(lastSync.syncedAt).format('YYYY-MM-DD HH:mm:ss')} / 状态 ${lastSync.status}`}
           description={
             <span>
-              卫星 {lastSync.satelliteCount} 颗 · 参数 {lastSync.parameterCount} 条 · 测试阶段 {lastSync.testBatchCount} 段
+              卫星 {lastSync.satelliteCount} 颗 · 参数 {lastSync.parameterCount} 条 · 指令 {lastSync.commandCount} 条 · 测试阶段{' '}
+              {lastSync.testBatchCount} 段
               {lastSync.failedSatelliteCount > 0 && (
                 <span style={{ marginLeft: 8 }}>· 失败星 {lastSync.failedSatelliteCount}</span>
               )}
@@ -196,6 +228,18 @@ export function SatellitesPage() {
             title: '研制阶段 db_stage',
             dataIndex: 'dbStage',
             render: (v) => (v ? <Tag>{v}</Tag> : <Text type="secondary">-</Text>)
+          },
+          {
+            title: '参数同步总量',
+            dataIndex: 'cachedParameterCount',
+            width: 120,
+            render: (v: number | undefined) => (v ?? 0).toLocaleString()
+          },
+          {
+            title: '指令同步总量',
+            dataIndex: 'cachedCommandCount',
+            width: 120,
+            render: (v: number | undefined) => (v ?? 0).toLocaleString()
           },
           {
             title: 'Mongo 同步状态',
@@ -230,7 +274,7 @@ export function SatellitesPage() {
         width={720}
         title={drawer ? `${drawer.tasookNo} / ${drawer.satelliteNo} · ${drawer.satelliteName}` : ''}
         open={!!drawer}
-        onClose={() => setDrawer(null)}
+        onClose={closeDrawer}
         destroyOnClose
       >
         {drawer && (
@@ -255,8 +299,28 @@ export function SatellitesPage() {
                     <Table<ParamCache>
                       size="small"
                       rowKey={(record) => record.paramId}
-                      pagination={{ pageSize: 20 }}
+                      loading={paramsLoading}
                       dataSource={params?.items ?? []}
+                      pagination={{
+                        current: paramPageNo,
+                        pageSize: paramPageSize,
+                        total: params?.total ?? 0,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['20', '50', '100', '200', '500'],
+                        showTotal: (total) => `共 ${total} 条`,
+                        onChange: (page, size) => {
+                          if (!drawer) return;
+                          setParamPageNo(page);
+                          setParamPageSize(size);
+                          void fetchParamsPage(drawer, page, size, paramKeyword);
+                        },
+                        onShowSizeChange: (_current, size) => {
+                          if (!drawer) return;
+                          setParamPageNo(1);
+                          setParamPageSize(size);
+                          void fetchParamsPage(drawer, 1, size, paramKeyword);
+                        }
+                      }}
                       columns={[
                         { title: 'param_id', dataIndex: 'paramId' },
                         { title: '名称', dataIndex: 'paramName' },

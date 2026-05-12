@@ -39,6 +39,10 @@ export interface SatelliteCache {
   mongoInfo: MongoConnectionInfo | null;
   sourceVersion: string | null;
   lastSyncedAt: string;
+  /** 最近一次从 POST /api/mass-data/basic/parameters 同步并写入缓存（含 PostgreSQL）的条数 */
+  cachedParameterCount: number;
+  /** 最近一次从 POST /api/mass-data/basic/commands 同步并写入缓存（含 PostgreSQL）的条数 */
+  cachedCommandCount: number;
 }
 
 export interface ParamCache {
@@ -75,9 +79,11 @@ export interface SatelliteSyncOutcome {
   tasookNo: string;
   satelliteNo: string;
   parametersSucceeded: boolean;
+  commandsSucceeded: boolean;
   testPhasesSucceeded: boolean;
   mongoConfigSucceeded: boolean;
   parameterCount: number;
+  commandCount: number;
   testPhaseCount: number;
   failureReason: string | null;
   fullySucceeded: boolean;
@@ -87,6 +93,7 @@ export interface AssetSyncResult {
   status: 'Succeeded' | 'PartialSucceeded' | 'Failed';
   satelliteCount: number;
   parameterCount: number;
+  commandCount: number;
   testBatchCount: number;
   failedSatelliteCount: number;
   syncedAt: string;
@@ -136,6 +143,11 @@ export interface FilterTemplateDetail {
   configJson: FilterTemplateConfigJson;
 }
 
+export interface FilterTemplateResolvedDetail {
+  configJson: FilterTemplateConfigJson;
+  resolutionWarnings: string[];
+}
+
 export type RuleOperator = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'between';
 
 export interface RuleLeaf {
@@ -166,7 +178,13 @@ export interface FilterTargetParam {
 }
 
 export interface FilterTemplateConfigJson {
-  scope: { groupId: string; groupPath?: string };
+  scope: {
+    groupId: string;
+    groupPath?: string;
+    /** 筛选条件与目标参数所绑定的参考卫星（海量 param_cache 主键）；旧版本可能缺失 */
+    referenceTasookNo?: string;
+    referenceSatelliteNo?: string;
+  };
   timeWindow: {
     mode: 'TEST_BATCH' | 'CUSTOM';
     bufferBeforeSeconds?: number;
@@ -265,4 +283,59 @@ export interface AlgorithmRegistryEntry {
   paramsSchemaJson: unknown;
   resourcesJson: unknown;
   description: string | null;
+}
+
+export type AlgorithmPackageStatus =
+  | 'Draft'
+  | 'SandboxValidating'
+  | 'Published'
+  | 'Rejected'
+  | 'Archived';
+
+export interface AlgorithmPackageView {
+  packageId: string;
+  algorithmCode: string;
+  displayName: string;
+  version: string;
+  runtime: AlgorithmRuntime;
+  category: AlgorithmCategory;
+  status: AlgorithmPackageStatus;
+  description: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+}
+
+export interface JobAccepted {
+  jobId: string;
+  runId: string;
+  status: string;
+}
+
+
+export interface JobStatus {
+  run_id: string;
+  job_id: string;
+  status: string;
+  progress_percent: number;
+  current_step: string | null;
+  error_code: string | null;
+  error_msg: string | null;
+}
+
+/** GET /api/v1/tasks 列表项 */
+export interface TaskRunListItem {
+  run_id: string;
+  job_id: string;
+  job_type: string;
+  trigger_type: string;
+  status: string;
+  tasook_no: string;
+  satellite_no: string;
+  test_batch_id: string | null;
+  progress_percent: number;
+  current_step: string | null;
+  created_at: string;
+  end_time: string | null;
 }
