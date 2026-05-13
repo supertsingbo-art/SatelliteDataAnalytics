@@ -27,6 +27,7 @@ public sealed record SatelliteGroupNode(
     DateTimeOffset UpdatedAt,
     IReadOnlyList<SatelliteGroupNode> Children);
 
+
 public sealed record SatelliteGroupMemberDto(
     string TasookNo,
     string SatelliteNo,

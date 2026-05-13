@@ -1,4 +1,5 @@
 using SatelliteData.Domain.Templates;
+using System.Threading.Tasks;
 
 namespace SatelliteData.Application.Templates;
 
@@ -75,7 +76,7 @@ public sealed class SatelliteGroupService(
         var now = DateTimeOffset.UtcNow;
         var group = new SatelliteGroup(
             groupId,
-            request.ParentGroupId,
+            request.ParentGroupId??Guid.Empty,
             request.GroupName.Trim(),
             path,
             request.SortOrder,
@@ -341,12 +342,14 @@ public sealed class SatelliteGroupService(
     {
         return name.Trim().Replace('/', '_').Replace('\\', '_');
     }
+     
 
-    private static IReadOnlyList<SatelliteGroupNode> BuildTree(
+    private static   IReadOnlyList<SatelliteGroupNode> BuildTree(
         IReadOnlyCollection<SatelliteGroup> groups,
         Dictionary<Guid, int> directCounts,
         Dictionary<Guid, int> descendantCounts)
     {
+        // fqb test
         var byParent = groups
             .GroupBy(g => g.ParentGroupId)
             .ToDictionary(g => g.Key, g => g.OrderBy(x => x.SortOrder).ThenBy(x => x.GroupName, StringComparer.Ordinal).ToList());
@@ -366,7 +369,13 @@ public sealed class SatelliteGroupService(
                 .ToList();
         }
 
-        return Build(null);
+        return Build(Guid.Empty);
+
+        SatelliteGroup gp = groups.First();
+        SatelliteGroupNode testnode = new SatelliteGroupNode(gp.GroupId, gp.ParentGroupId, gp.GroupName, gp.GroupPath,
+            gp.SortOrder, gp.Description, 0, 0, gp.CreatedAt, gp.UpdatedAt, new List<SatelliteGroupNode>());
+        
+        return new List<SatelliteGroupNode>() { testnode };   
     }
 
     private static SatelliteGroupNode ToNode(

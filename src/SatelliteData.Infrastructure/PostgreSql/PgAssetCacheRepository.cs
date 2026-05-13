@@ -470,7 +470,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         var raw = ParseJson(rawText);
 
         return new SatelliteCache(
-            reader.GetString(reader.GetOrdinal("tasook_no")),
+            reader.GetString(reader.GetOrdinal("tasook_no")), 
             reader.GetString(reader.GetOrdinal("satellite_no")),
             reader.GetString(reader.GetOrdinal("satellite_name")),
             reader.IsDBNull(reader.GetOrdinal("satellite_type")) ? null : reader.GetString(reader.GetOrdinal("satellite_type")),

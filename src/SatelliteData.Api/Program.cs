@@ -26,10 +26,12 @@ builder.Services.AddSwaggerGen(options =>
         Description = "卫星测试数据预处理与数据分析平台后端接口"
     });
 });
-builder.Services
-    .AddAuthentication("Bearer")
-    .AddScheme<AuthenticationSchemeOptions, BearerTokenAuthenticationHandler>("Bearer", _ => { });
-builder.Services.AddAuthorization();
+
+//fqb temp, 不用授权
+//builder.Services
+//    .AddAuthentication("Bearer")
+//    .AddScheme<AuthenticationSchemeOptions, BearerTokenAuthenticationHandler>("Bearer", _ => { });
+//builder.Services.AddAuthorization();
 
 var app = builder.Build();
 

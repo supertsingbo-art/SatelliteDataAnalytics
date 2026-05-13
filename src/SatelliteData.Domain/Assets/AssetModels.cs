@@ -29,7 +29,7 @@ public sealed record DataSourceConfig(
 /// 与 <paramref name="TasookNo"/>、<paramref name="SatelliteNo"/> 共同构成参数 / 阶段 / Mongo 三个二级接口的入参三元组。
 /// </summary>
 public sealed record SatelliteCache(
-    string TasookNo,
+    string TasookNo, 
     string SatelliteNo,
     string SatelliteName,
     string? SatelliteType,

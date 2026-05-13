@@ -12,7 +12,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
 
     public async Task<IReadOnlyCollection<SatelliteCache>> GetSatellitesAsync(CancellationToken cancellationToken)
     {
-        using var response = await httpClient.GetAsync("/api/mass-data/satellites", cancellationToken);
+        using var response = await httpClient.GetAsync($"{_options.MassDataApiBaseUrl}/api/mass-data/satellites", cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
@@ -25,7 +25,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
                 var satelliteNo = item.GetStringOrNull("satelliteNo", "satNo", "satno") ?? "";
                 var dbStage = item.GetStringOrNull("dbStage", "stage") ?? _options.DefaultDbStage;
                 return new SatelliteCache(
-                    tasookNo,
+                    tasookNo, 
                     satelliteNo,
                     item.GetStringOrNull("satelliteName", "satName", "satname", "name") ?? satelliteNo,
                     item.GetStringOrNull("satelliteType", "satType", "type"),
@@ -48,7 +48,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         CancellationToken cancellationToken)
     {
         var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
-        using var response = await httpClient.PostAsJsonAsync("/api/mass-data/basic/parameters", request, cancellationToken);
+        using var response = await httpClient.PostAsJsonAsync($"{_options.MassDataApiBaseUrl}/api/mass-data/basic/parameters", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
@@ -83,7 +83,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         CancellationToken cancellationToken)
     {
         var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
-        using var response = await httpClient.PostAsJsonAsync("/api/mass-data/basic/commands", request, cancellationToken);
+        using var response = await httpClient.PostAsJsonAsync($"{_options.MassDataApiBaseUrl}/api/mass-data/basic/commands", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
@@ -114,7 +114,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         CancellationToken cancellationToken)
     {
         var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
-        using var response = await httpClient.PostAsJsonAsync("/api/mass-data/satellite/config", request, cancellationToken);
+        using var response = await httpClient.PostAsJsonAsync($"{_options.MassDataApiBaseUrl}/api/mass-data/satellite/config", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);

@@ -1,18 +1,20 @@
-using System.Net.Http.Json;
-using System.Text.Json;
+using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
 using SatelliteData.Domain.Assets;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace SatelliteData.Infrastructure.HttpClients;
 
-public sealed class SatelliteAssetApiClient(HttpClient httpClient) : ISatelliteAssetProvider
+public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<AssetProviderOptions> options) : ISatelliteAssetProvider
 {
+    private readonly AssetProviderOptions _options = options.Value;
     public async Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(
         string tasookNo,
         string satelliteNo,
         CancellationToken cancellationToken)
     {
-        var url = $"/api/satellite-assets/satellites/{Uri.EscapeDataString(tasookNo)}/{Uri.EscapeDataString(satelliteNo)}/test-phases";
+        var url = $"{_options.SatelliteAssetApiBaseUrl}/api/satellite-assets/satellites/{Uri.EscapeDataString(tasookNo)}/{Uri.EscapeDataString(satelliteNo)}/test-phases";
 
         using var response = await httpClient.GetAsync(url, cancellationToken);
         response.EnsureSuccessStatusCode();
