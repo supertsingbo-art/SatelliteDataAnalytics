@@ -22,7 +22,7 @@ const { Text } = Typography;
 
 const SOURCE_TYPE_OPTIONS: { value: DataSourceConfig['sourceType']; label: string }[] = [
   { value: 'MASS_DATA_API', label: '海量数据接口服务' },
-  { value: 'SATELLITE_ASSET_API', label: '卫星资产服务' },
+  { value: 'SATELLITE_ASSET_API', label: '卫星测试流程规划服务' },
   { value: 'CLICKHOUSE', label: 'ClickHouse 分析库' },
   { value: 'MINIO', label: 'MinIO 对象存储' },
   { value: 'PG_META', label: 'PostgreSQL 元数据库' }
@@ -30,7 +30,7 @@ const SOURCE_TYPE_OPTIONS: { value: DataSourceConfig['sourceType']; label: strin
 
 const SOURCE_USAGE: Record<DataSourceConfig['sourceType'], string> = {
   MASS_DATA_API: '提供卫星列表、参数元数据、按星 MongoDB 连接配置',
-  SATELLITE_ASSET_API: '提供按星测试阶段（编号、阶段名、起止时间）',
+  SATELLITE_ASSET_API: '提供按星测试阶段（teststagename、fromdt、todt；POST /api/testplan/teststages）',
   CLICKHOUSE: '高品质明细 hq_param_point、算法结果 algo_result 等表',
   MINIO: '算法包、报告与 ML 数据集快照对象存储',
   PG_META: '平台元数据 / 任务血缘 / 模板治理'

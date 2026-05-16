@@ -19,7 +19,7 @@ public sealed class InMemorySatelliteGroupRepository : ISatelliteGroupRepository
         var now = DateTimeOffset.UtcNow;
         var root = new SatelliteGroup(
             rootId,
-            ParentGroupId: Guid.Empty,// fqb Guid.Parse("98ab5a97-75cb-47ea-9f62-7989fda87ee5"),
+            ParentGroupId: null,
             GroupName: SatelliteGroupConstants.DefaultRootName,
             GroupPath: SatelliteGroupConstants.DefaultRootPath,
             SortOrder: 0,

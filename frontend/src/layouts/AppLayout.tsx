@@ -7,10 +7,10 @@ const { Sider, Header, Content } = Layout;
 const menuItems = [
   {
     key: '/assets',
-    label: '资产配置中心',
+    label: '数据源配置中心',
     children: [
       { key: '/assets/sources', label: '数据源配置' },
-      { key: '/assets/satellites', label: '卫星资产缓存' },
+      { key: '/assets/satellites', label: '数据同步' },
       { key: '/assets/groups', label: '卫星分组管理' }
     ]
   },
@@ -55,9 +55,9 @@ export function AppLayout() {
 
   const headerTitle = useMemo(() => {
     const path = location.pathname;
-    if (path.startsWith('/assets/sources')) return '资产配置中心 / 数据源配置';
-    if (path.startsWith('/assets/satellites')) return '资产配置中心 / 卫星资产缓存';
-    if (path.startsWith('/assets/groups')) return '资产配置中心 / 卫星分组管理';
+    if (path.startsWith('/assets/sources')) return '数据源配置中心 / 数据源配置';
+    if (path.startsWith('/assets/satellites')) return '数据源配置中心 / 数据同步';
+    if (path.startsWith('/assets/groups')) return '数据源配置中心 / 卫星分组管理';
     if (path.startsWith('/templates/filters')) return '模板治理 / 筛选模板';
     if (path.startsWith('/templates/algorithms')) return '模板治理 / 算法模板';
     if (path.startsWith('/algorithms/registry')) return '算法仓库 / 内置算法注册表';

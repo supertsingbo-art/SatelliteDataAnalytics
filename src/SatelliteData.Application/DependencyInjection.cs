@@ -14,7 +14,7 @@ public static class DependencyInjection
         services.AddScoped<OAuthTokenService>();
         services.AddScoped<DataScopeAuthorizer>();
 
-        // 资产配置中心（6.1）
+        // 数据源配置中心（6.1）
         services.AddScoped<DataSourceConfigService>();
         services.AddScoped<AssetSyncService>();
         services.AddScoped<AssetQueryService>();

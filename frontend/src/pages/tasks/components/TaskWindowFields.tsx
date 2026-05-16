@@ -52,7 +52,7 @@ export function TaskWindowFields({ form }: Props) {
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       <Typography.Text type="secondary">
-        测试阶段与时间来自资产缓存接口（与 6.1 卫星资产适配一致）；可快捷填入后再在下方时间范围内手动调整。
+        测试阶段与时间来自资产缓存（由卫星测试流程规划服务 POST /api/testplan/teststages 同步）；可快捷填入后再手动调整时间范围。
       </Typography.Text>
       <Space wrap>
         <Button type="default" onClick={loadPhases} loading={loading}>

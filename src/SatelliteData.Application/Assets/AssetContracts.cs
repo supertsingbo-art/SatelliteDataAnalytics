@@ -25,7 +25,7 @@ public sealed record PagedResult<T>(
     int Total,
     IReadOnlyCollection<T> Items);
 
-/// <summary>卫星资产列表项：含研制阶段标签（来自 <c>test_batch_cache</c> / 卫星资产 test-phases）。</summary>
+/// <summary>卫星列表项：含测试阶段标签（来自 <c>test_batch_cache</c> / 卫星测试流程规划 <c>POST /api/testplan/teststages</c>）。</summary>
 public sealed record SatelliteListItem(
     string TasookNo,
     string? TasookName,
@@ -79,7 +79,7 @@ public interface IAssetCacheRepository
 
     Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 
-    /// <summary>按星聚合研制阶段名称（<c>test_batch_cache.scenario</c>，去重、按最近阶段时间倒序）。</summary>
+    /// <summary>按星聚合测试阶段名称（<c>test_batch_cache.scenario</c>，去重、按最近阶段时间倒序）。</summary>
     Task<IReadOnlyDictionary<(string TasookNo, string SatelliteNo), IReadOnlyList<string>>> GetDevelopmentPhaseLabelsBySatelliteAsync(
         CancellationToken cancellationToken);
 
@@ -88,7 +88,7 @@ public interface IAssetCacheRepository
 
 /// <summary>
 /// 海量数据接口。仅服务于 6.1.2 同步流程的 Step 1 / 2 / 2b / 4。
-/// Step 3「测试阶段」由 <see cref="ISatelliteAssetProvider"/> 提供。
+/// Step 3「测试阶段」由 <see cref="ISatelliteAssetProvider"/>（卫星测试流程规划服务）提供。
 /// </summary>
 public interface IMassDataAssetProvider
 {
@@ -114,12 +114,13 @@ public interface IMassDataAssetProvider
 }
 
 /// <summary>
-/// 卫星资产接口。仅服务于 Step 3「测试阶段」拉取。
+/// 卫星测试流程规划服务适配。仅服务于 Step 3「测试阶段」拉取（<c>POST /api/testplan/teststages</c>）。
 /// </summary>
 public interface ISatelliteAssetProvider
 {
     Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(
         string tasookNo,
         string satelliteNo,
+        string? dbStage,
         CancellationToken cancellationToken);
 }

@@ -184,7 +184,7 @@ public sealed class AssetSyncService(
 
         try
         {
-            var phases = await satelliteAssetProvider.GetTestPhasesAsync(tasookNo, satelliteNo, cancellationToken);
+            var phases = await satelliteAssetProvider.GetTestPhasesAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
             await cacheRepository.UpsertTestBatchesAsync(phases, cancellationToken);
             phaseCount = phases.Count;
             phasesOk = true;

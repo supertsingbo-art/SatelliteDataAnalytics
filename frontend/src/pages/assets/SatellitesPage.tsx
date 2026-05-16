@@ -158,7 +158,7 @@ export function SatellitesPage() {
 
   return (
     <Card
-      title="卫星资产缓存"
+      title="数据同步"
       extra={
         <Space>
           <Input.Search
@@ -247,7 +247,7 @@ export function SatellitesPage() {
             render: (v) => (v ? <Tag color="processing">{v}</Tag> : <Text type="secondary">-</Text>)
           },
           {
-            title: '研制阶段',
+            title: '测试阶段',
             dataIndex: 'developmentPhases',
             width: 260,
             render: (phases: string[] | undefined) => {
@@ -380,7 +380,7 @@ export function SatellitesPage() {
               },
               {
                 key: 'phases',
-                label: `研制阶段 (${phases.length})`,
+                label: `测试阶段 (${phases.length})`,
                 children: (
                   <>
                     {phases.length > 0 ? (
@@ -399,7 +399,7 @@ export function SatellitesPage() {
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message="暂无研制阶段，请执行资产同步（卫星资产 test-phases → test_batch_cache）"
+                        message="暂无测试阶段，请执行同步（卫星测试流程规划 POST /api/testplan/teststages → test_batch_cache）"
                       />
                     )}
                     <Table<TestPhase>
@@ -409,7 +409,7 @@ export function SatellitesPage() {
                       dataSource={phases}
                       columns={[
                         {
-                          title: '研制阶段',
+                          title: '测试阶段',
                           dataIndex: 'scenario',
                           render: (v, record, index) => (
                             <Tag color={DEV_PHASE_TAG_COLORS[index % DEV_PHASE_TAG_COLORS.length]}>

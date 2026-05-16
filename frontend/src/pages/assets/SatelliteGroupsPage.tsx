@@ -15,6 +15,7 @@ import {
   Table,
   Tag,
   Tree,
+  TreeSelect,
   Typography,
   message
 } from 'antd';
@@ -31,6 +32,18 @@ interface AntTreeNode {
   title: React.ReactNode;
   children?: AntTreeNode[];
   raw: SatelliteGroupNode;
+}
+
+function buildParentTreeOptions(
+  nodes: SatelliteGroupNode[],
+  disabledId?: string
+): { value: string; title: string; disabled?: boolean; children?: ReturnType<typeof buildParentTreeOptions> }[] {
+  return nodes.map((node) => ({
+    value: node.groupId,
+    title: node.groupName,
+    disabled: node.groupId === disabledId,
+    children: node.children.length > 0 ? buildParentTreeOptions(node.children, disabledId) : undefined
+  }));
 }
 
 function toTreeNodes(nodes: SatelliteGroupNode[]): AntTreeNode[] {
@@ -57,6 +70,8 @@ export function SatelliteGroupsPage() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState<'create' | 'edit'>('create');
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [parentLocked, setParentLocked] = useState(false);
   const [form] = Form.useForm<CreateSatelliteGroupRequest & { sortOrder: number }>();
 
   const [memberModalOpen, setMemberModalOpen] = useState(false);
@@ -94,11 +109,18 @@ export function SatelliteGroupsPage() {
 
   const treeNodes = useMemo(() => toTreeNodes(tree), [tree]);
 
+  const parentTreeOptions = useMemo(
+    () => buildParentTreeOptions(tree, editingGroupId ?? undefined),
+    [tree, editingGroupId]
+  );
+
   const openCreate = (parent?: SatelliteGroupNode) => {
     setEditorMode('create');
+    setEditingGroupId(null);
+    setParentLocked(Boolean(parent));
     form.resetFields();
     form.setFieldsValue({
-      parentGroupId: parent?.groupId ?? selected?.groupId ?? null,
+      parentGroupId: parent?.groupId ?? null,
       sortOrder: 0,
       groupName: '',
       description: undefined
@@ -108,6 +130,8 @@ export function SatelliteGroupsPage() {
 
   const openEdit = (node: SatelliteGroupNode) => {
     setEditorMode('edit');
+    setEditingGroupId(node.groupId);
+    setParentLocked(node.parentGroupId === null);
     form.setFieldsValue({
       parentGroupId: node.parentGroupId,
       groupName: node.groupName,
@@ -119,12 +143,16 @@ export function SatelliteGroupsPage() {
 
   const submit = async () => {
     const values = await form.validateFields();
+    const rawParent = values.parentGroupId;
+    const parentGroupId =
+      typeof rawParent === 'string' && rawParent.trim() ? rawParent.trim() : null;
+    const payload = { ...values, parentGroupId };
     if (editorMode === 'create') {
-      await groupsApi.create(values);
+      await groupsApi.create(payload);
       message.success('已创建分组');
     } else if (selected) {
       await groupsApi.update(selected.groupId, {
-        parentGroupId: values.parentGroupId ?? null,
+        parentGroupId,
         groupName: values.groupName,
         sortOrder: values.sortOrder,
         description: values.description ?? null
@@ -296,8 +324,20 @@ export function SatelliteGroupsPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="父分组 ID（留空表示挂在根下）" name="parentGroupId">
-            <Input placeholder="可选" />
+          <Form.Item
+            label="父分组"
+            name="parentGroupId"
+            tooltip="留空表示挂在默认根分组下；根分组本身无父级"
+          >
+            <TreeSelect
+              allowClear={!parentLocked}
+              disabled={parentLocked}
+              placeholder="默认根分组"
+              treeData={parentTreeOptions}
+              treeDefaultExpandAll
+              showSearch
+              treeNodeFilterProp="title"
+            />
           </Form.Item>
           <Form.Item label="分组名" name="groupName" rules={[{ required: true, max: 256 }]}>
             <Input placeholder="例如：平台型号 A" />
@@ -334,7 +374,7 @@ export function SatelliteGroupsPage() {
             { title: '型号', dataIndex: 'tasookNo' },
             { title: '卫星', dataIndex: 'satelliteNo' },
             { title: '名称', dataIndex: 'satelliteName' },
-            { title: '研制阶段', dataIndex: 'dbStage' }
+            { title: '版本号', dataIndex: 'dbStage' }
           ]}
         />
       </Modal>

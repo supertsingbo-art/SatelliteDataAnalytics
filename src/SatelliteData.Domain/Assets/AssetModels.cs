@@ -5,6 +5,7 @@ namespace SatelliteData.Domain.Assets;
 public static class DataSourceTypes
 {
     public const string MassDataApi = "MASS_DATA_API";
+    /// <summary>卫星测试流程规划服务（配置枚举值保持 <c>SATELLITE_ASSET_API</c> 兼容）。</summary>
     public const string SatelliteAssetApi = "SATELLITE_ASSET_API";
     public const string ClickHouse = "CLICKHOUSE";
     public const string Minio = "MINIO";
@@ -25,7 +26,7 @@ public sealed record DataSourceConfig(
     DateTimeOffset UpdatedAt);
 
 /// <summary>
-/// 卫星资产缓存。<paramref name="DbStage"/> 取自海量接口 <c>satellites</c> 列表，
+/// 卫星测试流程规划相关缓存（卫星维度元数据）。<paramref name="DbStage"/> 取自海量接口 <c>satellites</c> 列表，
 /// 与 <paramref name="TasookNo"/>、<paramref name="SatelliteNo"/> 共同构成参数 / 阶段 / Mongo 三个二级接口的入参三元组。
 /// </summary>
 public sealed record SatelliteCache(

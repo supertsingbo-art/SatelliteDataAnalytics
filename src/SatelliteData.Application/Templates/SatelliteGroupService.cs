@@ -58,13 +58,9 @@ public sealed class SatelliteGroupService(
                 "分组名称不能为空");
         }
 
-        SatelliteGroup? parent = null;
-        if (request.ParentGroupId.HasValue)
-        {
-            parent = await EnsureExistsAsync(request.ParentGroupId.Value, cancellationToken);
-        }
+        var parent = await ResolveParentAsync(request.ParentGroupId, cancellationToken);
 
-        if (await groupRepository.SiblingNameExistsAsync(request.ParentGroupId, request.GroupName, null, cancellationToken))
+        if (await groupRepository.SiblingNameExistsAsync(parent.GroupId, request.GroupName, null, cancellationToken))
         {
             throw new TemplateGovernanceException(
                 TemplateErrorCodes.GroupSiblingNameDuplicated,
@@ -76,7 +72,7 @@ public sealed class SatelliteGroupService(
         var now = DateTimeOffset.UtcNow;
         var group = new SatelliteGroup(
             groupId,
-            request.ParentGroupId??Guid.Empty,
+            parent.GroupId,
             request.GroupName.Trim(),
             path,
             request.SortOrder,
@@ -100,10 +96,23 @@ public sealed class SatelliteGroupService(
             throw new TemplateGovernanceException(TemplateErrorCodes.GroupCircular, "分组不能以自身作为父分组");
         }
 
-        SatelliteGroup? newParent = null;
-        if (request.ParentGroupId.HasValue && request.ParentGroupId != existing.ParentGroupId)
+        if (existing.ParentGroupId is null && HasExplicitParent(request.ParentGroupId))
         {
-            newParent = await EnsureExistsAsync(request.ParentGroupId.Value, cancellationToken);
+            throw new TemplateGovernanceException(TemplateErrorCodes.GroupCircular, "默认根分组不能设置父分组");
+        }
+
+        SatelliteGroup? newParent = null;
+        Guid? storedParentId = existing.ParentGroupId;
+        if (existing.ParentGroupId is not null)
+        {
+            newParent = await ResolveParentAsync(request.ParentGroupId, cancellationToken);
+            storedParentId = newParent.GroupId;
+
+            if (newParent.GroupId == groupId)
+            {
+                throw new TemplateGovernanceException(TemplateErrorCodes.GroupCircular, "分组不能以自身作为父分组");
+            }
+
             if (newParent.GroupPath.StartsWith(existing.GroupPath, StringComparison.Ordinal))
             {
                 throw new TemplateGovernanceException(
@@ -111,24 +120,22 @@ public sealed class SatelliteGroupService(
                     "目标父分组位于当前分组的子树下，会形成循环");
             }
         }
-        else if (request.ParentGroupId == existing.ParentGroupId && existing.ParentGroupId.HasValue)
-        {
-            newParent = await EnsureExistsAsync(existing.ParentGroupId.Value, cancellationToken);
-        }
 
-        if (await groupRepository.SiblingNameExistsAsync(request.ParentGroupId, request.GroupName, groupId, cancellationToken))
+        if (await groupRepository.SiblingNameExistsAsync(storedParentId, request.GroupName, groupId, cancellationToken))
         {
             throw new TemplateGovernanceException(
                 TemplateErrorCodes.GroupSiblingNameDuplicated,
                 "同一父分组下已存在同名分组");
         }
 
-        var newPath = ResolvePath(newParent, request.GroupName);
+        var newPath = existing.ParentGroupId is null
+            ? existing.GroupPath
+            : ResolvePath(newParent!, request.GroupName);
         var now = DateTimeOffset.UtcNow;
 
         var updated = existing with
         {
-            ParentGroupId = request.ParentGroupId,
+            ParentGroupId = storedParentId,
             GroupName = request.GroupName.Trim(),
             SortOrder = request.SortOrder,
             Description = request.Description,
@@ -302,6 +309,25 @@ public sealed class SatelliteGroupService(
         return allMembers.Count(member => subtree.Contains(member.GroupId));
     }
 
+    private async Task<SatelliteGroup> ResolveParentAsync(Guid? parentGroupId, CancellationToken cancellationToken)
+    {
+        if (!HasExplicitParent(parentGroupId))
+        {
+            var root = await groupRepository.GetRootAsync(cancellationToken);
+            if (root is null)
+            {
+                throw new TemplateGovernanceException(TemplateErrorCodes.GroupNotFound, "根分组不存在，请先初始化分组数据");
+            }
+
+            return root;
+        }
+
+        return await EnsureExistsAsync(parentGroupId!.Value, cancellationToken);
+    }
+
+    private static bool HasExplicitParent(Guid? parentGroupId) =>
+        parentGroupId.HasValue && parentGroupId.Value != Guid.Empty;
+
     private async Task<SatelliteGroup> EnsureExistsAsync(Guid groupId, CancellationToken cancellationToken)
     {
         var group = await groupRepository.GetByIdAsync(groupId, cancellationToken);
@@ -344,22 +370,22 @@ public sealed class SatelliteGroupService(
     }
      
 
-    private static   IReadOnlyList<SatelliteGroupNode> BuildTree(
+    private static IReadOnlyList<SatelliteGroupNode> BuildTree(
         IReadOnlyCollection<SatelliteGroup> groups,
         Dictionary<Guid, int> directCounts,
         Dictionary<Guid, int> descendantCounts)
     {
-        // fqb test
         var byParent = groups
-            .GroupBy(g => g.ParentGroupId)
+            .GroupBy(g => TreeParentKey(g.ParentGroupId))
             .ToDictionary(g => g.Key, g => g.OrderBy(x => x.SortOrder).ThenBy(x => x.GroupName, StringComparer.Ordinal).ToList());
 
-        IReadOnlyList<SatelliteGroupNode> Build(Guid? parentId)
+        IReadOnlyList<SatelliteGroupNode> Build(Guid parentKey)
         {
-            if (!byParent.TryGetValue(parentId, out var siblings))
+            if (!byParent.TryGetValue(parentKey, out var siblings))
             {
                 return Array.Empty<SatelliteGroupNode>();
             }
+
             return siblings
                 .Select(group => ToNode(
                     group,
@@ -370,13 +396,10 @@ public sealed class SatelliteGroupService(
         }
 
         return Build(Guid.Empty);
-
-        SatelliteGroup gp = groups.First();
-        SatelliteGroupNode testnode = new SatelliteGroupNode(gp.GroupId, gp.ParentGroupId, gp.GroupName, gp.GroupPath,
-            gp.SortOrder, gp.Description, 0, 0, gp.CreatedAt, gp.UpdatedAt, new List<SatelliteGroupNode>());
-        
-        return new List<SatelliteGroupNode>() { testnode };   
     }
+
+    private static Guid TreeParentKey(Guid? parentGroupId) =>
+        parentGroupId is null || parentGroupId.Value == Guid.Empty ? Guid.Empty : parentGroupId.Value;
 
     private static SatelliteGroupNode ToNode(
         SatelliteGroup group,

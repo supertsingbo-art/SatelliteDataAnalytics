@@ -1,0 +1,138 @@
+
+目录
+ TOC \o "1-3" \h \z \u 1. 基本信息 PAGEREF _Toc229834245 \h 1
+2. 通用约定 PAGEREF _Toc229834246 \h 2
+2.1 卫星定位主键 PAGEREF _Toc229834247 \h 2
+2.2 时间字段 PAGEREF _Toc229834248 \h 2
+2.3 Web API 错误码约定 PAGEREF _Toc229834249 \h 2
+2.4 接口通用 Response 结构 PAGEREF _Toc229834250 \h 2
+3. 卫星基础测试数据管理 PAGEREF _Toc229834251 \h 3
+3.1 获取卫星测试阶段信息列表 PAGEREF _Toc229834252 \h 3
+本文档面向第三方调用方，详细说明 卫星测试流程规划服务 提供的 Web API。
+1. 基本信息
+项目
+说明
+Web API 基础路由
+/api/testplan
+支持格式
+JSON
+字符编码
+UTF-8
+2. 通用约定
+2.1 卫星定位主键
+多数接口都需要以下三元组唯一定位目标卫星：
+参数
+说明
+taskNo
+型号代号
+satNo
+卫星代号
+dbStage
+阶段代号
+2.2 时间字段
+Web API：DateTime（JSON 字符串，建议 ISO-8601 UTC，例如 2026-03-19T00:00:00Z）
+2.3 Web API 错误码约定
+状态码
+说明
+200
+成功
+400
+参数错误
+404
+卫星不存在
+408
+请求取消或超时
+500
+服务内部错误
+错误体示例：
+JSON
+{
+  "error": "错误摘要",
+  "detail": "详细错误信息"
+}
+ 
+2.4 接口通用 Response 结构
+Web API 大部分 Response Body 均为如下 JSON 结构之一：
+列表型响应：
+返回值字段
+字段类型
+字段说明
+datas
+array
+数据列表
+satNo
+string
+卫星代号（信封型）
+taskNo
+string
+型号代号（信封型）
+JSON
+{
+  "datas": [ ... ]
+}
+ 
+或（信封型）：
+JSON
+{
+  "satNo": "SAT_01",
+  "taskNo": "TASK_A",
+  "datas": [ ... ]
+}
+ 
+3. 卫星基础测试数据管理
+3.1 获取卫星测试阶段信息列表
+获取指定卫星的所有测试阶段的开始与结束时间列表。
+URL
+POST /api/testplan/teststages
+支持格式
+JSON
+HTTP请求方式
+POST
+参数
+参数名
+必选
+类型
+说明
+taskNo
+true
+string
+型号代号
+satNo
+true
+string
+卫星代号
+dbStage
+true
+string
+阶段代号
+返回结果
+JSON
+{
+  "datas": [
+    {
+      "teststagename ": "A1阶段",
+      "fromdt": "2026-01-19T00:00:10Z",  
+"todt": "2026-03-19T00:00:10Z", 
+},
+{
+      "teststagename ": "A2阶段",
+      "fromdt": "2027-01-19T00:00:10Z",  
+"todt": "2027-03-19T00:00:10Z", 
+}
+  ]
+}
+ 
+ 
+返回字段说明
+返回值字段
+字段类型
+字段说明
+teststagename
+string
+测试阶段名称
+fromdt
+DateTime
+开始时间
+todt
+DateTime
+结束时间

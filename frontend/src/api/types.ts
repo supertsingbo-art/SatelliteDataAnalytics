@@ -44,7 +44,7 @@ export interface SatelliteCache {
   cachedCommandCount: number;
 }
 
-/** 卫星列表项：含研制阶段（卫星资产 test-phases 同步至 test_batch_cache） */
+/** 卫星列表项：含测试阶段（卫星测试流程规划 teststages 同步至 test_batch_cache） */
 export interface SatelliteListItem {
   tasookNo: string;
   tasookName: string | null;
