@@ -3,6 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS satellite_cache (
     tasook_no varchar(64) NOT NULL,
+    tasook_name varchar(256),
     satellite_no varchar(64) NOT NULL,
     satellite_name varchar(256) NOT NULL,
     satellite_type varchar(128),
@@ -59,3 +60,4 @@ CREATE TABLE IF NOT EXISTS test_batch_cache (
 
 ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_parameter_count integer NOT NULL DEFAULT 0;
 ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_command_count integer NOT NULL DEFAULT 0;
+ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS tasook_name varchar(256);

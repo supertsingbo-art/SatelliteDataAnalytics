@@ -73,6 +73,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_parameter_count integer NOT NULL DEFAULT 0;
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_command_count integer NOT NULL DEFAULT 0;
+        ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS tasook_name varchar(256);
         """;
 
     private readonly string _connectionString;
@@ -102,14 +103,15 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         await using var cmd = new NpgsqlCommand(
             """
             INSERT INTO satellite_cache (
-                tasook_no, satellite_no, satellite_name, satellite_type, db_stage,
+                tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
                 mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
                 cached_parameter_count, cached_command_count, raw_json)
             VALUES (
-                @tasook_no, @satellite_no, @satellite_name, @satellite_type, @db_stage,
+                @tasook_no, @tasook_name, @satellite_no, @satellite_name, @satellite_type, @db_stage,
                 @mongo_uri, @mongo_db_name, @mongo_auth_ref, @source_version, @last_synced_at,
                 @cached_parameter_count, @cached_command_count, @raw_json)
             ON CONFLICT (tasook_no, satellite_no) DO UPDATE SET
+                tasook_name = EXCLUDED.tasook_name,
                 satellite_name = EXCLUDED.satellite_name,
                 satellite_type = EXCLUDED.satellite_type,
                 db_stage = EXCLUDED.db_stage,
@@ -125,6 +127,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             conn);
 
         cmd.Parameters.AddWithValue("tasook_no", satellite.TasookNo);
+        cmd.Parameters.AddWithValue("tasook_name", (object?)satellite.TasookName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("satellite_no", satellite.SatelliteNo);
         cmd.Parameters.AddWithValue("satellite_name", satellite.SatelliteName);
         cmd.Parameters.AddWithValue("satellite_type", (object?)satellite.SatelliteType ?? DBNull.Value);
@@ -304,7 +307,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, satellite_no, satellite_name, satellite_type, db_stage,
+            SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
                    mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
                    cached_parameter_count, cached_command_count, raw_json::text
             FROM satellite_cache
@@ -330,7 +333,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, satellite_no, satellite_name, satellite_type, db_stage,
+            SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
                    mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
                    cached_parameter_count, cached_command_count, raw_json::text
             FROM satellite_cache
@@ -405,6 +408,57 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         return list;
     }
 
+    public async Task<IReadOnlyDictionary<(string TasookNo, string SatelliteNo), IReadOnlyList<string>>>
+        GetDevelopmentPhaseLabelsBySatelliteAsync(CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT tasook_no, satellite_no, scenario, test_batch_id, start_ts
+            FROM test_batch_cache
+            ORDER BY tasook_no, satellite_no, start_ts DESC;
+            """,
+            conn);
+
+        var grouped = new Dictionary<(string, string), List<(string Label, DateTimeOffset StartTs)>>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var tasook = reader.GetString(0);
+            var sat = reader.GetString(1);
+            var scenario = reader.IsDBNull(2) ? null : reader.GetString(2);
+            var batchId = reader.GetString(3);
+            var startTs = reader.GetFieldValue<DateTimeOffset>(4);
+            var label = string.IsNullOrWhiteSpace(scenario) ? batchId : scenario.Trim();
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                continue;
+            }
+
+            var key = (tasook, sat);
+            if (!grouped.TryGetValue(key, out var list))
+            {
+                list = [];
+                grouped[key] = list;
+            }
+
+            if (list.All(x => !string.Equals(x.Label, label, StringComparison.OrdinalIgnoreCase)))
+            {
+                list.Add((label, startTs));
+            }
+        }
+
+        return grouped.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<string>)kv.Value
+                .OrderByDescending(x => x.StartTs)
+                .Select(x => x.Label)
+                .ToArray());
+    }
+
     public async Task ClearAsync(CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
@@ -469,8 +523,10 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         var rawText = reader.GetString(reader.GetOrdinal("raw_json"));
         var raw = ParseJson(rawText);
 
+        var oTasookName = reader.GetOrdinal("tasook_name");
         return new SatelliteCache(
-            reader.GetString(reader.GetOrdinal("tasook_no")), 
+            reader.GetString(reader.GetOrdinal("tasook_no")),
+            reader.IsDBNull(oTasookName) ? null : reader.GetString(oTasookName),
             reader.GetString(reader.GetOrdinal("satellite_no")),
             reader.GetString(reader.GetOrdinal("satellite_name")),
             reader.IsDBNull(reader.GetOrdinal("satellite_type")) ? null : reader.GetString(reader.GetOrdinal("satellite_type")),

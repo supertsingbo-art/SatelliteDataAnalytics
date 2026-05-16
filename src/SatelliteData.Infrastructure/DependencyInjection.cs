@@ -27,10 +27,21 @@ public static class DependencyInjection
 
         services.Configure<AssetProviderOptions>(configuration.GetSection("AssetProviders"));
         services.Configure<DatabaseConnectionOptions>(configuration.GetSection(DatabaseConnectionOptions.SectionName));
+        services.Configure<AssetCacheOptions>(configuration.GetSection(AssetCacheOptions.SectionName));
         services.AddSingleton<IDataSourceConfigRepository, InMemoryDataSourceConfigRepository>();
-        var usePgAssetCache = configuration.GetValue("AssetCache:UsePostgreSql", false);
-        if (usePgAssetCache)
+
+        var assetCacheOptions = configuration.GetSection(AssetCacheOptions.SectionName).Get<AssetCacheOptions>()
+            ?? new AssetCacheOptions();
+        if (assetCacheOptions.UsePostgreSql)
         {
+            var pgCs = configuration.GetSection(DatabaseConnectionOptions.SectionName)
+                .Get<DatabaseConnectionOptions>()?.Postgres;
+            if (string.IsNullOrWhiteSpace(pgCs))
+            {
+                throw new InvalidOperationException(
+                    "AssetCache:UsePostgreSql 为 true 时须配置 ConnectionStrings:Postgres（6.1 资产同步落库）。");
+            }
+
             services.AddSingleton<IAssetCacheRepository, PgAssetCacheRepository>();
         }
         else

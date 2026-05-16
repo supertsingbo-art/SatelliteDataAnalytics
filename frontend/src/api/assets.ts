@@ -6,6 +6,7 @@ import {
   PagedResult,
   ParamCache,
   SatelliteCache,
+  SatelliteListItem,
   TestPhase
 } from './types';
 
@@ -45,7 +46,7 @@ export const assetsApi = {
   clearCache: () => request<{ cleared: boolean }>('delete', `${BASE}/cache`),
 
   listSatellites: (params: { keyword?: string; pageNo?: number; pageSize?: number }) =>
-    request<PagedResult<SatelliteCache>>('get', `${BASE}/satellites`, undefined, params),
+    request<PagedResult<SatelliteListItem>>('get', `${BASE}/satellites`, undefined, params),
   getSatellite: (tasookNo: string, satelliteNo: string) =>
     request<SatelliteCache>(
       'get',

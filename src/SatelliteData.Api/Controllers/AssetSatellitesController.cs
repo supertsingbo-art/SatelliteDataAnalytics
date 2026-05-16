@@ -9,7 +9,7 @@ namespace SatelliteData.Api.Controllers;
 public sealed class AssetSatellitesController(AssetQueryService queryService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<PagedResult<SatelliteCache>>>> GetSatellites(
+    public async Task<ActionResult<ApiResponse<PagedResult<SatelliteListItem>>>> GetSatellites(
         [FromQuery] string? keyword,
         [FromQuery] int pageNo = 1,
         [FromQuery] int pageSize = 50,
@@ -18,7 +18,7 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
         var page = await queryService.GetSatellitesAsync(
             new AssetPageRequest(keyword, pageNo, pageSize),
             cancellationToken);
-        return Ok(ApiResponse<PagedResult<SatelliteCache>>.Ok(page, HttpContext));
+        return Ok(ApiResponse<PagedResult<SatelliteListItem>>.Ok(page, HttpContext));
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}")]

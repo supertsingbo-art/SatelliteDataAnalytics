@@ -22,10 +22,12 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
             .Select(item =>
             {
                 var tasookNo = item.GetStringOrNull("tasookNo", "taskNo", "taskno") ?? "";
+                var tasookName = item.GetStringOrNull("tasookName", "taskName", "taskname");
                 var satelliteNo = item.GetStringOrNull("satelliteNo", "satNo", "satno") ?? "";
                 var dbStage = item.GetStringOrNull("dbStage", "stage") ?? _options.DefaultDbStage;
                 return new SatelliteCache(
-                    tasookNo, 
+                    tasookNo,
+                    tasookName,
                     satelliteNo,
                     item.GetStringOrNull("satelliteName", "satName", "satname", "name") ?? satelliteNo,
                     item.GetStringOrNull("satelliteType", "satType", "type"),

@@ -9,7 +9,7 @@ public sealed class AssetQueryService(
     IAssetCacheRepository cacheRepository,
     MongoConnectionPool mongoConnectionPool)
 {
-    public async Task<PagedResult<SatelliteCache>> GetSatellitesAsync(
+    public async Task<PagedResult<SatelliteListItem>> GetSatellitesAsync(
         AssetPageRequest request,
         CancellationToken cancellationToken)
     {
@@ -17,13 +17,16 @@ public sealed class AssetQueryService(
         var pageSize = request.PageSize <= 0 ? 50 : Math.Min(request.PageSize, 500);
 
         var satellites = await cacheRepository.GetSatellitesAsync(cancellationToken);
+        var phaseLabels = await cacheRepository.GetDevelopmentPhaseLabelsBySatelliteAsync(cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword!;
             satellites = satellites
                 .Where(item => item.SatelliteName.Contains(keyword, StringComparison.OrdinalIgnoreCase)
                     || item.SatelliteNo.Contains(keyword, StringComparison.OrdinalIgnoreCase)
-                    || item.TasookNo.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    || item.TasookNo.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || (item.TasookName?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
                 .ToArray();
         }
 
@@ -32,12 +35,17 @@ public sealed class AssetQueryService(
             .ThenBy(item => item.SatelliteNo, StringComparer.Ordinal)
             .ToArray();
 
-        var items = ordered
+        var pageItems = ordered
             .Skip((pageNo - 1) * pageSize)
             .Take(pageSize)
+            .Select(s =>
+            {
+                phaseLabels.TryGetValue((s.TasookNo, s.SatelliteNo), out var phases);
+                return SatelliteListItemMapper.ToListItem(s, phases ?? Array.Empty<string>());
+            })
             .ToArray();
 
-        return new PagedResult<SatelliteCache>(pageNo, pageSize, ordered.Length, items);
+        return new PagedResult<SatelliteListItem>(pageNo, pageSize, ordered.Length, pageItems);
     }
 
     public Task<SatelliteCache?> GetSatelliteAsync(

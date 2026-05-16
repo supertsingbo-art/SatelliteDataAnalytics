@@ -21,13 +21,16 @@ import {
   PagedResult,
   ParamCache,
   SatelliteCache,
+  SatelliteListItem,
   TestPhase
 } from '@/api/types';
+
+const DEV_PHASE_TAG_COLORS = ['blue', 'geekblue', 'cyan', 'purple', 'magenta', 'volcano', 'gold', 'green'];
 
 const { Text } = Typography;
 
 export function SatellitesPage() {
-  const [data, setData] = useState<PagedResult<SatelliteCache> | null>(null);
+  const [data, setData] = useState<PagedResult<SatelliteListItem> | null>(null);
   const [keyword, setKeyword] = useState('');
   const [pageNo, setPageNo] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -88,7 +91,7 @@ export function SatellitesPage() {
   };
 
   const fetchParamsPage = async (
-    satellite: SatelliteCache,
+    satellite: Pick<SatelliteListItem, 'tasookNo' | 'satelliteNo'>,
     pageNo: number,
     pageSize: number,
     keyword: string
@@ -106,14 +109,22 @@ export function SatellitesPage() {
     }
   };
 
-  const openDrawer = async (record: SatelliteCache) => {
-    setDrawer(record);
+  const openDrawer = async (record: SatelliteListItem) => {
     setParams(null);
     setPhases([]);
     setMongoSummary(null);
     setParamKeyword('');
     setParamPageNo(1);
     setParamPageSize(20);
+    try {
+      const satellite = await assetsApi.getSatellite(record.tasookNo, record.satelliteNo);
+      setDrawer(satellite);
+    } catch {
+      setDrawer({
+        ...record,
+        satelliteType: null
+      });
+    }
     const [, phaseList] = await Promise.all([
       fetchParamsPage(record, 1, 20, ''),
       assetsApi.listTestPhases(record.tasookNo, record.satelliteNo)
@@ -175,10 +186,10 @@ export function SatellitesPage() {
       }
     >
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-        本页展示 satellite_cache、param_cache、command_cache、test_batch_cache 的同步快照。流程为：全量卫星 → 每星参数
+        本页展示 satellite_cache、param_cache、command_cache、test_batch_cache 的同步快照（默认由
+        AssetCache:UsePostgreSql=true 写入 ConnectionStrings:Postgres 对应库，见 6.1）。流程为：全量卫星 → 每星参数
         （POST /api/mass-data/basic/parameters）→ 每星指令（POST /api/mass-data/basic/commands）→ 每星测试阶段 → 每星
-        Mongo 配置。两列「参数 / 指令同步总量」为最近一次成功写入缓存的条数；在 appsettings 中将 AssetCache:UsePostgreSql
-        设为 true 时，数据写入 ConnectionStrings:Postgres 所配置的库（如 demo_db）中的同名表。
+        Mongo 配置。两列「参数 / 指令同步总量」为最近一次成功写入 PostgreSQL 缓存表的条数。
       </Text>
 
       {lastSync && (
@@ -206,7 +217,7 @@ export function SatellitesPage() {
         />
       )}
 
-      <Table<SatelliteCache>
+      <Table<SatelliteListItem>
         rowKey={(record) => `${record.tasookNo}_${record.satelliteNo}`}
         loading={loading}
         dataSource={data?.items ?? []}
@@ -220,14 +231,39 @@ export function SatellitesPage() {
           }
         }}
         columns={[
-          { title: '型号代号 tasook_no', dataIndex: 'tasookNo', width: 160 },
-          { title: '卫星代号 satellite_no', dataIndex: 'satelliteNo', width: 160 },
-          { title: '卫星名称', dataIndex: 'satelliteName' },
-          { title: '型号 / 类型', dataIndex: 'satelliteType', render: (v) => v ?? <Text type="secondary">-</Text> },
+          { title: '型号代号', dataIndex: 'tasookNo', width: 130 },
           {
-            title: '研制阶段 db_stage',
+            title: '型号名称',
+            dataIndex: 'tasookName',
+            width: 140,
+            render: (v) => v ?? <Text type="secondary">-</Text>
+          },
+          { title: '卫星代号', dataIndex: 'satelliteNo', width: 120 },
+          { title: '卫星名称', dataIndex: 'satelliteName', width: 140 },
+          {
+            title: '版本号',
             dataIndex: 'dbStage',
-            render: (v) => (v ? <Tag>{v}</Tag> : <Text type="secondary">-</Text>)
+            width: 100,
+            render: (v) => (v ? <Tag color="processing">{v}</Tag> : <Text type="secondary">-</Text>)
+          },
+          {
+            title: '研制阶段',
+            dataIndex: 'developmentPhases',
+            width: 260,
+            render: (phases: string[] | undefined) => {
+              if (!phases?.length) {
+                return <Text type="secondary">未同步</Text>;
+              }
+              return (
+                <Space size={[4, 4]} wrap style={{ maxWidth: 248 }}>
+                  {phases.map((name, i) => (
+                    <Tag key={name} color={DEV_PHASE_TAG_COLORS[i % DEV_PHASE_TAG_COLORS.length]}>
+                      {name}
+                    </Tag>
+                  ))}
+                </Space>
+              );
+            }
           },
           {
             title: '参数同步总量',
@@ -272,7 +308,11 @@ export function SatellitesPage() {
 
       <Drawer
         width={720}
-        title={drawer ? `${drawer.tasookNo} / ${drawer.satelliteNo} · ${drawer.satelliteName}` : ''}
+        title={
+          drawer
+            ? `${drawer.tasookName ?? drawer.tasookNo} / ${drawer.satelliteNo} · ${drawer.satelliteName}`
+            : ''
+        }
         open={!!drawer}
         onClose={closeDrawer}
         destroyOnClose
@@ -340,23 +380,57 @@ export function SatellitesPage() {
               },
               {
                 key: 'phases',
-                label: '测试阶段 (test_batch_cache)',
+                label: `研制阶段 (${phases.length})`,
                 children: (
-                  <Table<TestPhase>
-                    size="small"
-                    rowKey={(record) => record.testBatchId}
-                    pagination={false}
-                    dataSource={phases}
-                    columns={[
-                      { title: '阶段编号 test_batch_id', dataIndex: 'testBatchId' },
-                      { title: '阶段名 scenario', dataIndex: 'scenario' },
-                      {
-                        title: '起止 UTC',
-                        render: (_, record) =>
-                          `${dayjs(record.startTs).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(record.endTs).format('YYYY-MM-DD HH:mm')}`
-                      }
-                    ]}
-                  />
+                  <>
+                    {phases.length > 0 ? (
+                      <Space size={[6, 6]} wrap style={{ marginBottom: 12 }}>
+                        {phases.map((p, i) => (
+                          <Tag
+                            key={p.testBatchId}
+                            color={DEV_PHASE_TAG_COLORS[i % DEV_PHASE_TAG_COLORS.length]}
+                          >
+                            {p.scenario ?? p.testBatchId}
+                          </Tag>
+                        ))}
+                      </Space>
+                    ) : (
+                      <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message="暂无研制阶段，请执行资产同步（卫星资产 test-phases → test_batch_cache）"
+                      />
+                    )}
+                    <Table<TestPhase>
+                      size="small"
+                      rowKey={(record) => record.testBatchId}
+                      pagination={false}
+                      dataSource={phases}
+                      columns={[
+                        {
+                          title: '研制阶段',
+                          dataIndex: 'scenario',
+                          render: (v, record, index) => (
+                            <Tag color={DEV_PHASE_TAG_COLORS[index % DEV_PHASE_TAG_COLORS.length]}>
+                              {v ?? record.testBatchId}
+                            </Tag>
+                          )
+                        },
+                        { title: '阶段编号', dataIndex: 'testBatchId', width: 120 },
+                        {
+                          title: '起止时间 (UTC)',
+                          render: (_, record) => (
+                            <Text>
+                              {dayjs(record.startTs).format('YYYY-MM-DD HH:mm:ss')}
+                              <br />
+                              <Text type="secondary">~ {dayjs(record.endTs).format('YYYY-MM-DD HH:mm:ss')}</Text>
+                            </Text>
+                          )
+                        }
+                      ]}
+                    />
+                  </>
                 )
               },
               {

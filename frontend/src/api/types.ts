@@ -32,6 +32,7 @@ export interface MongoConnectionInfo {
 
 export interface SatelliteCache {
   tasookNo: string;
+  tasookName: string | null;
   satelliteNo: string;
   satelliteName: string;
   satelliteType: string | null;
@@ -39,10 +40,23 @@ export interface SatelliteCache {
   mongoInfo: MongoConnectionInfo | null;
   sourceVersion: string | null;
   lastSyncedAt: string;
-  /** 最近一次从 POST /api/mass-data/basic/parameters 同步并写入缓存（含 PostgreSQL）的条数 */
   cachedParameterCount: number;
-  /** 最近一次从 POST /api/mass-data/basic/commands 同步并写入缓存（含 PostgreSQL）的条数 */
   cachedCommandCount: number;
+}
+
+/** 卫星列表项：含研制阶段（卫星资产 test-phases 同步至 test_batch_cache） */
+export interface SatelliteListItem {
+  tasookNo: string;
+  tasookName: string | null;
+  satelliteNo: string;
+  satelliteName: string;
+  dbStage: string | null;
+  mongoInfo: MongoConnectionInfo | null;
+  sourceVersion: string | null;
+  lastSyncedAt: string;
+  cachedParameterCount: number;
+  cachedCommandCount: number;
+  developmentPhases: string[];
 }
 
 export interface ParamCache {

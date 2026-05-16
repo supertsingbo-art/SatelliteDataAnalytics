@@ -25,6 +25,20 @@ public sealed record PagedResult<T>(
     int Total,
     IReadOnlyCollection<T> Items);
 
+/// <summary>卫星资产列表项：含研制阶段标签（来自 <c>test_batch_cache</c> / 卫星资产 test-phases）。</summary>
+public sealed record SatelliteListItem(
+    string TasookNo,
+    string? TasookName,
+    string SatelliteNo,
+    string SatelliteName,
+    string? DbStage,
+    MongoConnectionInfo? MongoInfo,
+    string? SourceVersion,
+    DateTimeOffset LastSyncedAt,
+    int CachedParameterCount,
+    int CachedCommandCount,
+    IReadOnlyList<string> DevelopmentPhases);
+
 public sealed record ConnectionTestResult(
     bool Success,
     string Message,
@@ -64,6 +78,10 @@ public interface IAssetCacheRepository
     Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
+
+    /// <summary>按星聚合研制阶段名称（<c>test_batch_cache.scenario</c>，去重、按最近阶段时间倒序）。</summary>
+    Task<IReadOnlyDictionary<(string TasookNo, string SatelliteNo), IReadOnlyList<string>>> GetDevelopmentPhaseLabelsBySatelliteAsync(
+        CancellationToken cancellationToken);
 
     Task ClearAsync(CancellationToken cancellationToken);
 }

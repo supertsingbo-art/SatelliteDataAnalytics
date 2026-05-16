@@ -159,6 +159,27 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
         return Task.FromResult<IReadOnlyCollection<TestBatchCache>>(testBatches);
     }
 
+    public Task<IReadOnlyDictionary<(string TasookNo, string SatelliteNo), IReadOnlyList<string>>>
+        GetDevelopmentPhaseLabelsBySatelliteAsync(CancellationToken cancellationToken)
+    {
+        var grouped = _testBatches.Values
+            .GroupBy(t => (t.TasookNo, t.SatelliteNo))
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<string>)g
+                    .OrderByDescending(t => t.StartTs)
+                    .Select(t =>
+                    {
+                        var label = string.IsNullOrWhiteSpace(t.Scenario) ? t.TestBatchId : t.Scenario!.Trim();
+                        return label;
+                    })
+                    .Where(label => !string.IsNullOrWhiteSpace(label))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray());
+
+        return Task.FromResult<IReadOnlyDictionary<(string TasookNo, string SatelliteNo), IReadOnlyList<string>>>(grouped);
+    }
+
     public Task ClearAsync(CancellationToken cancellationToken)
     {
         _satellites.Clear();
