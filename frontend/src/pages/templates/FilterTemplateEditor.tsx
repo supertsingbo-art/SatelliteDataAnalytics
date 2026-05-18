@@ -21,6 +21,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { filterTemplatesApi } from '@/api/templates';
 import { groupsApi } from '@/api/groups';
 import { assetsApi } from '@/api/assets';
+import { ParamCacheSelect } from '@/components/ParamCacheSelect';
 import {
   FilterTargetParam,
   FilterTemplateConfigJson,
@@ -83,6 +84,7 @@ export function FilterTemplateEditor() {
   const [satellites, setSatellites] = useState<SatelliteCache[]>([]);
   const [groupMembers, setGroupMembers] = useState<SatelliteGroupMemberDto[]>([]);
   const [paramOptions, setParamOptions] = useState<ParamCache[]>([]);
+  const [paramOptionsLoading, setParamOptionsLoading] = useState(false);
 
   const [form] = Form.useForm<{
     templateName: string;
@@ -192,6 +194,7 @@ export function FilterTemplateEditor() {
   }, [watchedGroupId, form]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       if (!watchedRefKey) {
         setParamOptions([]);
@@ -204,9 +207,26 @@ export function FilterTemplateEditor() {
         setParamOptions([]);
         return;
       }
-      const result = await assetsApi.listParams(t, s, { pageNo: 1, pageSize: 500 });
-      setParamOptions(result.items);
+      setParamOptionsLoading(true);
+      try {
+        const result = await assetsApi.listAllParams(t, s);
+        if (!cancelled) {
+          setParamOptions(result.items);
+          if (result.total > result.items.length) {
+            message.warning(
+              `参数共 ${result.total} 条，仅加载了 ${result.items.length} 条，请联系管理员提高 unpaged 上限`
+            );
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setParamOptionsLoading(false);
+        }
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [watchedRefKey]);
 
   const memberSelectOptions = useMemo(
@@ -422,6 +442,7 @@ export function FilterTemplateEditor() {
                 disabled={!editable}
               />
             </Space>
+            <Spin spinning={paramOptionsLoading} tip="正在加载参考星全部参数…">
             <Table<FlatRuleRow>
               size="small"
               rowKey="rowId"
@@ -432,18 +453,12 @@ export function FilterTemplateEditor() {
                   title: '参数',
                   width: 320,
                   render: (_, record) => (
-                    <Select
-                      style={{ width: '100%' }}
-                      value={record.paramId || undefined}
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="选择参数（代号 描述）"
-                      onChange={(value) => updateRow(record.rowId, { paramId: value })}
-                      options={paramOptions.map((p) => ({
-                        value: paramCacheId(p),
-                        label: formatParamCacheLabel(p)
-                      }))}
+                    <ParamCacheSelect
+                      value={record.paramId}
+                      parameters={paramOptions}
+                      loading={paramOptionsLoading}
                       disabled={!editable}
+                      onChange={(value) => updateRow(record.rowId, { paramId: value })}
                     />
                   )
                 },
@@ -497,10 +512,11 @@ export function FilterTemplateEditor() {
                 }
               ]}
             />
+            </Spin>
             <Button
               type="dashed"
               style={{ marginTop: 12 }}
-              disabled={!editable}
+              disabled={!editable || paramOptionsLoading}
               onClick={() =>
                 setRows([
                   ...rows,
@@ -510,6 +526,11 @@ export function FilterTemplateEditor() {
             >
               + 添加参数条件
             </Button>
+            {!paramOptionsLoading && paramOptions.length > 0 && (
+              <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+                已加载 {paramOptions.length} 个参数，可在下拉框中输入代号或描述过滤
+              </Text>
+            )}
 
             <Row gutter={16} style={{ marginTop: 16 }}>
               <Col span={8}>
@@ -534,6 +555,7 @@ export function FilterTemplateEditor() {
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
               在计算出的有效时间段内提取目标参数；离群规则仅打标，不剔除、不插值（与 hq_param_point.is_outlier 一致）。
             </Text>
+            <Spin spinning={paramOptionsLoading} tip="正在加载参考星全部参数…">
             <Table<FilterTargetParam>
               size="small"
               rowKey={(_, idx) => `target_${idx}`}
@@ -543,16 +565,11 @@ export function FilterTemplateEditor() {
                 {
                   title: '提取目标参数',
                   render: (_, record, idx) => (
-                    <Select
-                      style={{ width: '100%' }}
-                      value={record.paramId || undefined}
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="选择参数（代号 描述）"
-                      options={paramOptions.map((p) => ({
-                        value: paramCacheId(p),
-                        label: formatParamCacheLabel(p)
-                      }))}
+                    <ParamCacheSelect
+                      value={record.paramId}
+                      parameters={paramOptions}
+                      loading={paramOptionsLoading}
+                      disabled={!editable}
                       onChange={(value) => {
                         const picked = paramOptions.find((p) => paramCacheId(p) === value);
                         updateTarget(idx, {
@@ -560,7 +577,6 @@ export function FilterTemplateEditor() {
                           paramName: picked ? formatParamCacheLabel(picked) : undefined
                         });
                       }}
-                      disabled={!editable}
                     />
                   )
                 },
@@ -677,10 +693,11 @@ export function FilterTemplateEditor() {
                 }
               ]}
             />
+            </Spin>
             <Button
               type="dashed"
               style={{ marginTop: 12 }}
-              disabled={!editable}
+              disabled={!editable || paramOptionsLoading}
               onClick={() =>
                 setTargets([
                   ...targets,

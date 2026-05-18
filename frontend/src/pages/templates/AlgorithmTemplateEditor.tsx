@@ -741,10 +741,7 @@ function PropertiesPanel({
         setParamOptions([]);
         return;
       }
-      const result = await assetsApi.listParams(referenceSat.tasookNo, referenceSat.satelliteNo, {
-        pageNo: 1,
-        pageSize: 500
-      });
+      const result = await assetsApi.listAllParams(referenceSat.tasookNo, referenceSat.satelliteNo);
       setParamOptions(result.items);
     })();
   }, [referenceSat?.tasookNo, referenceSat?.satelliteNo]);
@@ -846,14 +843,24 @@ function PropertiesPanel({
                 }))}
               />
             </Form.Item>
-            <Form.Item label="参数 ID 列表 paramIds">
+            <Form.Item label="参数列表">
               <Select
                 mode="multiple"
                 value={meta.source!.paramIds}
                 onChange={(value) =>
                   onChange({ source: { ...meta.source!, paramIds: value as string[] } })
                 }
-                placeholder="从 param_cache 选择参数（PG 查询，不触 CH）"
+                showSearch
+                virtual
+                listHeight={360}
+                placeholder="从 param_cache 选择参数，可输入代号/描述过滤"
+                filterOption={(input, option) => {
+                  const q = input.trim().toLowerCase();
+                  if (!q) return true;
+                  const label = String(option?.label ?? '').toLowerCase();
+                  const value = String(option?.value ?? '').toLowerCase();
+                  return label.includes(q) || value.includes(q);
+                }}
                 options={paramOptions.map((p) => ({
                   value: paramCacheId(p),
                   label: formatParamCacheLabel(p)

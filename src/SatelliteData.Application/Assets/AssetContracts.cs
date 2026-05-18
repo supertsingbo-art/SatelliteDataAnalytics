@@ -17,7 +17,8 @@ public sealed record SetDataSourceStatusRequest(bool Enabled);
 public sealed record AssetPageRequest(
     string? Keyword,
     int PageNo = 1,
-    int PageSize = 50);
+    int PageSize = 50,
+    bool Unpaged = false);
 
 public sealed record PagedResult<T>(
     int PageNo,

@@ -62,30 +62,50 @@ public sealed class AssetQueryService(
         AssetPageRequest request,
         CancellationToken cancellationToken)
     {
-        var pageNo = request.PageNo <= 0 ? 1 : request.PageNo;
-        var pageSize = request.PageSize <= 0 ? 50 : Math.Min(request.PageSize, 500);
+        const int maxPagedSize = 500;
+        const int maxUnpagedSize = 50_000;
 
-        var parameters = await cacheRepository.GetParametersAsync(tasookNo, satelliteNo, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        var pageNo = request.PageNo <= 0 ? 1 : request.PageNo;
+        var pageSize = request.Unpaged
+            ? maxUnpagedSize
+            : request.PageSize <= 0 ? 50 : Math.Min(request.PageSize, maxPagedSize);
+
+        var parameters = FilterParameters(
+            await cacheRepository.GetParametersAsync(tasookNo, satelliteNo, cancellationToken),
+            request.Keyword);
+
+        if (request.Unpaged)
         {
-            var keyword = request.Keyword!;
-            parameters = parameters
-                .Where(item => item.ParaId.ToString().Contains(keyword, StringComparison.OrdinalIgnoreCase)
-                    || (item.ParaCode?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (item.ParaDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (item.ParaTypeDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (item.ProcDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
-                .ToArray();
+            var all = parameters.Select(ParamCacheViewMapper.ToView).ToArray();
+            return new PagedResult<ParamCacheView>(1, all.Length, all.Length, all);
         }
 
         var items = parameters
-            .OrderBy(item => item.ParaId)
             .Skip((pageNo - 1) * pageSize)
             .Take(pageSize)
             .Select(ParamCacheViewMapper.ToView)
             .ToArray();
 
-        return new PagedResult<ParamCacheView>(pageNo, pageSize, parameters.Count, items);
+        return new PagedResult<ParamCacheView>(pageNo, pageSize, parameters.Length, items);
+    }
+
+    private static ParamCache[] FilterParameters(IReadOnlyCollection<ParamCache> source, string? keyword)
+    {
+        var ordered = source.OrderBy(item => item.ParaId).ToArray();
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            return ordered;
+        }
+
+        var key = keyword.Trim();
+        return ordered
+            .Where(item => item.ParaId.ToString().Contains(key, StringComparison.OrdinalIgnoreCase)
+                || (item.ParaCode?.Contains(key, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (item.ParaDesc?.Contains(key, StringComparison.OrdinalIgnoreCase) ?? false)
+                || item.DisplayLabel.Contains(key, StringComparison.OrdinalIgnoreCase)
+                || (item.ParaTypeDesc?.Contains(key, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (item.ProcDesc?.Contains(key, StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToArray();
     }
 
     public async Task<PagedResult<CommandCacheView>> GetCommandsAsync(
