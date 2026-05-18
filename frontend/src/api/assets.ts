@@ -4,6 +4,7 @@ import {
   DataSourceConfig,
   MongoConnectionSummary,
   PagedResult,
+  CommandCache,
   ParamCache,
   SatelliteCache,
   SatelliteListItem,
@@ -60,6 +61,17 @@ export const assetsApi = {
     request<PagedResult<ParamCache>>(
       'get',
       `${BASE}/satellites/${encodeURIComponent(tasookNo)}/${encodeURIComponent(satelliteNo)}/params`,
+      undefined,
+      params
+    ),
+  listCommands: (
+    tasookNo: string,
+    satelliteNo: string,
+    params: { keyword?: string; pageNo?: number; pageSize?: number }
+  ) =>
+    request<PagedResult<CommandCache>>(
+      'get',
+      `${BASE}/satellites/${encodeURIComponent(tasookNo)}/${encodeURIComponent(satelliteNo)}/commands`,
       undefined,
       params
     ),

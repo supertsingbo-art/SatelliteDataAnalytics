@@ -17,12 +17,15 @@ import dayjs from 'dayjs';
 import { assetsApi } from '@/api/assets';
 import {
   AssetSyncResult,
+  CommandCache,
   MongoConnectionSummary,
   PagedResult,
   ParamCache,
   SatelliteCache,
   SatelliteListItem,
-  TestPhase
+  TestPhase,
+  commandCacheRowKey,
+  paramCacheRowKey
 } from '@/api/types';
 
 const DEV_PHASE_TAG_COLORS = ['blue', 'geekblue', 'cyan', 'purple', 'magenta', 'volcano', 'gold', 'green'];
@@ -39,7 +42,6 @@ function formatParamCell(value: string | number | null | undefined) {
 const PARAM_CACHE_COLUMNS: Parameters<typeof Table<ParamCache>>[0]['columns'] = [
   { title: '型号代号', dataIndex: 'tasookNo', width: 110, fixed: 'left' },
   { title: '卫星代号', dataIndex: 'satelliteNo', width: 110, fixed: 'left' },
-  { title: '参数主键', dataIndex: 'paramId', width: 90 },
   { title: '参数 ID', dataIndex: 'paraId', width: 80 },
   { title: '参数代号', dataIndex: 'paraCode', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
   { title: '参数描述', dataIndex: 'paraDesc', width: 140, ellipsis: true, render: (v) => formatParamCell(v) },
@@ -83,6 +85,56 @@ const PARAM_CACHE_COLUMNS: Parameters<typeof Table<ParamCache>>[0]['columns'] = 
   }
 ];
 
+const COMMAND_CACHE_COLUMNS: Parameters<typeof Table<CommandCache>>[0]['columns'] = [
+  { title: '型号代号', dataIndex: 'tasookNo', width: 110, fixed: 'left' },
+  { title: '卫星代号', dataIndex: 'satelliteNo', width: 110, fixed: 'left' },
+  { title: '指令 ID', dataIndex: 'cmdId', width: 80 },
+  { title: '指令代号', dataIndex: 'cmdCode', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
+  { title: '指令描述', dataIndex: 'cmdDesc', width: 140, ellipsis: true, render: (v) => formatParamCell(v) },
+  {
+    title: '指令类型',
+    dataIndex: 'cmdType',
+    width: 90,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: '指令长度',
+    dataIndex: 'cmdLen',
+    width: 90,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: '执行时间(ms)',
+    dataIndex: 'exeTime',
+    width: 110,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: '有效标志',
+    dataIndex: 'validFlag',
+    width: 90,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: '所属系统 ID',
+    dataIndex: 'cmdSysId',
+    width: 100,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: '来源版本',
+    dataIndex: 'sourceVersion',
+    width: 100,
+    render: (v) => formatParamCell(v)
+  },
+  {
+    title: '同步时间',
+    dataIndex: 'lastSyncedAt',
+    width: 160,
+    render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-')
+  }
+];
+
 export function SatellitesPage() {
   const [data, setData] = useState<PagedResult<SatelliteListItem> | null>(null);
   const [keyword, setKeyword] = useState('');
@@ -96,6 +148,11 @@ export function SatellitesPage() {
   const [paramPageSize, setParamPageSize] = useState(20);
   const [paramsLoading, setParamsLoading] = useState(false);
   const [paramKeyword, setParamKeyword] = useState('');
+  const [commands, setCommands] = useState<PagedResult<CommandCache> | null>(null);
+  const [commandPageNo, setCommandPageNo] = useState(1);
+  const [commandPageSize, setCommandPageSize] = useState(20);
+  const [commandsLoading, setCommandsLoading] = useState(false);
+  const [commandKeyword, setCommandKeyword] = useState('');
   const [phases, setPhases] = useState<TestPhase[]>([]);
   const [mongoSummary, setMongoSummary] = useState<MongoConnectionSummary | null>(null);
   const [lastSync, setLastSync] = useState<AssetSyncResult | null>(null);
@@ -163,13 +220,36 @@ export function SatellitesPage() {
     }
   };
 
+  const fetchCommandsPage = async (
+    satellite: Pick<SatelliteListItem, 'tasookNo' | 'satelliteNo'>,
+    pageNo: number,
+    pageSize: number,
+    keyword: string
+  ) => {
+    setCommandsLoading(true);
+    try {
+      const result = await assetsApi.listCommands(satellite.tasookNo, satellite.satelliteNo, {
+        keyword: keyword.trim() || undefined,
+        pageNo,
+        pageSize
+      });
+      setCommands(result);
+    } finally {
+      setCommandsLoading(false);
+    }
+  };
+
   const openDrawer = async (record: SatelliteListItem) => {
     setParams(null);
+    setCommands(null);
     setPhases([]);
     setMongoSummary(null);
     setParamKeyword('');
     setParamPageNo(1);
     setParamPageSize(20);
+    setCommandKeyword('');
+    setCommandPageNo(1);
+    setCommandPageSize(20);
     try {
       const satellite = await assetsApi.getSatellite(record.tasookNo, record.satelliteNo);
       setDrawer(satellite);
@@ -179,8 +259,9 @@ export function SatellitesPage() {
         satelliteType: null
       });
     }
-    const [, phaseList] = await Promise.all([
+    const [, , phaseList] = await Promise.all([
       fetchParamsPage(record, 1, 20, ''),
+      fetchCommandsPage(record, 1, 20, ''),
       assetsApi.listTestPhases(record.tasookNo, record.satelliteNo)
     ]);
     setPhases(phaseList);
@@ -200,12 +281,22 @@ export function SatellitesPage() {
     await fetchParamsPage(drawer, 1, paramPageSize, paramKeyword);
   };
 
+  const refreshCommands = async () => {
+    if (!drawer) return;
+    setCommandPageNo(1);
+    await fetchCommandsPage(drawer, 1, commandPageSize, commandKeyword);
+  };
+
   const closeDrawer = () => {
     setDrawer(null);
     setParams(null);
+    setCommands(null);
     setParamKeyword('');
     setParamPageNo(1);
     setParamPageSize(20);
+    setCommandKeyword('');
+    setCommandPageNo(1);
+    setCommandPageSize(20);
     setPhases([]);
     setMongoSummary(null);
   };
@@ -392,7 +483,7 @@ export function SatellitesPage() {
                     </Space>
                     <Table<ParamCache>
                       size="small"
-                      rowKey={(record) => record.paramId}
+                      rowKey={paramCacheRowKey}
                       loading={paramsLoading}
                       dataSource={params?.items ?? []}
                       scroll={{ x: 1500 }}
@@ -415,6 +506,52 @@ export function SatellitesPage() {
                           setParamPageNo(1);
                           setParamPageSize(size);
                           void fetchParamsPage(drawer, 1, size, paramKeyword);
+                        }
+                      }}
+                    />
+                  </>
+                )
+              },
+              {
+                key: 'commands',
+                label: '指令 (command_cache)',
+                children: (
+                  <>
+                    <Space style={{ marginBottom: 12 }}>
+                      <Input.Search
+                        allowClear
+                        placeholder="按指令 ID / 代号 / 描述过滤"
+                        value={commandKeyword}
+                        onChange={(e) => setCommandKeyword(e.target.value)}
+                        onSearch={refreshCommands}
+                        style={{ width: 280 }}
+                      />
+                    </Space>
+                    <Table<CommandCache>
+                      size="small"
+                      rowKey={commandCacheRowKey}
+                      loading={commandsLoading}
+                      dataSource={commands?.items ?? []}
+                      scroll={{ x: 1300 }}
+                      columns={COMMAND_CACHE_COLUMNS}
+                      pagination={{
+                        current: commandPageNo,
+                        pageSize: commandPageSize,
+                        total: commands?.total ?? 0,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['20', '50', '100', '200', '500'],
+                        showTotal: (total) => `共 ${total} 条`,
+                        onChange: (page, size) => {
+                          if (!drawer) return;
+                          setCommandPageNo(page);
+                          setCommandPageSize(size);
+                          void fetchCommandsPage(drawer, page, size, commandKeyword);
+                        },
+                        onShowSizeChange: (_current, size) => {
+                          if (!drawer) return;
+                          setCommandPageNo(1);
+                          setCommandPageSize(size);
+                          void fetchCommandsPage(drawer, 1, size, commandKeyword);
                         }
                       }}
                     />

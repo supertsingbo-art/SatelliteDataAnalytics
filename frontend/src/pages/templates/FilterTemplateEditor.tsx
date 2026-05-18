@@ -26,6 +26,7 @@ import {
   FilterTemplateConfigJson,
   ParamCache,
   formatParamCacheLabel,
+  paramCacheId,
   RuleLeaf,
   RuleOperator,
   SatelliteCache,
@@ -438,8 +439,8 @@ export function FilterTemplateEditor() {
                       placeholder="选择 param_cache 中的参数"
                       onChange={(value) => updateRow(record.rowId, { paramId: value })}
                       options={paramOptions.map((p) => ({
-                        value: p.paramId,
-                        label: `${p.paramId}（${p.paramName}）`
+                        value: paramCacheId(p),
+                        label: formatParamCacheLabel(p)
                       }))}
                       disabled={!editable}
                     />
@@ -547,15 +548,15 @@ export function FilterTemplateEditor() {
                       showSearch
                       placeholder="选择 param_cache 中的参数"
                       options={paramOptions.map((p) => ({
-                        value: p.paramId,
-                        label: `${p.paramId}（${p.paramName}）`
+                        value: paramCacheId(p),
+                        label: formatParamCacheLabel(p)
                       }))}
                       onChange={(value) =>
                         updateTarget(idx, {
                           paramId: value,
                           paramName:
-                            paramOptions.find((p) => p.paramId === value)?.paraCode
-                            ?? paramOptions.find((p) => p.paramId === value)?.paraDesc
+                            paramOptions.find((p) => paramCacheId(p) === value)?.paraCode
+                            ?? paramOptions.find((p) => paramCacheId(p) === value)?.paraDesc
                         })
                       }
                       disabled={!editable}

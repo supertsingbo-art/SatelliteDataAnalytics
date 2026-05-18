@@ -70,8 +70,7 @@ public sealed class AssetQueryService(
         {
             var keyword = request.Keyword!;
             parameters = parameters
-                .Where(item => item.ParamId.Contains(keyword, StringComparison.OrdinalIgnoreCase)
-                    || item.ParaId.ToString().Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                .Where(item => item.ParaId.ToString().Contains(keyword, StringComparison.OrdinalIgnoreCase)
                     || (item.ParaCode?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
                     || (item.ParaDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
                     || (item.ParaTypeDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
@@ -87,6 +86,36 @@ public sealed class AssetQueryService(
             .ToArray();
 
         return new PagedResult<ParamCacheView>(pageNo, pageSize, parameters.Count, items);
+    }
+
+    public async Task<PagedResult<CommandCacheView>> GetCommandsAsync(
+        string tasookNo,
+        string satelliteNo,
+        AssetPageRequest request,
+        CancellationToken cancellationToken)
+    {
+        var pageNo = request.PageNo <= 0 ? 1 : request.PageNo;
+        var pageSize = request.PageSize <= 0 ? 50 : Math.Min(request.PageSize, 500);
+
+        var commands = await cacheRepository.GetCommandsAsync(tasookNo, satelliteNo, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword!;
+            commands = commands
+                .Where(item => item.CmdId.ToString().Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || (item.CmdCode?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (item.CmdDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToArray();
+        }
+
+        var items = commands
+            .OrderBy(item => item.CmdId)
+            .Skip((pageNo - 1) * pageSize)
+            .Take(pageSize)
+            .Select(CommandCacheViewMapper.ToView)
+            .ToArray();
+
+        return new PagedResult<CommandCacheView>(pageNo, pageSize, commands.Count, items);
     }
 
     public Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(

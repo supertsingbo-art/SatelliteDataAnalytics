@@ -63,7 +63,6 @@ export interface SatelliteListItem {
 export interface ParamCache {
   tasookNo: string;
   satelliteNo: string;
-  paramId: string;
   paraId: number;
   paraCode: string | null;
   paraDesc: string | null;
@@ -78,8 +77,42 @@ export interface ParamCache {
 }
 
 export function formatParamCacheLabel(p: ParamCache): string {
-  const name = p.paraCode ?? p.paraDesc ?? p.paramId;
-  return `${p.paramId}（${name}）`;
+  const name = p.paraCode ?? p.paraDesc ?? String(p.paraId);
+  return `${p.paraId}（${name}）`;
+}
+
+export function paramCacheRowKey(p: ParamCache): string {
+  return `${p.tasookNo}::${p.satelliteNo}::${p.paraId}`;
+}
+
+/** 模板配置 JSON 中的 paramId 字符串（与海量 paraId 一致）。 */
+export function paramCacheId(p: ParamCache): string {
+  return String(p.paraId);
+}
+
+/** GET /api/v1/asset/satellites/{tasookNo}/{satelliteNo}/commands 列表项（不含 rawJson） */
+export interface CommandCache {
+  tasookNo: string;
+  satelliteNo: string;
+  cmdId: number;
+  cmdCode: string | null;
+  cmdDesc: string | null;
+  cmdType: number | null;
+  cmdLen: number | null;
+  exeTime: number | null;
+  validFlag: number | null;
+  cmdSysId: number | null;
+  sourceVersion: string | null;
+  lastSyncedAt: string;
+}
+
+export function formatCommandCacheLabel(c: CommandCache): string {
+  const name = c.cmdCode ?? c.cmdDesc ?? String(c.cmdId);
+  return `${c.cmdId}（${name}）`;
+}
+
+export function commandCacheRowKey(c: CommandCache): string {
+  return `${c.tasookNo}::${c.satelliteNo}::${c.cmdId}`;
 }
 
 export interface TestPhase {

@@ -78,20 +78,10 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         var now = DateTimeOffset.UtcNow;
         var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? dbStage ?? _options.DefaultDbStage;
 
-        return root.GetArrayItems("items", "datas", "commands", "cmds", "instructions")
-            .Select(item =>
-            {
-                var commandId = item.GetStringOrNull("commandId", "cmdId", "id", "code", "instructionId") ?? "";
-                return new CommandCache(
-                    tasookNo,
-                    satelliteNo,
-                    commandId,
-                    item.GetStringOrNull("commandName", "cmdName", "name", "instructionName", "description") ?? commandId,
-                    sourceVersion,
-                    now,
-                    item.Clone());
-            })
-            .Where(item => !string.IsNullOrWhiteSpace(item.CommandId))
+        return root.GetArrayItems("datas", "items", "commands", "cmds", "instructions")
+            .Select(item => MassDataCommandMapper.Map(item, tasookNo, satelliteNo, sourceVersion, now))
+            .Where(item => item is not null)
+            .Cast<CommandCache>()
             .ToArray();
     }
 

@@ -76,16 +76,27 @@ public sealed record ParamCache(
 }
 
 /// <summary>
-/// 指令元数据缓存，对应海量接口 <c>POST /api/mass-data/basic/commands</c> 返回清单。
+/// 指令元数据缓存（海量 <c>POST /api/mass-data/basic/commands</c>）。
 /// </summary>
 public sealed record CommandCache(
     string TasookNo,
     string SatelliteNo,
-    string CommandId,
-    string CommandName,
+    int CmdId,
+    string? CmdCode,
+    string? CmdDesc,
+    int? CmdType,
+    int? CmdLen,
+    int? ExeTime,
+    int? ValidFlag,
+    int? CmdSysId,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt,
-    JsonElement RawJson);
+    JsonElement RawJson)
+{
+    public string CommandId => CmdId.ToString();
+
+    public string CommandName => CmdCode ?? CmdDesc ?? CommandId;
+}
 
 /// <summary>
 /// 测试阶段缓存。<paramref name="TestBatchId"/> 即阶段编号，<paramref name="Scenario"/> 即阶段名（如「单机测试」「整星综测」「在轨」）。

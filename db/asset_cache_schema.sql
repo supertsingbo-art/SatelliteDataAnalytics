@@ -22,27 +22,36 @@ CREATE TABLE IF NOT EXISTS satellite_cache (
 CREATE TABLE IF NOT EXISTS param_cache (
     tasook_no varchar(64) NOT NULL,
     satellite_no varchar(64) NOT NULL,
-    param_id varchar(128) NOT NULL,
-    param_name varchar(256) NOT NULL,
-    unit varchar(64),
-    value_type varchar(32),
-    value_min double precision,
-    value_max double precision,
+    para_id int NOT NULL,
+    para_code varchar(256),
+    para_desc text,
+    para_type_desc varchar(256),
+    min_value double precision,
+    max_value double precision,
+    update_time int,
+    proc_desc text,
+    prm_sys_id int,
     source_version varchar(128),
     last_synced_at timestamptz NOT NULL,
     raw_json jsonb NOT NULL,
-    PRIMARY KEY (tasook_no, satellite_no, param_id)
+    PRIMARY KEY (tasook_no, satellite_no, para_id)
 );
 
 CREATE TABLE IF NOT EXISTS command_cache (
     tasook_no varchar(64) NOT NULL,
     satellite_no varchar(64) NOT NULL,
-    command_id varchar(128) NOT NULL,
-    command_name varchar(256) NOT NULL,
+    cmd_id int NOT NULL,
+    cmd_code varchar(256),
+    cmd_desc text,
+    cmd_type int,
+    cmd_len int,
+    exe_time int,
+    valid_flag int,
+    cmd_sys_id int,
     source_version varchar(128),
     last_synced_at timestamptz NOT NULL,
     raw_json jsonb NOT NULL,
-    PRIMARY KEY (tasook_no, satellite_no, command_id)
+    PRIMARY KEY (tasook_no, satellite_no, cmd_id)
 );
 
 CREATE TABLE IF NOT EXISTS test_batch_cache (

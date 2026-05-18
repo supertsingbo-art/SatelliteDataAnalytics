@@ -8,7 +8,6 @@ internal static class ParamCacheViewMapper
         new(
             source.TasookNo,
             source.SatelliteNo,
-            source.ParamId,
             source.ParaId,
             source.ParaCode,
             source.ParaDesc,

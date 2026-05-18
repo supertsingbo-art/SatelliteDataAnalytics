@@ -35,7 +35,6 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         CREATE TABLE IF NOT EXISTS param_cache (
             tasook_no varchar(64) NOT NULL,
             satellite_no varchar(64) NOT NULL,
-            param_id varchar(128) NOT NULL,
             para_id int NOT NULL,
             para_code varchar(256),
             para_desc text,
@@ -48,9 +47,27 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             source_version varchar(128),
             last_synced_at timestamptz NOT NULL,
             raw_json jsonb NOT NULL,
-            PRIMARY KEY (tasook_no, satellite_no, param_id)
+            PRIMARY KEY (tasook_no, satellite_no, para_id)
         );
 
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'param_cache'
+                  AND column_name = 'param_id')
+            THEN
+                UPDATE param_cache
+                SET para_id = param_id::integer
+                WHERE para_id IS NULL AND param_id ~ '^[0-9]+$';
+
+                ALTER TABLE param_cache DROP CONSTRAINT IF EXISTS param_cache_pkey;
+                ALTER TABLE param_cache DROP COLUMN param_id;
+            END IF;
+        END $$;
+
+        ALTER TABLE param_cache DROP CONSTRAINT IF EXISTS param_cache_pkey;
         ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_id int;
         ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_code varchar(256);
         ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_desc text;
@@ -61,16 +78,60 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS proc_desc text;
         ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS prm_sys_id int;
 
+        UPDATE param_cache SET para_id = 0 WHERE para_id IS NULL;
+        ALTER TABLE param_cache ALTER COLUMN para_id SET NOT NULL;
+        ALTER TABLE param_cache DROP CONSTRAINT IF EXISTS param_cache_pkey;
+        ALTER TABLE param_cache ADD PRIMARY KEY (tasook_no, satellite_no, para_id);
+
         CREATE TABLE IF NOT EXISTS command_cache (
             tasook_no varchar(64) NOT NULL,
             satellite_no varchar(64) NOT NULL,
-            command_id varchar(128) NOT NULL,
-            command_name varchar(256) NOT NULL,
+            cmd_id int NOT NULL,
+            cmd_code varchar(256),
+            cmd_desc text,
+            cmd_type int,
+            cmd_len int,
+            exe_time int,
+            valid_flag int,
+            cmd_sys_id int,
             source_version varchar(128),
             last_synced_at timestamptz NOT NULL,
             raw_json jsonb NOT NULL,
-            PRIMARY KEY (tasook_no, satellite_no, command_id)
+            PRIMARY KEY (tasook_no, satellite_no, cmd_id)
         );
+
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'command_cache'
+                  AND column_name = 'command_id')
+            THEN
+                UPDATE command_cache
+                SET cmd_id = command_id::integer
+                WHERE cmd_id IS NULL AND command_id ~ '^[0-9]+$';
+
+                ALTER TABLE command_cache DROP CONSTRAINT IF EXISTS command_cache_pkey;
+                ALTER TABLE command_cache DROP COLUMN command_id;
+                ALTER TABLE command_cache DROP COLUMN IF EXISTS command_name;
+            END IF;
+        END $$;
+
+        ALTER TABLE command_cache DROP CONSTRAINT IF EXISTS command_cache_pkey;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS cmd_id int;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS cmd_code varchar(256);
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS cmd_desc text;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS cmd_type int;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS cmd_len int;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS exe_time int;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS valid_flag int;
+        ALTER TABLE command_cache ADD COLUMN IF NOT EXISTS cmd_sys_id int;
+
+        UPDATE command_cache SET cmd_id = 0 WHERE cmd_id IS NULL;
+        ALTER TABLE command_cache ALTER COLUMN cmd_id SET NOT NULL;
+        ALTER TABLE command_cache DROP CONSTRAINT IF EXISTS command_cache_pkey;
+        ALTER TABLE command_cache ADD PRIMARY KEY (tasook_no, satellite_no, cmd_id);
 
         CREATE TABLE IF NOT EXISTS test_batch_cache (
             tasook_no varchar(64) NOT NULL,
@@ -176,15 +237,14 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             await using var cmd = new NpgsqlCommand(
                 """
                 INSERT INTO param_cache (
-                    tasook_no, satellite_no, param_id, para_id, para_code, para_desc, para_type_desc,
+                    tasook_no, satellite_no, para_id, para_code, para_desc, para_type_desc,
                     min_value, max_value, update_time, proc_desc, prm_sys_id,
                     source_version, last_synced_at, raw_json)
                 VALUES (
-                    @tasook_no, @satellite_no, @param_id, @para_id, @para_code, @para_desc, @para_type_desc,
+                    @tasook_no, @satellite_no, @para_id, @para_code, @para_desc, @para_type_desc,
                     @min_value, @max_value, @update_time, @proc_desc, @prm_sys_id,
                     @source_version, @last_synced_at, @raw_json)
-                ON CONFLICT (tasook_no, satellite_no, param_id) DO UPDATE SET
-                    para_id = EXCLUDED.para_id,
+                ON CONFLICT (tasook_no, satellite_no, para_id) DO UPDATE SET
                     para_code = EXCLUDED.para_code,
                     para_desc = EXCLUDED.para_desc,
                     para_type_desc = EXCLUDED.para_type_desc,
@@ -202,7 +262,6 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
             cmd.Parameters.AddWithValue("tasook_no", p.TasookNo);
             cmd.Parameters.AddWithValue("satellite_no", p.SatelliteNo);
-            cmd.Parameters.AddWithValue("param_id", p.ParamId);
             cmd.Parameters.AddWithValue("para_id", p.ParaId);
             cmd.Parameters.AddWithValue("para_code", (object?)p.ParaCode ?? DBNull.Value);
             cmd.Parameters.AddWithValue("para_desc", (object?)p.ParaDesc ?? DBNull.Value);
@@ -248,11 +307,19 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             await using var cmd = new NpgsqlCommand(
                 """
                 INSERT INTO command_cache (
-                    tasook_no, satellite_no, command_id, command_name, source_version, last_synced_at, raw_json)
+                    tasook_no, satellite_no, cmd_id, cmd_code, cmd_desc, cmd_type, cmd_len,
+                    exe_time, valid_flag, cmd_sys_id, source_version, last_synced_at, raw_json)
                 VALUES (
-                    @tasook_no, @satellite_no, @command_id, @command_name, @source_version, @last_synced_at, @raw_json)
-                ON CONFLICT (tasook_no, satellite_no, command_id) DO UPDATE SET
-                    command_name = EXCLUDED.command_name,
+                    @tasook_no, @satellite_no, @cmd_id, @cmd_code, @cmd_desc, @cmd_type, @cmd_len,
+                    @exe_time, @valid_flag, @cmd_sys_id, @source_version, @last_synced_at, @raw_json)
+                ON CONFLICT (tasook_no, satellite_no, cmd_id) DO UPDATE SET
+                    cmd_code = EXCLUDED.cmd_code,
+                    cmd_desc = EXCLUDED.cmd_desc,
+                    cmd_type = EXCLUDED.cmd_type,
+                    cmd_len = EXCLUDED.cmd_len,
+                    exe_time = EXCLUDED.exe_time,
+                    valid_flag = EXCLUDED.valid_flag,
+                    cmd_sys_id = EXCLUDED.cmd_sys_id,
                     source_version = EXCLUDED.source_version,
                     last_synced_at = EXCLUDED.last_synced_at,
                     raw_json = EXCLUDED.raw_json;
@@ -262,8 +329,14 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
             cmd.Parameters.AddWithValue("tasook_no", c.TasookNo);
             cmd.Parameters.AddWithValue("satellite_no", c.SatelliteNo);
-            cmd.Parameters.AddWithValue("command_id", c.CommandId);
-            cmd.Parameters.AddWithValue("command_name", c.CommandName);
+            cmd.Parameters.AddWithValue("cmd_id", c.CmdId);
+            cmd.Parameters.AddWithValue("cmd_code", (object?)c.CmdCode ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("cmd_desc", (object?)c.CmdDesc ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("cmd_type", (object?)c.CmdType ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("cmd_len", (object?)c.CmdLen ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("exe_time", (object?)c.ExeTime ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("valid_flag", (object?)c.ValidFlag ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("cmd_sys_id", (object?)c.CmdSysId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("source_version", (object?)c.SourceVersion ?? DBNull.Value);
             cmd.Parameters.AddWithValue("last_synced_at", c.LastSyncedAt);
             cmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(c.RawJson);
@@ -384,7 +457,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, satellite_no, param_id, para_id, para_code, para_desc, para_type_desc,
+            SELECT tasook_no, satellite_no, para_id, para_code, para_desc, para_type_desc,
                    min_value, max_value, update_time, proc_desc, prm_sys_id,
                    source_version, last_synced_at, raw_json::text
             FROM param_cache
@@ -400,6 +473,34 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             list.Add(ReadParam(reader));
+        }
+
+        return list;
+    }
+
+    public async Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT tasook_no, satellite_no, cmd_id, cmd_code, cmd_desc, cmd_type, cmd_len,
+                   exe_time, valid_flag, cmd_sys_id, source_version, last_synced_at, raw_json::text
+            FROM command_cache
+            WHERE tasook_no = @tasook_no AND satellite_no = @satellite_no
+            ORDER BY cmd_id;
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("tasook_no", tasookNo);
+        cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
+
+        var list = new List<CommandCache>();
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(ReadCommand(reader));
         }
 
         return list;
@@ -564,6 +665,33 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             raw);
     }
 
+    private static CommandCache ReadCommand(NpgsqlDataReader reader)
+    {
+        var oCmdCode = reader.GetOrdinal("cmd_code");
+        var oCmdDesc = reader.GetOrdinal("cmd_desc");
+        var oCmdType = reader.GetOrdinal("cmd_type");
+        var oCmdLen = reader.GetOrdinal("cmd_len");
+        var oExeTime = reader.GetOrdinal("exe_time");
+        var oValidFlag = reader.GetOrdinal("valid_flag");
+        var oCmdSysId = reader.GetOrdinal("cmd_sys_id");
+        var oSource = reader.GetOrdinal("source_version");
+
+        return new CommandCache(
+            reader.GetString(reader.GetOrdinal("tasook_no")),
+            reader.GetString(reader.GetOrdinal("satellite_no")),
+            reader.GetInt32(reader.GetOrdinal("cmd_id")),
+            reader.IsDBNull(oCmdCode) ? null : reader.GetString(oCmdCode),
+            reader.IsDBNull(oCmdDesc) ? null : reader.GetString(oCmdDesc),
+            reader.IsDBNull(oCmdType) ? null : reader.GetInt32(oCmdType),
+            reader.IsDBNull(oCmdLen) ? null : reader.GetInt32(oCmdLen),
+            reader.IsDBNull(oExeTime) ? null : reader.GetInt32(oExeTime),
+            reader.IsDBNull(oValidFlag) ? null : reader.GetInt32(oValidFlag),
+            reader.IsDBNull(oCmdSysId) ? null : reader.GetInt32(oCmdSysId),
+            reader.IsDBNull(oSource) ? null : reader.GetString(oSource),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_synced_at")),
+            ParseJson(reader.GetString(reader.GetOrdinal("raw_json"))));
+    }
+
     private static ParamCache ReadParam(NpgsqlDataReader reader)
     {
         var oParaCode = reader.GetOrdinal("para_code");
@@ -576,14 +704,10 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         var oPrmSysId = reader.GetOrdinal("prm_sys_id");
         var oSource = reader.GetOrdinal("source_version");
 
-        var paraId = reader.IsDBNull(reader.GetOrdinal("para_id"))
-            ? int.Parse(reader.GetString(reader.GetOrdinal("param_id")))
-            : reader.GetInt32(reader.GetOrdinal("para_id"));
-
         return new ParamCache(
             reader.GetString(reader.GetOrdinal("tasook_no")),
             reader.GetString(reader.GetOrdinal("satellite_no")),
-            paraId,
+            reader.GetInt32(reader.GetOrdinal("para_id")),
             reader.IsDBNull(oParaCode) ? null : reader.GetString(oParaCode),
             reader.IsDBNull(oParaDesc) ? null : reader.GetString(oParaDesc),
             reader.IsDBNull(oParaTypeDesc) ? null : reader.GetString(oParaTypeDesc),

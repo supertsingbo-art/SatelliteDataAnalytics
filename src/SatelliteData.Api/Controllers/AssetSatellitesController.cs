@@ -57,6 +57,24 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
         return Ok(ApiResponse<PagedResult<ParamCacheView>>.Ok(page, HttpContext));
     }
 
+    [HttpGet("{tasookNo}/{satelliteNo}/commands")]
+    public async Task<ActionResult<ApiResponse<PagedResult<CommandCacheView>>>> GetCommands(
+        string tasookNo,
+        string satelliteNo,
+        [FromQuery] string? keyword,
+        [FromQuery] int pageNo = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var page = await queryService.GetCommandsAsync(
+            tasookNo,
+            satelliteNo,
+            new AssetPageRequest(keyword, pageNo, pageSize),
+            cancellationToken);
+
+        return Ok(ApiResponse<PagedResult<CommandCacheView>>.Ok(page, HttpContext));
+    }
+
     [HttpGet("{tasookNo}/{satelliteNo}/test-phases")]
     public async Task<ActionResult<ApiResponse<IReadOnlyCollection<TestBatchCache>>>> GetTestPhases(
         string tasookNo,

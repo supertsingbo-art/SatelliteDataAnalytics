@@ -45,6 +45,7 @@ import {
   AlgorithmTemplateValidationIssue,
   ParamCache,
   formatParamCacheLabel,
+  paramCacheId,
   SatelliteCache,
   TestPhase
 } from '@/api/types';
@@ -854,7 +855,7 @@ function PropertiesPanel({
                 }
                 placeholder="从 param_cache 选择参数（PG 查询，不触 CH）"
                 options={paramOptions.map((p) => ({
-                  value: p.paramId,
+                  value: paramCacheId(p),
                   label: formatParamCacheLabel(p)
                 }))}
               />

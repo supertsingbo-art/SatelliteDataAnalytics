@@ -45,7 +45,6 @@ public sealed record SatelliteListItem(
 public sealed record ParamCacheView(
     string TasookNo,
     string SatelliteNo,
-    string ParamId,
     int ParaId,
     string? ParaCode,
     string? ParaDesc,
@@ -55,6 +54,23 @@ public sealed record ParamCacheView(
     int? UpdateTime,
     string? ProcDesc,
     int? PrmSysId,
+    string? SourceVersion,
+    DateTimeOffset LastSyncedAt);
+
+/// <summary>
+/// 指令缓存列表项（API 出参）。对应 <c>command_cache</c> 结构化列，不含 <c>raw_json</c>。
+/// </summary>
+public sealed record CommandCacheView(
+    string TasookNo,
+    string SatelliteNo,
+    int CmdId,
+    string? CmdCode,
+    string? CmdDesc,
+    int? CmdType,
+    int? CmdLen,
+    int? ExeTime,
+    int? ValidFlag,
+    int? CmdSysId,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt);
 
@@ -95,6 +111,8 @@ public interface IAssetCacheRepository
     Task<SatelliteCache?> GetSatelliteAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 

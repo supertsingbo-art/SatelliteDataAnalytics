@@ -77,8 +77,8 @@ public sealed class InMemoryDataSourceConfigRepository : IDataSourceConfigReposi
 public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
 {
     private readonly Dictionary<(string TasookNo, string SatelliteNo), SatelliteCache> _satellites = [];
-    private readonly Dictionary<(string TasookNo, string SatelliteNo, string ParamId), ParamCache> _parameters = [];
-    private readonly Dictionary<(string TasookNo, string SatelliteNo, string CommandId), CommandCache> _commands = [];
+    private readonly Dictionary<(string TasookNo, string SatelliteNo, int ParaId), ParamCache> _parameters = [];
+    private readonly Dictionary<(string TasookNo, string SatelliteNo, int CmdId), CommandCache> _commands = [];
     private readonly Dictionary<(string TasookNo, string SatelliteNo, string TestBatchId), TestBatchCache> _testBatches = [];
 
     public Task UpsertSatelliteAsync(SatelliteCache satellite, CancellationToken cancellationToken)
@@ -91,7 +91,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
     {
         foreach (var parameter in parameters)
         {
-            _parameters[(parameter.TasookNo, parameter.SatelliteNo, parameter.ParamId)] = parameter;
+            _parameters[(parameter.TasookNo, parameter.SatelliteNo, parameter.ParaId)] = parameter;
         }
 
         return Task.CompletedTask;
@@ -112,7 +112,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
 
         foreach (var command in commands)
         {
-            _commands[(command.TasookNo, command.SatelliteNo, command.CommandId)] = command;
+            _commands[(command.TasookNo, command.SatelliteNo, command.CmdId)] = command;
         }
 
         return Task.CompletedTask;
@@ -143,10 +143,20 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
     {
         var parameters = _parameters.Values
             .Where(item => item.TasookNo == tasookNo && item.SatelliteNo == satelliteNo)
-            .OrderBy(item => item.ParamId)
+            .OrderBy(item => item.ParaId)
             .ToArray();
 
         return Task.FromResult<IReadOnlyCollection<ParamCache>>(parameters);
+    }
+
+    public Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken)
+    {
+        var commands = _commands.Values
+            .Where(item => item.TasookNo == tasookNo && item.SatelliteNo == satelliteNo)
+            .OrderBy(item => item.CmdId)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<CommandCache>>(commands);
     }
 
     public Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken)
