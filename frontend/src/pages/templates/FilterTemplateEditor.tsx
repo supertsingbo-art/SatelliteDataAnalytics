@@ -429,14 +429,15 @@ export function FilterTemplateEditor() {
               pagination={false}
               columns={[
                 {
-                  title: '参数 paramId',
-                  width: 280,
+                  title: '参数',
+                  width: 320,
                   render: (_, record) => (
                     <Select
                       style={{ width: '100%' }}
-                      value={record.paramId}
+                      value={record.paramId || undefined}
                       showSearch
-                      placeholder="选择 param_cache 中的参数"
+                      optionFilterProp="label"
+                      placeholder="选择参数（代号 描述）"
                       onChange={(value) => updateRow(record.rowId, { paramId: value })}
                       options={paramOptions.map((p) => ({
                         value: paramCacheId(p),
@@ -540,25 +541,25 @@ export function FilterTemplateEditor() {
               pagination={false}
               columns={[
                 {
-                  title: '提取目标参数 param_id',
+                  title: '提取目标参数',
                   render: (_, record, idx) => (
                     <Select
                       style={{ width: '100%' }}
-                      value={record.paramId}
+                      value={record.paramId || undefined}
                       showSearch
-                      placeholder="选择 param_cache 中的参数"
+                      optionFilterProp="label"
+                      placeholder="选择参数（代号 描述）"
                       options={paramOptions.map((p) => ({
                         value: paramCacheId(p),
                         label: formatParamCacheLabel(p)
                       }))}
-                      onChange={(value) =>
+                      onChange={(value) => {
+                        const picked = paramOptions.find((p) => paramCacheId(p) === value);
                         updateTarget(idx, {
                           paramId: value,
-                          paramName:
-                            paramOptions.find((p) => paramCacheId(p) === value)?.paraCode
-                            ?? paramOptions.find((p) => paramCacheId(p) === value)?.paraDesc
-                        })
-                      }
+                          paramName: picked ? formatParamCacheLabel(picked) : undefined
+                        });
+                      }}
                       disabled={!editable}
                     />
                   )

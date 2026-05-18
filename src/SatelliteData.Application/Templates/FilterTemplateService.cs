@@ -102,6 +102,7 @@ public sealed class FilterTemplateService(
             await groupRepository.GetByIdAsync(request.GroupId, cancellationToken));
         FilterTemplateValidator.Validate(configJson);
         await EnsureReferenceSatelliteInGroupAsync(request.GroupId, configJson, cancellationToken);
+        configJson = await NormalizeReferenceParamsAsync(configJson, cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
         var template = new FilterTemplate(
@@ -145,6 +146,7 @@ public sealed class FilterTemplateService(
             await groupRepository.GetByIdAsync(request.GroupId, cancellationToken));
         FilterTemplateValidator.Validate(configJson);
         await EnsureReferenceSatelliteInGroupAsync(request.GroupId, configJson, cancellationToken);
+        configJson = await NormalizeReferenceParamsAsync(configJson, cancellationToken);
 
         var updated = existing with
         {
@@ -177,11 +179,13 @@ public sealed class FilterTemplateService(
                 "只有 Draft 状态可以发布");
         }
 
-        FilterTemplateValidator.Validate(existing.ConfigJson);
+        var configJson = await NormalizeReferenceParamsAsync(existing.ConfigJson, cancellationToken);
+        FilterTemplateValidator.Validate(configJson);
 
         var now = DateTimeOffset.UtcNow;
         var updated = existing with
         {
+            ConfigJson = configJson,
             Status = TemplateStatus.Published,
             PublishedAt = now,
             UpdatedBy = operatorId,
@@ -388,12 +392,36 @@ public sealed class FilterTemplateService(
 
             if (targetById.TryGetValue(pid, out var meta))
             {
-                o["paramName"] = meta.ParamName;
+                o["paramName"] = meta.DisplayLabel;
             }
         }
 
         using var doc = JsonDocument.Parse(root.ToJsonString());
         result = doc.RootElement.Clone();
+    }
+
+    private async Task<JsonElement> NormalizeReferenceParamsAsync(
+        JsonElement configJson,
+        CancellationToken cancellationToken)
+    {
+        var (tasook, sat) = ReadScopeReference(configJson);
+        var referenceParams = (await assetCacheRepository.GetParametersAsync(tasook, sat, cancellationToken)).ToArray();
+        var byId = referenceParams.ToDictionary(p => p.ParamId, StringComparer.Ordinal);
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        FilterTemplateConfigMapper.CollectParamIds(configJson, ids);
+
+        foreach (var id in ids)
+        {
+            if (!byId.ContainsKey(id))
+            {
+                throw new TemplateGovernanceException(
+                    TemplateErrorCodes.FilterTemplateConfigInvalid,
+                    $"配置引用的参数在参考星 {tasook}/{sat} 的 param_cache 中不存在（请先完成资产同步，再选择参数）。缺失 ID：{id}");
+            }
+        }
+
+        return FilterTemplateConfigMapper.EnrichTargetParamNames(configJson, byId);
     }
 
     private async Task EnsureReferenceSatelliteInGroupAsync(

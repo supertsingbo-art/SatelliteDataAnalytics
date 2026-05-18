@@ -11,6 +11,7 @@ internal static class ParamCacheViewMapper
             source.ParaId,
             source.ParaCode,
             source.ParaDesc,
+            source.DisplayLabel,
             source.ParaTypeDesc,
             source.MinValue,
             source.MaxValue,

@@ -66,6 +66,8 @@ export interface ParamCache {
   paraId: number;
   paraCode: string | null;
   paraDesc: string | null;
+  /** 后端计算的展示标签：代号 + 描述 */
+  displayLabel: string;
   paraTypeDesc: string | null;
   minValue: number | null;
   maxValue: number | null;
@@ -76,9 +78,23 @@ export interface ParamCache {
   lastSyncedAt: string;
 }
 
+/** 下拉/表格展示：优先使用后端 displayLabel，否则本地拼接代号 + 描述。 */
 export function formatParamCacheLabel(p: ParamCache): string {
-  const name = p.paraCode ?? p.paraDesc ?? String(p.paraId);
-  return `${p.paraId}（${name}）`;
+  if (p.displayLabel?.trim()) {
+    return p.displayLabel.trim();
+  }
+  const code = p.paraCode?.trim();
+  const desc = p.paraDesc?.trim();
+  if (code && desc) {
+    return `${code} ${desc}`;
+  }
+  if (code) {
+    return code;
+  }
+  if (desc) {
+    return desc;
+  }
+  return String(p.paraId);
 }
 
 export function paramCacheRowKey(p: ParamCache): string {

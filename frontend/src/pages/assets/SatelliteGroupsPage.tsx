@@ -61,8 +61,20 @@ function toTreeNodes(nodes: SatelliteGroupNode[]): AntTreeNode[] {
   }));
 }
 
+function collectTreeKeys(nodes: AntTreeNode[]): string[] {
+  const keys: string[] = [];
+  for (const node of nodes) {
+    keys.push(node.key);
+    if (node.children?.length) {
+      keys.push(...collectTreeKeys(node.children));
+    }
+  }
+  return keys;
+}
+
 export function SatelliteGroupsPage() {
   const [tree, setTree] = useState<SatelliteGroupNode[]>([]);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<SatelliteGroupNode | null>(null);
   const [members, setMembers] = useState<SatelliteGroupMemberDto[]>([]);
@@ -108,6 +120,14 @@ export function SatelliteGroupsPage() {
   }, [selected?.groupId, includeDescendants]);
 
   const treeNodes = useMemo(() => toTreeNodes(tree), [tree]);
+
+  useEffect(() => {
+    if (treeNodes.length > 0) {
+      setExpandedKeys(collectTreeKeys(treeNodes));
+    } else {
+      setExpandedKeys([]);
+    }
+  }, [treeNodes]);
 
   const parentTreeOptions = useMemo(
     () => buildParentTreeOptions(tree, editingGroupId ?? undefined),
@@ -222,7 +242,8 @@ export function SatelliteGroupsPage() {
           <Tree
             treeData={treeNodes}
             blockNode
-            defaultExpandAll
+            expandedKeys={expandedKeys}
+            onExpand={(keys) => setExpandedKeys(keys.map(String))}
             onSelect={(_keys, info) => {
               const node = info.node as unknown as AntTreeNode;
               setSelected(node?.raw ?? null);

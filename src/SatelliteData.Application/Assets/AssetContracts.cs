@@ -48,6 +48,7 @@ public sealed record ParamCacheView(
     int ParaId,
     string? ParaCode,
     string? ParaDesc,
+    string DisplayLabel,
     string? ParaTypeDesc,
     double? MinValue,
     double? MaxValue,

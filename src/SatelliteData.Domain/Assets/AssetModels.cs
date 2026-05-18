@@ -66,7 +66,10 @@ public sealed record ParamCache(
 {
     public string ParamId => ParaId.ToString();
 
-    public string ParamName => ParaCode ?? ParaDesc ?? ParamId;
+    /// <summary>展示用标签：para_code + para_desc（与筛选模板下拉一致）。</summary>
+    public string DisplayLabel => ParamCacheLabels.FormatDisplayLabel(ParaCode, ParaDesc, ParaId);
+
+    public string ParamName => DisplayLabel;
 
     public double? ValueMin => MinValue;
 
