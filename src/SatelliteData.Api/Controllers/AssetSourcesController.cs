@@ -80,13 +80,13 @@ public sealed class AssetSourcesController(
                     var client = httpClientFactory.CreateClient();
                     client.Timeout = TimeSpan.FromMilliseconds(config.TimeoutMs);
 
-                    //fqb temp test
-                    if (config.EndpointUrl.Contains("5005"))
-                    { 
-                        using var response0 = await client.GetAsync($"{config.EndpointUrl}/swagger/index.html", token);
-                        response0.EnsureSuccessStatusCode();
-                        return;
-                    }  
+                    ////fqb temp test
+                    //if (config.EndpointUrl.Contains("5005"))
+                    //{ 
+                    //    using var response0 = await client.GetAsync($"{config.EndpointUrl}/swagger/index.html", token);
+                    //    response0.EnsureSuccessStatusCode();
+                    //    return;
+                    //}  
                     using var response = await client.GetAsync(config.EndpointUrl, token);
                     response.EnsureSuccessStatusCode();
                 }
