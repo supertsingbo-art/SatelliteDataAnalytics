@@ -178,12 +178,11 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
                 INSERT INTO param_cache (
                     tasook_no, satellite_no, param_id, para_id, para_code, para_desc, para_type_desc,
                     min_value, max_value, update_time, proc_desc, prm_sys_id,
-                    source_version, last_synced_at, raw_json, param_name, value_type, value_min, value_max)
+                    source_version, last_synced_at, raw_json)
                 VALUES (
                     @tasook_no, @satellite_no, @param_id, @para_id, @para_code, @para_desc, @para_type_desc,
                     @min_value, @max_value, @update_time, @proc_desc, @prm_sys_id,
-                    @source_version, @last_synced_at, @raw_json,
-                    COALESCE(@para_code, @para_desc, @param_id), @para_type_desc, @min_value, @max_value)
+                    @source_version, @last_synced_at, @raw_json)
                 ON CONFLICT (tasook_no, satellite_no, param_id) DO UPDATE SET
                     para_id = EXCLUDED.para_id,
                     para_code = EXCLUDED.para_code,

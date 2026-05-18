@@ -39,44 +39,44 @@ function formatParamCell(value: string | number | null | undefined) {
 const PARAM_CACHE_COLUMNS: Parameters<typeof Table<ParamCache>>[0]['columns'] = [
   { title: '型号代号', dataIndex: 'tasookNo', width: 110, fixed: 'left' },
   { title: '卫星代号', dataIndex: 'satelliteNo', width: 110, fixed: 'left' },
-  { title: 'param_id', dataIndex: 'paramId', width: 90 },
-  { title: 'paraId', dataIndex: 'paraId', width: 80 },
-  { title: 'paraCode', dataIndex: 'paraCode', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
-  { title: 'paraDesc', dataIndex: 'paraDesc', width: 140, ellipsis: true, render: (v) => formatParamCell(v) },
-  { title: 'paraTypeDesc', dataIndex: 'paraTypeDesc', width: 100, render: (v) => formatParamCell(v) },
+  { title: '参数主键', dataIndex: 'paramId', width: 90 },
+  { title: '参数 ID', dataIndex: 'paraId', width: 80 },
+  { title: '参数代号', dataIndex: 'paraCode', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
+  { title: '参数描述', dataIndex: 'paraDesc', width: 140, ellipsis: true, render: (v) => formatParamCell(v) },
+  { title: '参数类型', dataIndex: 'paraTypeDesc', width: 100, render: (v) => formatParamCell(v) },
   {
-    title: 'minValue',
+    title: '最小值',
     dataIndex: 'minValue',
     width: 90,
     render: (v: number | null) => formatParamCell(v)
   },
   {
-    title: 'maxValue',
+    title: '最大值',
     dataIndex: 'maxValue',
     width: 90,
     render: (v: number | null) => formatParamCell(v)
   },
   {
-    title: 'updateTime(ms)',
+    title: '更新周期(ms)',
     dataIndex: 'updateTime',
     width: 110,
     render: (v: number | null) => formatParamCell(v)
   },
-  { title: 'procDesc', dataIndex: 'procDesc', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
+  { title: '处理方法', dataIndex: 'procDesc', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
   {
-    title: 'prmSysId',
+    title: '所属系统 ID',
     dataIndex: 'prmSysId',
-    width: 90,
+    width: 100,
     render: (v: number | null) => formatParamCell(v)
   },
   {
-    title: 'sourceVersion',
+    title: '来源版本',
     dataIndex: 'sourceVersion',
     width: 100,
     render: (v) => formatParamCell(v)
   },
   {
-    title: 'lastSyncedAt',
+    title: '同步时间',
     dataIndex: 'lastSyncedAt',
     width: 160,
     render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-')
@@ -383,7 +383,7 @@ export function SatellitesPage() {
                     <Space style={{ marginBottom: 12 }}>
                       <Input.Search
                         allowClear
-                        placeholder="按 param_id / paraCode / paraDesc 过滤"
+                        placeholder="按参数 ID / 代号 / 描述过滤"
                         value={paramKeyword}
                         onChange={(e) => setParamKeyword(e.target.value)}
                         onSearch={refreshParams}
