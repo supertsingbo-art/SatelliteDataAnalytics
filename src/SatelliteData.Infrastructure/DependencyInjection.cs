@@ -28,7 +28,8 @@ public static class DependencyInjection
         services.Configure<AssetProviderOptions>(configuration.GetSection("AssetProviders"));
         services.Configure<DatabaseConnectionOptions>(configuration.GetSection(DatabaseConnectionOptions.SectionName));
         services.Configure<AssetCacheOptions>(configuration.GetSection(AssetCacheOptions.SectionName));
-        services.AddSingleton<IDataSourceConfigRepository, InMemoryDataSourceConfigRepository>();
+        services.Configure<SatelliteGroupOptions>(configuration.GetSection(SatelliteGroupOptions.SectionName));
+        services.Configure<InfrastructureStorageOptions>(configuration.GetSection(InfrastructureStorageOptions.SectionName));
 
         var assetCacheOptions = configuration.GetSection(AssetCacheOptions.SectionName).Get<AssetCacheOptions>()
             ?? new AssetCacheOptions();
@@ -49,11 +50,52 @@ public static class DependencyInjection
             services.AddSingleton<IAssetCacheRepository, InMemoryAssetCacheRepository>();
         }
 
-        services.AddSingleton<ISatelliteGroupRepository, InMemorySatelliteGroupRepository>();
-        services.AddSingleton<ISatelliteGroupMemberRepository, InMemorySatelliteGroupMemberRepository>();
-        services.AddSingleton<IFilterTemplateRepository, InMemoryFilterTemplateRepository>();
-        services.AddSingleton<IAlgorithmTemplateRepository, InMemoryAlgorithmTemplateRepository>();
-        services.AddSingleton<IAlgorithmPackageRepository, InMemoryAlgorithmPackageRepository>();
+        var satelliteGroupOptions = configuration.GetSection(SatelliteGroupOptions.SectionName).Get<SatelliteGroupOptions>()
+            ?? new SatelliteGroupOptions();
+        if (satelliteGroupOptions.UsePostgreSql)
+        {
+            var groupPgCs = configuration.GetSection(DatabaseConnectionOptions.SectionName)
+                .Get<DatabaseConnectionOptions>()?.Postgres;
+            if (string.IsNullOrWhiteSpace(groupPgCs))
+            {
+                throw new InvalidOperationException(
+                    "SatelliteGroup:UsePostgreSql 为 true 时须配置 ConnectionStrings:Postgres。");
+            }
+
+            services.AddSingleton<ISatelliteGroupRepository, PgSatelliteGroupRepository>();
+            services.AddSingleton<ISatelliteGroupMemberRepository, PgSatelliteGroupMemberRepository>();
+        }
+        else
+        {
+            services.AddSingleton<ISatelliteGroupRepository, InMemorySatelliteGroupRepository>();
+            services.AddSingleton<ISatelliteGroupMemberRepository, InMemorySatelliteGroupMemberRepository>();
+        }
+        var infrastructureStorageOptions = configuration
+            .GetSection(InfrastructureStorageOptions.SectionName)
+            .Get<InfrastructureStorageOptions>()
+            ?? new InfrastructureStorageOptions();
+        if (infrastructureStorageOptions.UsePostgreSql)
+        {
+            var metaPgCs = configuration.GetSection(DatabaseConnectionOptions.SectionName)
+                .Get<DatabaseConnectionOptions>()?.Postgres;
+            if (string.IsNullOrWhiteSpace(metaPgCs))
+            {
+                throw new InvalidOperationException(
+                    "InfrastructureStorage:UsePostgreSql 为 true 时须配置 ConnectionStrings:Postgres。");
+            }
+
+            services.AddSingleton<IDataSourceConfigRepository, PgDataSourceConfigRepository>();
+            services.AddSingleton<IFilterTemplateRepository, PgFilterTemplateRepository>();
+            services.AddSingleton<IAlgorithmTemplateRepository, PgAlgorithmTemplateRepository>();
+            services.AddSingleton<IAlgorithmPackageRepository, PgAlgorithmPackageRepository>();
+        }
+        else
+        {
+            services.AddSingleton<IDataSourceConfigRepository, InMemoryDataSourceConfigRepository>();
+            services.AddSingleton<IFilterTemplateRepository, InMemoryFilterTemplateRepository>();
+            services.AddSingleton<IAlgorithmTemplateRepository, InMemoryAlgorithmTemplateRepository>();
+            services.AddSingleton<IAlgorithmPackageRepository, InMemoryAlgorithmPackageRepository>();
+        }
 
         services.AddHttpClient<IMassDataAssetProvider, MassDataApiClient>((serviceProvider, client) =>
         {
