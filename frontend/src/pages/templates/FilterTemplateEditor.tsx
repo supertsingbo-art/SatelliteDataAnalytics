@@ -25,6 +25,7 @@ import {
   FilterTargetParam,
   FilterTemplateConfigJson,
   ParamCache,
+  formatParamCacheLabel,
   RuleLeaf,
   RuleOperator,
   SatelliteCache,
@@ -552,7 +553,9 @@ export function FilterTemplateEditor() {
                       onChange={(value) =>
                         updateTarget(idx, {
                           paramId: value,
-                          paramName: paramOptions.find((p) => p.paramId === value)?.paramName
+                          paramName:
+                            paramOptions.find((p) => p.paramId === value)?.paraCode
+                            ?? paramOptions.find((p) => p.paramId === value)?.paraDesc
                         })
                       }
                       disabled={!editable}

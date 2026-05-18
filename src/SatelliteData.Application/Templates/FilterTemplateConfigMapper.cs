@@ -149,9 +149,10 @@ public static class FilterTemplateConfigMapper
             return null;
         }
 
-        var refNameKey = NormalizeLabel(refParam.ParamName);
+        var refNameKey = NormalizeLabel(refParam.ParaCode ?? refParam.ParamName);
+        var refDescKey = NormalizeLabel(refParam.ParaDesc);
         var nameMatches = targetParams
-            .Where(p => string.Equals(NormalizeLabel(p.ParamName), refNameKey, StringComparison.OrdinalIgnoreCase))
+            .Where(p => string.Equals(NormalizeLabel(p.ParaCode ?? p.ParamName), refNameKey, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         if (nameMatches.Length == 1)
         {
@@ -166,16 +167,16 @@ public static class FilterTemplateConfigMapper
             return picked;
         }
 
-        var refDesc = TryReadDescription(refParam.RawJson);
+        var refDesc = refDescKey.Length > 0 ? refDescKey : NormalizeLabel(TryReadDescription(refParam.RawJson));
         if (!string.IsNullOrWhiteSpace(refDesc))
         {
             var descMatches = targetParams
                 .Where(p =>
-                    !string.IsNullOrWhiteSpace(TryReadDescription(p.RawJson))
-                    && string.Equals(
-                        NormalizeLabel(TryReadDescription(p.RawJson)),
-                        NormalizeLabel(refDesc),
-                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var targetDesc = NormalizeLabel(p.ParaDesc ?? TryReadDescription(p.RawJson));
+                    return targetDesc.Length > 0
+                           && string.Equals(targetDesc, refDesc, StringComparison.OrdinalIgnoreCase);
+                })
                 .ToArray();
             if (descMatches.Length == 1)
             {

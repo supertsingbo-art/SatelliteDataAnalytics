@@ -39,6 +39,25 @@ public sealed record SatelliteListItem(
     int CachedCommandCount,
     IReadOnlyList<string> DevelopmentPhases);
 
+/// <summary>
+/// 参数缓存列表项（API 出参）。对应 <c>param_cache</c> 结构化列，不含 <c>raw_json</c>。
+/// </summary>
+public sealed record ParamCacheView(
+    string TasookNo,
+    string SatelliteNo,
+    string ParamId,
+    int ParaId,
+    string? ParaCode,
+    string? ParaDesc,
+    string? ParaTypeDesc,
+    double? MinValue,
+    double? MaxValue,
+    int? UpdateTime,
+    string? ProcDesc,
+    int? PrmSysId,
+    string? SourceVersion,
+    DateTimeOffset LastSyncedAt);
+
 public sealed record ConnectionTestResult(
     bool Success,
     string Message,

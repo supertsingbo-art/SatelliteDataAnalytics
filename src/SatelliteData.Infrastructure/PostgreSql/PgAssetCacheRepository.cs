@@ -36,16 +36,30 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             tasook_no varchar(64) NOT NULL,
             satellite_no varchar(64) NOT NULL,
             param_id varchar(128) NOT NULL,
-            param_name varchar(256) NOT NULL,
-            unit varchar(64),
-            value_type varchar(32),
-            value_min double precision,
-            value_max double precision,
+            para_id int NOT NULL,
+            para_code varchar(256),
+            para_desc text,
+            para_type_desc varchar(256),
+            min_value double precision,
+            max_value double precision,
+            update_time int,
+            proc_desc text,
+            prm_sys_id int,
             source_version varchar(128),
             last_synced_at timestamptz NOT NULL,
             raw_json jsonb NOT NULL,
             PRIMARY KEY (tasook_no, satellite_no, param_id)
         );
+
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_id int;
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_code varchar(256);
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_desc text;
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS para_type_desc varchar(256);
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS min_value double precision;
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS max_value double precision;
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS update_time int;
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS proc_desc text;
+        ALTER TABLE param_cache ADD COLUMN IF NOT EXISTS prm_sys_id int;
 
         CREATE TABLE IF NOT EXISTS command_cache (
             tasook_no varchar(64) NOT NULL,
@@ -162,17 +176,24 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             await using var cmd = new NpgsqlCommand(
                 """
                 INSERT INTO param_cache (
-                    tasook_no, satellite_no, param_id, param_name, unit, value_type,
-                    value_min, value_max, source_version, last_synced_at, raw_json)
+                    tasook_no, satellite_no, param_id, para_id, para_code, para_desc, para_type_desc,
+                    min_value, max_value, update_time, proc_desc, prm_sys_id,
+                    source_version, last_synced_at, raw_json, param_name, value_type, value_min, value_max)
                 VALUES (
-                    @tasook_no, @satellite_no, @param_id, @param_name, @unit, @value_type,
-                    @value_min, @value_max, @source_version, @last_synced_at, @raw_json)
+                    @tasook_no, @satellite_no, @param_id, @para_id, @para_code, @para_desc, @para_type_desc,
+                    @min_value, @max_value, @update_time, @proc_desc, @prm_sys_id,
+                    @source_version, @last_synced_at, @raw_json,
+                    COALESCE(@para_code, @para_desc, @param_id), @para_type_desc, @min_value, @max_value)
                 ON CONFLICT (tasook_no, satellite_no, param_id) DO UPDATE SET
-                    param_name = EXCLUDED.param_name,
-                    unit = EXCLUDED.unit,
-                    value_type = EXCLUDED.value_type,
-                    value_min = EXCLUDED.value_min,
-                    value_max = EXCLUDED.value_max,
+                    para_id = EXCLUDED.para_id,
+                    para_code = EXCLUDED.para_code,
+                    para_desc = EXCLUDED.para_desc,
+                    para_type_desc = EXCLUDED.para_type_desc,
+                    min_value = EXCLUDED.min_value,
+                    max_value = EXCLUDED.max_value,
+                    update_time = EXCLUDED.update_time,
+                    proc_desc = EXCLUDED.proc_desc,
+                    prm_sys_id = EXCLUDED.prm_sys_id,
                     source_version = EXCLUDED.source_version,
                     last_synced_at = EXCLUDED.last_synced_at,
                     raw_json = EXCLUDED.raw_json;
@@ -183,11 +204,15 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             cmd.Parameters.AddWithValue("tasook_no", p.TasookNo);
             cmd.Parameters.AddWithValue("satellite_no", p.SatelliteNo);
             cmd.Parameters.AddWithValue("param_id", p.ParamId);
-            cmd.Parameters.AddWithValue("param_name", p.ParamName);
-            cmd.Parameters.AddWithValue("unit", (object?)p.Unit ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("value_type", (object?)p.ValueType ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("value_min", (object?)p.ValueMin ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("value_max", (object?)p.ValueMax ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("para_id", p.ParaId);
+            cmd.Parameters.AddWithValue("para_code", (object?)p.ParaCode ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("para_desc", (object?)p.ParaDesc ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("para_type_desc", (object?)p.ParaTypeDesc ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("min_value", (object?)p.MinValue ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("max_value", (object?)p.MaxValue ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("update_time", (object?)p.UpdateTime ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("proc_desc", (object?)p.ProcDesc ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("prm_sys_id", (object?)p.PrmSysId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("source_version", (object?)p.SourceVersion ?? DBNull.Value);
             cmd.Parameters.AddWithValue("last_synced_at", p.LastSyncedAt);
             cmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(p.RawJson);
@@ -360,11 +385,12 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, satellite_no, param_id, param_name, unit, value_type,
-                   value_min, value_max, source_version, last_synced_at, raw_json::text
+            SELECT tasook_no, satellite_no, param_id, para_id, para_code, para_desc, para_type_desc,
+                   min_value, max_value, update_time, proc_desc, prm_sys_id,
+                   source_version, last_synced_at, raw_json::text
             FROM param_cache
             WHERE tasook_no = @tasook_no AND satellite_no = @satellite_no
-            ORDER BY param_id;
+            ORDER BY para_id;
             """,
             conn);
         cmd.Parameters.AddWithValue("tasook_no", tasookNo);
@@ -541,18 +567,33 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
     private static ParamCache ReadParam(NpgsqlDataReader reader)
     {
-        var oMin = reader.GetOrdinal("value_min");
-        var oMax = reader.GetOrdinal("value_max");
+        var oParaCode = reader.GetOrdinal("para_code");
+        var oParaDesc = reader.GetOrdinal("para_desc");
+        var oParaTypeDesc = reader.GetOrdinal("para_type_desc");
+        var oMin = reader.GetOrdinal("min_value");
+        var oMax = reader.GetOrdinal("max_value");
+        var oUpdateTime = reader.GetOrdinal("update_time");
+        var oProcDesc = reader.GetOrdinal("proc_desc");
+        var oPrmSysId = reader.GetOrdinal("prm_sys_id");
+        var oSource = reader.GetOrdinal("source_version");
+
+        var paraId = reader.IsDBNull(reader.GetOrdinal("para_id"))
+            ? int.Parse(reader.GetString(reader.GetOrdinal("param_id")))
+            : reader.GetInt32(reader.GetOrdinal("para_id"));
+
         return new ParamCache(
             reader.GetString(reader.GetOrdinal("tasook_no")),
             reader.GetString(reader.GetOrdinal("satellite_no")),
-            reader.GetString(reader.GetOrdinal("param_id")),
-            reader.GetString(reader.GetOrdinal("param_name")),
-            reader.IsDBNull(reader.GetOrdinal("unit")) ? null : reader.GetString(reader.GetOrdinal("unit")),
-            reader.IsDBNull(reader.GetOrdinal("value_type")) ? null : reader.GetString(reader.GetOrdinal("value_type")),
+            paraId,
+            reader.IsDBNull(oParaCode) ? null : reader.GetString(oParaCode),
+            reader.IsDBNull(oParaDesc) ? null : reader.GetString(oParaDesc),
+            reader.IsDBNull(oParaTypeDesc) ? null : reader.GetString(oParaTypeDesc),
             reader.IsDBNull(oMin) ? null : reader.GetDouble(oMin),
             reader.IsDBNull(oMax) ? null : reader.GetDouble(oMax),
-            reader.IsDBNull(reader.GetOrdinal("source_version")) ? null : reader.GetString(reader.GetOrdinal("source_version")),
+            reader.IsDBNull(oUpdateTime) ? null : reader.GetInt32(oUpdateTime),
+            reader.IsDBNull(oProcDesc) ? null : reader.GetString(oProcDesc),
+            reader.IsDBNull(oPrmSysId) ? null : reader.GetInt32(oPrmSysId),
+            reader.IsDBNull(oSource) ? null : reader.GetString(oSource),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_synced_at")),
             ParseJson(reader.GetString(reader.GetOrdinal("raw_json"))));
     }

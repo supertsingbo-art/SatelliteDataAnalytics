@@ -56,7 +56,7 @@ public sealed class AssetQueryService(
         return cacheRepository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
     }
 
-    public async Task<PagedResult<ParamCache>> GetParametersAsync(
+    public async Task<PagedResult<ParamCacheView>> GetParametersAsync(
         string tasookNo,
         string satelliteNo,
         AssetPageRequest request,
@@ -68,18 +68,25 @@ public sealed class AssetQueryService(
         var parameters = await cacheRepository.GetParametersAsync(tasookNo, satelliteNo, cancellationToken);
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
+            var keyword = request.Keyword!;
             parameters = parameters
-                .Where(item => item.ParamId.Contains(request.Keyword!, StringComparison.OrdinalIgnoreCase)
-                    || item.ParamName.Contains(request.Keyword!, StringComparison.OrdinalIgnoreCase))
+                .Where(item => item.ParamId.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || item.ParaId.ToString().Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || (item.ParaCode?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (item.ParaDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (item.ParaTypeDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (item.ProcDesc?.Contains(keyword, StringComparison.OrdinalIgnoreCase) ?? false))
                 .ToArray();
         }
 
         var items = parameters
+            .OrderBy(item => item.ParaId)
             .Skip((pageNo - 1) * pageSize)
             .Take(pageSize)
+            .Select(ParamCacheViewMapper.ToView)
             .ToArray();
 
-        return new PagedResult<ParamCache>(pageNo, pageSize, parameters.Count, items);
+        return new PagedResult<ParamCacheView>(pageNo, pageSize, parameters.Count, items);
     }
 
     public Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(

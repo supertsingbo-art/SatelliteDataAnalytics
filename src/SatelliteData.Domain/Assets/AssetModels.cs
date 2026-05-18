@@ -45,18 +45,35 @@ public sealed record SatelliteCache(
     int CachedCommandCount,
     JsonElement RawJson);
 
+/// <summary>
+/// 参数元数据缓存（海量 <c>POST /api/mass-data/basic/parameters</c>）。
+/// </summary>
 public sealed record ParamCache(
     string TasookNo,
     string SatelliteNo,
-    string ParamId,
-    string ParamName,
-    string? Unit,
-    string? ValueType,
-    double? ValueMin,
-    double? ValueMax,
+    int ParaId,
+    string? ParaCode,
+    string? ParaDesc,
+    string? ParaTypeDesc,
+    double? MinValue,
+    double? MaxValue,
+    int? UpdateTime,
+    string? ProcDesc,
+    int? PrmSysId,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt,
-    JsonElement RawJson);
+    JsonElement RawJson)
+{
+    public string ParamId => ParaId.ToString();
+
+    public string ParamName => ParaCode ?? ParaDesc ?? ParamId;
+
+    public double? ValueMin => MinValue;
+
+    public double? ValueMax => MaxValue;
+
+    public string? ValueType => ParaTypeDesc;
+}
 
 /// <summary>
 /// 指令元数据缓存，对应海量接口 <c>POST /api/mass-data/basic/commands</c> 返回清单。

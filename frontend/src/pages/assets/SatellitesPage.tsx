@@ -29,6 +29,60 @@ const DEV_PHASE_TAG_COLORS = ['blue', 'geekblue', 'cyan', 'purple', 'magenta', '
 
 const { Text } = Typography;
 
+function formatParamCell(value: string | number | null | undefined) {
+  if (value == null || value === '') {
+    return '-';
+  }
+  return value;
+}
+
+const PARAM_CACHE_COLUMNS: Parameters<typeof Table<ParamCache>>[0]['columns'] = [
+  { title: '型号代号', dataIndex: 'tasookNo', width: 110, fixed: 'left' },
+  { title: '卫星代号', dataIndex: 'satelliteNo', width: 110, fixed: 'left' },
+  { title: 'param_id', dataIndex: 'paramId', width: 90 },
+  { title: 'paraId', dataIndex: 'paraId', width: 80 },
+  { title: 'paraCode', dataIndex: 'paraCode', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
+  { title: 'paraDesc', dataIndex: 'paraDesc', width: 140, ellipsis: true, render: (v) => formatParamCell(v) },
+  { title: 'paraTypeDesc', dataIndex: 'paraTypeDesc', width: 100, render: (v) => formatParamCell(v) },
+  {
+    title: 'minValue',
+    dataIndex: 'minValue',
+    width: 90,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: 'maxValue',
+    dataIndex: 'maxValue',
+    width: 90,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: 'updateTime(ms)',
+    dataIndex: 'updateTime',
+    width: 110,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  { title: 'procDesc', dataIndex: 'procDesc', width: 120, ellipsis: true, render: (v) => formatParamCell(v) },
+  {
+    title: 'prmSysId',
+    dataIndex: 'prmSysId',
+    width: 90,
+    render: (v: number | null) => formatParamCell(v)
+  },
+  {
+    title: 'sourceVersion',
+    dataIndex: 'sourceVersion',
+    width: 100,
+    render: (v) => formatParamCell(v)
+  },
+  {
+    title: 'lastSyncedAt',
+    dataIndex: 'lastSyncedAt',
+    width: 160,
+    render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-')
+  }
+];
+
 export function SatellitesPage() {
   const [data, setData] = useState<PagedResult<SatelliteListItem> | null>(null);
   const [keyword, setKeyword] = useState('');
@@ -307,7 +361,7 @@ export function SatellitesPage() {
       />
 
       <Drawer
-        width={720}
+        width={Math.min(1200, window.innerWidth - 48)}
         title={
           drawer
             ? `${drawer.tasookName ?? drawer.tasookNo} / ${drawer.satelliteNo} · ${drawer.satelliteName}`
@@ -329,7 +383,7 @@ export function SatellitesPage() {
                     <Space style={{ marginBottom: 12 }}>
                       <Input.Search
                         allowClear
-                        placeholder="按 param_id / 名称过滤"
+                        placeholder="按 param_id / paraCode / paraDesc 过滤"
                         value={paramKeyword}
                         onChange={(e) => setParamKeyword(e.target.value)}
                         onSearch={refreshParams}
@@ -341,6 +395,8 @@ export function SatellitesPage() {
                       rowKey={(record) => record.paramId}
                       loading={paramsLoading}
                       dataSource={params?.items ?? []}
+                      scroll={{ x: 1500 }}
+                      columns={PARAM_CACHE_COLUMNS}
                       pagination={{
                         current: paramPageNo,
                         pageSize: paramPageSize,
@@ -361,19 +417,6 @@ export function SatellitesPage() {
                           void fetchParamsPage(drawer, 1, size, paramKeyword);
                         }
                       }}
-                      columns={[
-                        { title: 'param_id', dataIndex: 'paramId' },
-                        { title: '名称', dataIndex: 'paramName' },
-                        { title: '单位', dataIndex: 'unit', width: 80 },
-                        { title: '类型', dataIndex: 'valueType', width: 80 },
-                        {
-                          title: '值域',
-                          render: (_, record) =>
-                            record.valueMin == null && record.valueMax == null
-                              ? '-'
-                              : `[${record.valueMin ?? ''}, ${record.valueMax ?? ''}]`
-                        }
-                      ]}
                     />
                   </>
                 )

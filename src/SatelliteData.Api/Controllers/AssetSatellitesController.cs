@@ -40,7 +40,7 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}/params")]
-    public async Task<ActionResult<ApiResponse<PagedResult<ParamCache>>>> GetParameters(
+    public async Task<ActionResult<ApiResponse<PagedResult<ParamCacheView>>>> GetParameters(
         string tasookNo,
         string satelliteNo,
         [FromQuery] string? keyword,
@@ -54,7 +54,7 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
             new AssetPageRequest(keyword, pageNo, pageSize),
             cancellationToken);
 
-        return Ok(ApiResponse<PagedResult<ParamCache>>.Ok(page, HttpContext));
+        return Ok(ApiResponse<PagedResult<ParamCacheView>>.Ok(page, HttpContext));
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}/test-phases")]

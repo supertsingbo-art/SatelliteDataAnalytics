@@ -59,17 +59,27 @@ export interface SatelliteListItem {
   developmentPhases: string[];
 }
 
+/** GET /api/v1/asset/satellites/{tasookNo}/{satelliteNo}/params 列表项（不含 rawJson） */
 export interface ParamCache {
   tasookNo: string;
   satelliteNo: string;
   paramId: string;
-  paramName: string;
-  unit: string | null;
-  valueType: string | null;
-  valueMin: number | null;
-  valueMax: number | null;
+  paraId: number;
+  paraCode: string | null;
+  paraDesc: string | null;
+  paraTypeDesc: string | null;
+  minValue: number | null;
+  maxValue: number | null;
+  updateTime: number | null;
+  procDesc: string | null;
+  prmSysId: number | null;
   sourceVersion: string | null;
   lastSyncedAt: string;
+}
+
+export function formatParamCacheLabel(p: ParamCache): string {
+  const name = p.paraCode ?? p.paraDesc ?? p.paramId;
+  return `${p.paramId}（${name}）`;
 }
 
 export interface TestPhase {

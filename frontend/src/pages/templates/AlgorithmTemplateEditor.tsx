@@ -44,6 +44,7 @@ import {
   AlgorithmRegistryEntry,
   AlgorithmTemplateValidationIssue,
   ParamCache,
+  formatParamCacheLabel,
   SatelliteCache,
   TestPhase
 } from '@/api/types';
@@ -854,7 +855,7 @@ function PropertiesPanel({
                 placeholder="从 param_cache 选择参数（PG 查询，不触 CH）"
                 options={paramOptions.map((p) => ({
                   value: p.paramId,
-                  label: `${p.paramId}（${p.paramName}）`
+                  label: formatParamCacheLabel(p)
                 }))}
               />
             </Form.Item>

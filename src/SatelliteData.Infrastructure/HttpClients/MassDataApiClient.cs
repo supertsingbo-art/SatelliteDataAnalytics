@@ -57,24 +57,10 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         var now = DateTimeOffset.UtcNow;
         var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? dbStage ?? _options.DefaultDbStage;
 
-        return root.GetArrayItems("items", "datas", "parameters", "paras")
-            .Select(item =>
-            {
-                var paramId = item.GetStringOrNull("paramId", "id", "paraId", "parameterId", "pc") ?? "";
-                return new ParamCache(
-                    tasookNo,
-                    satelliteNo,
-                    paramId,
-                    item.GetStringOrNull("paramName", "name", "paraName", "parameterName") ?? paramId,
-                    item.GetStringOrNull("unit", "unitName"),
-                    item.GetStringOrNull("valueType", "dataType", "type") ?? "DOUBLE",
-                    item.GetDoubleOrNull("valueMin", "min", "minValue"),
-                    item.GetDoubleOrNull("valueMax", "max", "maxValue"),
-                    sourceVersion,
-                    now,
-                    item.Clone());
-            })
-            .Where(item => !string.IsNullOrWhiteSpace(item.ParamId))
+        return root.GetArrayItems("datas", "items", "parameters", "paras")
+            .Select(item => MassDataParameterMapper.Map(item, tasookNo, satelliteNo, sourceVersion, now))
+            .Where(item => item is not null)
+            .Cast<ParamCache>()
             .ToArray();
     }
 
