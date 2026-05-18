@@ -105,9 +105,22 @@ public sealed class DataSourceConfigService(IDataSourceConfigRepository reposito
             throw new InvalidOperationException($"Unsupported source type: {request.SourceType}");
         }
 
-        if (string.IsNullOrWhiteSpace(request.EndpointUrl) || !Uri.TryCreate(request.EndpointUrl, UriKind.Absolute, out _))
+        var httpSourceTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            throw new InvalidOperationException("EndpointUrl must be an absolute URI.");
+            DataSourceTypes.MassDataApi,
+            DataSourceTypes.SatelliteAssetApi,
+            DataSourceTypes.Minio
+        };
+
+        if (string.IsNullOrWhiteSpace(request.EndpointUrl))
+        {
+            throw new InvalidOperationException("EndpointUrl must not be empty.");
+        }
+
+        if (httpSourceTypes.Contains(request.SourceType) &&
+            !Uri.TryCreate(request.EndpointUrl, UriKind.Absolute, out _))
+        {
+            throw new InvalidOperationException("EndpointUrl must be an absolute URI for HTTP-based data sources.");
         }
     }
 }

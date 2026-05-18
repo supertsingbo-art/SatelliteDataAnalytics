@@ -219,7 +219,27 @@ export function DataSourcesPage() {
           <Form.Item
             label="服务地址 / 连接入口"
             name="endpointUrl"
-            rules={[{ required: true, type: 'url', message: '请输入合法的绝对 URL' }]}
+            rules={[
+              { required: true, message: '请输入服务地址 / 连接入口' },
+              {
+                validator: (_rule, value) => {
+                  if (!value) return Promise.resolve();
+                  const sourceType = form.getFieldValue('sourceType') as string;
+                  const httpTypes = ['MASS_DATA_API', 'SATELLITE_ASSET_API', 'MINIO'];
+                  if (httpTypes.includes(sourceType)) {
+                    try {
+                      const url = new URL(value);
+                      if (!url.protocol.startsWith('http')) {
+                        return Promise.reject(new Error('请输入合法的绝对 URL（需以 http/https 开头）'));
+                      }
+                    } catch {
+                      return Promise.reject(new Error('请输入合法的绝对 URL（需以 http/https 开头）'));
+                    }
+                  }
+                  return Promise.resolve();
+                }
+              }
+            ]}
           >
             <Input placeholder="https://mass-data.corp/api" />
           </Form.Item>
