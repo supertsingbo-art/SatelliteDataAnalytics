@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using NpgsqlTypes;
 using SatelliteData.Application.Templates;
 using SatelliteData.Domain.Templates;
 
@@ -143,8 +144,7 @@ public sealed class PgSatelliteGroupRepository : ISatelliteGroupRepository
             "SELECT EXISTS(SELECT 1 FROM satellite_group WHERE parent_group_id = @id)",
             conn);
         cmd.Parameters.AddWithValue("id", groupId);
-        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is true;
+        return await ExecuteExistsAsync(cmd, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<bool> SiblingNameExistsAsync(
@@ -154,23 +154,56 @@ public sealed class PgSatelliteGroupRepository : ISatelliteGroupRepository
         CancellationToken cancellationToken)
     {
         await PgSatelliteGroupSchema.EnsureAsync(_connectionString, _logger, cancellationToken).ConfigureAwait(false);
+        var normalizedParent = NormalizeParentId(parentGroupId);
+        var trimmedName = groupName.Trim();
+        var hasExclude = excludeGroupId.HasValue && excludeGroupId.Value != Guid.Empty;
+
         await using var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = new NpgsqlCommand(
-            """
-            SELECT EXISTS(
-                SELECT 1 FROM satellite_group
-                WHERE parent_group_id IS NOT DISTINCT FROM @parent_id
-                  AND trim(group_name) = trim(@group_name)
-                  AND (@exclude_id IS NULL OR group_id <> @exclude_id)
-            )
-            """,
-            conn);
-        cmd.Parameters.AddWithValue("parent_id", (object?)parentGroupId ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("group_name", groupName);
-        cmd.Parameters.AddWithValue("exclude_id", (object?)excludeGroupId ?? DBNull.Value);
+        await using var cmd = new NpgsqlCommand { Connection = conn, CommandTimeout = 30 };
+        if (hasExclude)
+        {
+            cmd.CommandText = """
+                SELECT EXISTS(
+                    SELECT 1 FROM satellite_group
+                    WHERE parent_group_id IS NOT DISTINCT FROM @parent_id
+                      AND btrim(group_name) = @group_name
+                      AND group_id <> @exclude_id
+                )
+                """;
+            cmd.Parameters.Add(new NpgsqlParameter("exclude_id", NpgsqlDbType.Uuid) { Value = excludeGroupId!.Value });
+        }
+        else
+        {
+            cmd.CommandText = """
+                SELECT EXISTS(
+                    SELECT 1 FROM satellite_group
+                    WHERE parent_group_id IS NOT DISTINCT FROM @parent_id
+                      AND btrim(group_name) = @group_name
+                )
+                """;
+        }
+
+        cmd.Parameters.Add(CreateParentIdParameter(normalizedParent));
+        cmd.Parameters.Add(new NpgsqlParameter("group_name", NpgsqlDbType.Varchar) { Value = trimmedName });
+        return await ExecuteExistsAsync(cmd, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Guid? NormalizeParentId(Guid? parentGroupId) =>
+        parentGroupId is null || parentGroupId.Value == Guid.Empty ? null : parentGroupId;
+
+    private static NpgsqlParameter CreateParentIdParameter(Guid? parentGroupId) =>
+        new("parent_id", NpgsqlDbType.Uuid) { Value = parentGroupId ?? (object)DBNull.Value };
+
+    private static async Task<bool> ExecuteExistsAsync(NpgsqlCommand cmd, CancellationToken cancellationToken)
+    {
         var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is true;
+        return result switch
+        {
+            bool b => b,
+            not null => Convert.ToBoolean(result),
+            _ => false
+        };
     }
 
     private static async Task<IReadOnlyCollection<SatelliteGroup>> ReadAllGroupsAsync(
@@ -382,7 +415,7 @@ internal static class PgSatelliteGroupSchema
         """;
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static bool _ready;
+    private static volatile bool _ready;
 
     public static async Task EnsureAsync(
         string connectionString,
@@ -402,9 +435,15 @@ internal static class PgSatelliteGroupSchema
                 return;
             }
 
-            await using var conn = new NpgsqlConnection(connectionString);
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            if (builder.Timeout <= 0)
+            {
+                builder.Timeout = 15;
+            }
+
+            await using var conn = new NpgsqlConnection(builder.ConnectionString);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using (var schema = new NpgsqlCommand(SchemaSql, conn))
+            await using (var schema = new NpgsqlCommand(SchemaSql, conn) { CommandTimeout = 60 })
             {
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
