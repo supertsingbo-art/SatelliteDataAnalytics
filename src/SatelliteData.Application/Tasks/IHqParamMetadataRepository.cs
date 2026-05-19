@@ -17,4 +17,8 @@ public sealed record HqParamMetadataRow(
 public interface IHqParamMetadataRepository
 {
     Task InsertAsync(HqParamMetadataRow row, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<HqParamMetadataRow>> ListByRunIdAsync(Guid runId, CancellationToken cancellationToken);
+
+    Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken);
 }

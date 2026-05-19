@@ -4,6 +4,7 @@ import type {
   PreprocessExecutionMode,
   TaskExecutionRecord,
   TaskListItemV2,
+  TaskProcessedData,
   TaskRunDetail
 } from './types';
 
@@ -92,5 +93,14 @@ export const tasksApi = {
     request<TaskExecutionRecord[]>('get', `${TASKS_BASE}/schedules/${scheduleId}/executions`),
   get: (runId: string) => request<TaskRunDetail>('get', `${TASKS_BASE}/${runId}`),
   cancel: (runId: string) =>
-    request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`)
+    request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`),
+  deleteRun: (runId: string) =>
+    request<{ runId: string; deleted: boolean }>('delete', `${TASKS_BASE}/${runId}`),
+  reExecuteRun: (runId: string) =>
+    request<ExecuteTaskResult>('post', `${TASKS_BASE}/${runId}/reexecute`),
+  getProcessedData: (runId: string, params?: { page?: number; pageSize?: number }) =>
+    request<TaskProcessedData>('get', `${TASKS_BASE}/${runId}/processed-data`, undefined, {
+      page: params?.page ?? 1,
+      pageSize: params?.pageSize ?? 50
+    } as Record<string, unknown>)
 };

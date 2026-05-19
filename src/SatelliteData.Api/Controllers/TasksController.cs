@@ -13,6 +13,8 @@ public sealed class TasksController(
     PreprocessScheduleService scheduleService,
     TaskListService taskListService,
     TaskExecutionService taskExecutionService,
+    TaskRunLifecycleService taskLifecycleService,
+    TaskRunProcessedDataService taskProcessedDataService,
     ITaskRunRepository taskRuns,
     IPreprocessScheduleRepository scheduleRepository,
     IFilterTemplateRepository filterTemplates,
@@ -27,6 +29,10 @@ public sealed class TasksController(
         [property: JsonPropertyName("job_type")] string JobType,
         [property: JsonPropertyName("execution_mode")] string? ExecutionMode,
         [property: JsonPropertyName("can_execute")] bool CanExecute,
+        [property: JsonPropertyName("can_delete")] bool CanDelete,
+        [property: JsonPropertyName("can_re_execute")] bool CanReExecute,
+        [property: JsonPropertyName("can_view_data")] bool CanViewData,
+        [property: JsonPropertyName("status_summary")] string StatusSummary,
         [property: JsonPropertyName("display_status")] string DisplayStatus,
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("tasook_no")] string TasookNo,
@@ -56,6 +62,26 @@ public sealed class TasksController(
         [property: JsonPropertyName("schedule_id")] Guid? ScheduleId,
         [property: JsonPropertyName("job_id")] string? JobId,
         [property: JsonPropertyName("status")] string Status);
+
+    public sealed record TaskProcessedDataColumnResponse(
+        [property: JsonPropertyName("param_id")] string ParamId,
+        [property: JsonPropertyName("label")] string Label);
+
+    public sealed record TaskProcessedDataCellResponse(
+        [property: JsonPropertyName("value")] double? Value,
+        [property: JsonPropertyName("is_outlier")] bool IsOutlier);
+
+    public sealed record TaskProcessedDataRowResponse(
+        [property: JsonPropertyName("ts")] string Ts,
+        [property: JsonPropertyName("cells")] IReadOnlyDictionary<string, TaskProcessedDataCellResponse> Cells);
+
+    public sealed record TaskProcessedDataResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("columns")] IReadOnlyList<TaskProcessedDataColumnResponse> Columns,
+        [property: JsonPropertyName("rows")] IReadOnlyList<TaskProcessedDataRowResponse> Rows,
+        [property: JsonPropertyName("total")] long Total,
+        [property: JsonPropertyName("page")] int Page,
+        [property: JsonPropertyName("page_size")] int PageSize);
 
     public sealed record CreatePipelineBody(
         string TasookNo,
@@ -266,6 +292,74 @@ public sealed class TasksController(
         }
     }
 
+    [HttpDelete("{runId:guid}")]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteRun(Guid runId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await taskLifecycleService.DeleteRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<object>.Ok(new { runId, deleted = true }, HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpPost("{runId:guid}/reexecute")]
+    public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ReExecuteRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await taskLifecycleService.ReExecuteRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<ExecuteTaskResponse>.Ok(ToExecuteResponse(result), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpGet("{runId:guid}/processed-data")]
+    public async Task<ActionResult<ApiResponse<TaskProcessedDataResponse>>> GetProcessedData(
+        Guid runId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = TaskRunProcessedDataService.DefaultPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await taskProcessedDataService
+                .GetProcessedDataAsync(runId, page, pageSize, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<TaskProcessedDataResponse>.Ok(ToProcessedDataResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
     [HttpPost("schedules/{scheduleId:guid}/execute")]
     public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteSchedule(
         Guid scheduleId,
@@ -433,6 +527,10 @@ public sealed class TasksController(
             i.JobType,
             i.ExecutionMode,
             i.CanExecute,
+            i.CanDelete,
+            i.CanReExecute,
+            i.CanViewData,
+            i.StatusSummary,
             i.DisplayStatus,
             i.Status,
             i.TasookNo,
@@ -459,6 +557,20 @@ public sealed class TasksController(
 
     private static ExecuteTaskResponse ToExecuteResponse(ExecuteTaskResultDto r) =>
         new(r.DisplayStatus, r.RunId, r.ScheduleId, r.JobId, r.Status);
+
+    private static TaskProcessedDataResponse ToProcessedDataResponse(TaskProcessedDataDto d) =>
+        new(
+            d.RunId,
+            d.Columns.Select(c => new TaskProcessedDataColumnResponse(c.ParamId, c.Label)).ToArray(),
+            d.Rows.Select(r => new TaskProcessedDataRowResponse(
+                r.Ts,
+                r.Cells.ToDictionary(
+                    kv => kv.Key,
+                    kv => new TaskProcessedDataCellResponse(kv.Value.Value, kv.Value.IsOutlier),
+                    StringComparer.Ordinal))).ToArray(),
+            d.Total,
+            d.Page,
+            d.PageSize);
 
     private static string JobTypeToApi(TaskJobType t) =>
         t switch

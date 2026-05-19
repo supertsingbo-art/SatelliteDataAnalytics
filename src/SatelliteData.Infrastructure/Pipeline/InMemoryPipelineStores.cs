@@ -91,6 +91,24 @@ public sealed class InMemoryTaskRunRepository : ITaskRunRepository
             return Task.FromResult(latest);
         }
     }
+
+    public Task DeleteAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            if (_byId.Remove(runId, out var removed))
+            {
+                var idemKey = removed.IdempotencyKey;
+                if (_byIdem.TryGetValue(idemKey, out var cur) && cur.RunId == runId)
+                {
+                    _byIdem.Remove(idemKey);
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
 }
 
 public sealed class InMemoryTaskEventRepository : ITaskEventRepository
@@ -106,11 +124,51 @@ public sealed class InMemoryTaskEventRepository : ITaskEventRepository
             return Task.CompletedTask;
         }
     }
+
+    public Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _events.RemoveAll(e => e.RunId == runId);
+            return Task.CompletedTask;
+        }
+    }
 }
 
 public sealed class InMemoryHqParamMetadataRepository : IHqParamMetadataRepository
 {
-    public Task InsertAsync(HqParamMetadataRow row, CancellationToken cancellationToken) => Task.CompletedTask;
+    private readonly List<HqParamMetadataRow> _rows = [];
+    private readonly object _gate = new();
+
+    public Task InsertAsync(HqParamMetadataRow row, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _rows.Add(row);
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task<IReadOnlyList<HqParamMetadataRow>> ListByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            return Task.FromResult<IReadOnlyList<HqParamMetadataRow>>(_rows.Where(r => r.RunId == runId).ToArray());
+        }
+    }
+
+    public Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _rows.RemoveAll(r => r.RunId == runId);
+            return Task.CompletedTask;
+        }
+    }
 }
 
 public sealed class InMemoryPreprocessScheduleRepository : IPreprocessScheduleRepository
@@ -180,6 +238,16 @@ public sealed class InMemoryPreprocessOutlierSegmentRepository : IPreprocessOutl
         {
             var arr = _segments.Where(s => s.RunId == runId).OrderBy(s => s.SegmentStart).ToArray();
             return Task.FromResult<IReadOnlyList<PreprocessOutlierSegment>>(arr);
+        }
+    }
+
+    public Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _segments.RemoveAll(s => s.RunId == runId);
+            return Task.CompletedTask;
         }
     }
 }

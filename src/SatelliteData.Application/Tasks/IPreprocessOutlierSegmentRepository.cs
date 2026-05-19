@@ -7,4 +7,6 @@ public interface IPreprocessOutlierSegmentRepository
     Task InsertBatchAsync(IReadOnlyList<PreprocessOutlierSegment> segments, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(Guid runId, CancellationToken cancellationToken);
+
+    Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken);
 }

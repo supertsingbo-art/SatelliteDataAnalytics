@@ -141,6 +141,234 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         return list;
     }
 
+    public async Task<IReadOnlyList<HqParamPointRow>> QueryHqParamPointsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int maxRows,
+        CancellationToken cancellationToken)
+    {
+        if (paramIds.Count == 0) return [];
+
+        var ws = windowStart.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var we = windowEnd.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var inList = string.Join(", ", paramIds.Select(id => $"'{Escape(id)}'"));
+        var limit = Math.Clamp(maxRows, 1, 50_000);
+        var sql = $"""
+            SELECT param_id, ts, processed_value, is_outlier
+            FROM hq_param_point
+            WHERE tasook_no = '{Escape(tasookNo)}'
+              AND satellite_no = '{Escape(satelliteNo)}'
+              AND test_batch_id = '{Escape(testBatchId)}'
+              AND param_id IN ({inList})
+              AND ts >= parseDateTime64BestEffort('{ws}')
+              AND ts <= parseDateTime64BestEffort('{we}')
+            ORDER BY ts, param_id
+            LIMIT {limit}
+            FORMAT JSONEachRow
+            """;
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, _baseUri);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authValue);
+        req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+        var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("ClickHouse matrix query failed {Status}: {Body}", resp.StatusCode, text);
+            return [];
+        }
+
+        var list = new List<HqParamPointRow>();
+        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("param_id", out var pidEl)) continue;
+            var pid = pidEl.GetString();
+            if (string.IsNullOrEmpty(pid)) continue;
+            if (!root.TryGetProperty("ts", out var tsEl)) continue;
+            var tsStr = tsEl.GetString();
+            if (string.IsNullOrEmpty(tsStr)) continue;
+            if (!DateTimeOffset.TryParse(tsStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var ts))
+            {
+                continue;
+            }
+
+            if (!root.TryGetProperty("processed_value", out var vEl) || vEl.ValueKind == JsonValueKind.Null) continue;
+            if (!vEl.TryGetDouble(out var v)) continue;
+            var isOutlier = root.TryGetProperty("is_outlier", out var oEl) && oEl.ValueKind == JsonValueKind.Number
+                && oEl.TryGetUInt32(out var o)
+                && o != 0;
+            list.Add(new HqParamPointRow(pid, ts, v, isOutlier));
+        }
+
+        return list;
+    }
+
+    public Task<long> CountDistinctTimestampsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken) =>
+        ExecuteScalarLongAsync(
+            BuildMatrixFilterSql(
+                tasookNo,
+                satelliteNo,
+                testBatchId,
+                paramIds,
+                windowStart,
+                windowEnd,
+                "SELECT count() AS cnt FROM (SELECT ts FROM hq_param_point WHERE {filter} GROUP BY ts)"),
+            cancellationToken);
+
+    public Task<IReadOnlyList<HqParamPointRow>> QueryHqParamPointsByTimestampPageAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        if (paramIds.Count == 0) return Task.FromResult<IReadOnlyList<HqParamPointRow>>([]);
+
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 1, 200);
+        var offset = (safePage - 1) * safePageSize;
+        var filter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
+        var sql = $"""
+            SELECT param_id, ts, processed_value, is_outlier
+            FROM hq_param_point
+            WHERE {filter}
+              AND ts IN (
+                SELECT ts FROM (
+                  SELECT ts
+                  FROM hq_param_point
+                  WHERE {filter}
+                  GROUP BY ts
+                  ORDER BY ts ASC
+                  LIMIT {safePageSize} OFFSET {offset}
+                )
+              )
+            ORDER BY ts ASC, param_id ASC
+            FORMAT JSONEachRow
+            """;
+
+        return QueryHqParamPointsFromSqlAsync(sql, cancellationToken);
+    }
+
+    private static string BuildMatrixWhereClause(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd)
+    {
+        var ws = windowStart.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var we = windowEnd.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var inList = string.Join(", ", paramIds.Select(id => $"'{Escape(id)}'"));
+        return $"""
+            tasook_no = '{Escape(tasookNo)}'
+              AND satellite_no = '{Escape(satelliteNo)}'
+              AND test_batch_id = '{Escape(testBatchId)}'
+              AND param_id IN ({inList})
+              AND ts >= parseDateTime64BestEffort('{ws}')
+              AND ts <= parseDateTime64BestEffort('{we}')
+            """;
+    }
+
+    private static string BuildMatrixFilterSql(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string sqlTemplate)
+    {
+        if (paramIds.Count == 0) return "SELECT 0 AS cnt";
+        var filter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
+        return sqlTemplate.Replace("{filter}", filter, StringComparison.Ordinal);
+    }
+
+    private async Task<long> ExecuteScalarLongAsync(string sql, CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _baseUri);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authValue);
+        req.Content = new StringContent(sql + "\nFORMAT JSONEachRow", Encoding.UTF8, "text/plain");
+        var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("ClickHouse scalar query failed {Status}: {Body}", resp.StatusCode, text);
+            return 0;
+        }
+
+        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("cnt", out var cntEl) && cntEl.TryGetInt64(out var cnt))
+            {
+                return cnt;
+            }
+        }
+
+        return 0;
+    }
+
+    private async Task<IReadOnlyList<HqParamPointRow>> QueryHqParamPointsFromSqlAsync(
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _baseUri);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authValue);
+        req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+        var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("ClickHouse matrix page query failed {Status}: {Body}", resp.StatusCode, text);
+            return [];
+        }
+
+        var list = new List<HqParamPointRow>();
+        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("param_id", out var pidEl)) continue;
+            var pid = pidEl.GetString();
+            if (string.IsNullOrEmpty(pid)) continue;
+            if (!root.TryGetProperty("ts", out var tsEl)) continue;
+            var tsStr = tsEl.GetString();
+            if (string.IsNullOrEmpty(tsStr)) continue;
+            if (!DateTimeOffset.TryParse(tsStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var ts))
+            {
+                continue;
+            }
+
+            if (!root.TryGetProperty("processed_value", out var vEl) || vEl.ValueKind == JsonValueKind.Null) continue;
+            if (!vEl.TryGetDouble(out var v)) continue;
+            var isOutlier = root.TryGetProperty("is_outlier", out var oEl) && oEl.ValueKind == JsonValueKind.Number
+                && oEl.TryGetUInt32(out var o)
+                && o != 0;
+            list.Add(new HqParamPointRow(pid, ts, v, isOutlier));
+        }
+
+        return list;
+    }
+
     private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("'", "\\'");
 
     private static void ParseConnectionString(string cs, out string host, out int port, out string user, out string password)

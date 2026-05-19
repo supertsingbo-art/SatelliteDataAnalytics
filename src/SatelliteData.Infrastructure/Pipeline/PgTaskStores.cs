@@ -328,6 +328,16 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         return list.FirstOrDefault();
     }
 
+    public async Task DeleteAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("DELETE FROM task_run WHERE run_id=@id", conn);
+        cmd.Parameters.AddWithValue("id", runId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static void AddParams(NpgsqlCommand cmd, TaskRun run)
     {
         cmd.Parameters.AddWithValue("run_id", run.RunId);
@@ -697,6 +707,16 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
 
         return list;
     }
+
+    public async Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("DELETE FROM preprocess_outlier_segment WHERE run_id=@run", conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
 }
 
 public sealed class PgTaskEventRepository : ITaskEventRepository
@@ -761,6 +781,16 @@ public sealed class PgTaskEventRepository : ITaskEventRepository
         cmd.Parameters.AddWithValue("ecode", (object?)evt.ErrorCode ?? DBNull.Value);
         cmd.Parameters.AddWithValue("emsg", (object?)evt.ErrorMsg ?? DBNull.Value);
         cmd.Parameters.AddWithValue("created", evt.CreatedAt);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("DELETE FROM task_event WHERE run_id=@id", conn);
+        cmd.Parameters.AddWithValue("id", runId);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }
@@ -843,6 +873,54 @@ public sealed class PgHqParamMetadataRepository : IHqParamMetadataRepository
         cmd.Parameters.AddWithValue("op", (object?)row.OutlierReasonPattern ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task<IReadOnlyList<HqParamMetadataRow>> ListByRunIdAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM hq_param_metadata WHERE run_id=@run ORDER BY param_id",
+            conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<HqParamMetadataRow>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(ReadMetadata(reader));
+        }
+
+        return list;
+    }
+
+    public async Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("DELETE FROM hq_param_metadata WHERE run_id=@run", conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static HqParamMetadataRow ReadMetadata(NpgsqlDataReader r) =>
+        new(
+            r.GetGuid(r.GetOrdinal("metadata_id")),
+            r.GetGuid(r.GetOrdinal("run_id")),
+            r.GetString(r.GetOrdinal("tasook_no")),
+            r.GetString(r.GetOrdinal("satellite_no")),
+            r.GetString(r.GetOrdinal("test_batch_id")),
+            r.GetString(r.GetOrdinal("param_id")),
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("window_start")),
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("window_end")),
+            r.GetGuid(r.GetOrdinal("filter_template_id")),
+            r.GetInt32(r.GetOrdinal("filter_template_version")),
+            r.IsDBNull(r.GetOrdinal("outlier_method")) ? null : r.GetString(r.GetOrdinal("outlier_method")),
+            r.IsDBNull(r.GetOrdinal("outlier_reason_pattern"))
+                ? null
+                : r.GetString(r.GetOrdinal("outlier_reason_pattern")));
 }
 
 public sealed class PgClientCallbackRepository : IClientCallbackRepository

@@ -32,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<PreprocessTaskValidator>();
         services.AddScoped<TaskListService>();
         services.AddScoped<TaskExecutionService>();
+        services.AddScoped<TaskRunLifecycleService>();
+        services.AddScoped<TaskRunProcessedDataService>();
 
         return services;
     }

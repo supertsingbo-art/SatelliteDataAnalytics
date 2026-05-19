@@ -18,6 +18,9 @@ public static class TaskErrorCodes
     public const string FilterTemplateRequired = "TASK_FILTER_TEMPLATE_REQUIRED";
     public const string NotFound = "TASK_001";
     public const string NotCancellable = "TASK_NOT_CANCELLABLE";
+    public const string NotDeletable = "TASK_NOT_DELETABLE";
+    public const string NotReExecutable = "TASK_NOT_REEXECUTABLE";
+    public const string NoProcessedData = "TASK_NO_PROCESSED_DATA";
     public const string ExecutionModeInvalid = "TASK_EXECUTION_MODE_INVALID";
     public const string ScheduleTimeRequired = "TASK_SCHEDULE_TIME_REQUIRED";
     public const string ScheduleTimeInvalid = "TASK_SCHEDULE_TIME_INVALID";

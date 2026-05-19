@@ -445,6 +445,11 @@ export interface TaskListItemV2 {
   execution_mode: string | null;
   /** 是否可点击「执行」（立即待执行 / 每日计划启用） */
   can_execute?: boolean;
+  can_delete?: boolean;
+  can_re_execute?: boolean;
+  can_view_data?: boolean;
+  /** 合并后的状态文案（取消为 cancelled） */
+  status_summary?: string;
   display_status: string;
   status: string;
   tasook_no: string;
@@ -472,3 +477,28 @@ export interface TaskExecutionRecord {
 
 /** @deprecated 使用 TaskListItemV2 */
 export type TaskRunListItem = TaskListItemV2;
+
+export interface TaskProcessedDataColumn {
+  param_id: string;
+  label: string;
+}
+
+export interface TaskProcessedDataCell {
+  value: number | null;
+  is_outlier: boolean;
+}
+
+export interface TaskProcessedDataRow {
+  ts: string;
+  cells: Record<string, TaskProcessedDataCell>;
+}
+
+export interface TaskProcessedData {
+  run_id: string;
+  columns: TaskProcessedDataColumn[];
+  rows: TaskProcessedDataRow[];
+  /** 时间点总数（分页按行/时间计） */
+  total: number;
+  page: number;
+  page_size: number;
+}

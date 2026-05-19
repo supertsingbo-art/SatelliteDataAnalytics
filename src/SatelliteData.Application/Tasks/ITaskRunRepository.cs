@@ -18,4 +18,6 @@ public interface ITaskRunRepository
     Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken);
 
     Task<TaskRun?> GetLatestByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken);
+
+    Task DeleteAsync(Guid runId, CancellationToken cancellationToken);
 }

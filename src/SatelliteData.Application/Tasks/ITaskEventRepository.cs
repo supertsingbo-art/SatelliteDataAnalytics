@@ -5,4 +5,6 @@ namespace SatelliteData.Application.Tasks;
 public interface ITaskEventRepository
 {
     Task AppendAsync(TaskEvent evt, CancellationToken cancellationToken);
+
+    Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken);
 }

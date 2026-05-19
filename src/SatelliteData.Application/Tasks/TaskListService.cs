@@ -66,6 +66,10 @@ public sealed class TaskListService(
             JobType: run.JobType.ToString().ToUpperInvariant(),
             ExecutionMode: PreprocessExecutionModeMapper.ToApi(run.ExecutionMode),
             CanExecute: PreprocessExecutionModeMapper.CanManualExecuteRun(run),
+            CanDelete: TaskRunStateHelper.CanDeleteRun(run),
+            CanReExecute: TaskRunStateHelper.CanReExecuteRun(run),
+            CanViewData: TaskRunStateHelper.CanViewProcessedData(run),
+            StatusSummary: TaskRunStateHelper.BuildStatusSummary(run, TaskDisplayStatus.ForRun(run, now)),
             DisplayStatus: TaskDisplayStatus.ForRun(run, now),
             Status: run.Status.ToString(),
             run.TasookNo,
@@ -90,6 +94,12 @@ public sealed class TaskListService(
             JobType: "PREPROCESS",
             ExecutionMode: "DAILY_RECURRING",
             CanExecute: PreprocessExecutionModeMapper.CanManualExecuteSchedule(schedule),
+            CanDelete: false,
+            CanReExecute: false,
+            CanViewData: latest is not null && TaskRunStateHelper.CanViewProcessedData(latest),
+            StatusSummary: latest is not null
+                ? TaskRunStateHelper.BuildStatusSummary(latest, TaskDisplayStatus.ForSchedule(schedule, latest, now))
+                : TaskDisplayStatus.ForSchedule(schedule, latest, now),
             DisplayStatus: TaskDisplayStatus.ForSchedule(schedule, latest, now),
             Status: latest?.Status.ToString() ?? "Scheduled",
             schedule.TasookNo,
