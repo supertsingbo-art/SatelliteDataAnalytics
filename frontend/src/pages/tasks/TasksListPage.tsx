@@ -7,6 +7,14 @@ import type { TaskRunListItem } from '@/api/types';
 
 const { Paragraph } = Typography;
 
+function taskDetailPath(jobType: string, runId: string): string {
+  const q = `runId=${encodeURIComponent(runId)}`;
+  if (jobType === 'PREPROCESS') {
+    return `/tasks/preprocess?${q}`;
+  }
+  return `/tasks/pipeline?${q}`;
+}
+
 const statusColor: Record<string, string> = {
   Queued: 'default',
   Running: 'processing',
@@ -42,6 +50,9 @@ export function TasksListPage() {
           <Button icon={<ReloadOutlined />} onClick={() => void load()}>
             刷新
           </Button>
+          <Link to="/tasks/preprocess">
+            <Button>新建预处理入仓</Button>
+          </Link>
           <Link to="/tasks/pipeline">
             <Button type="primary">新建 PIPELINE</Button>
           </Link>
@@ -49,7 +60,8 @@ export function TasksListPage() {
       }
     >
       <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        数据来源：<code>GET /api/v1/tasks</code>（按创建时间倒序）。点击「详情」查看进度与错误信息。
+        数据来源：<code>GET /api/v1/tasks</code>（按创建时间倒序）。「新建预处理入仓」进入仅入仓任务创建页（
+        <code>POST /api/v1/tasks/preprocess</code>）；PIPELINE 含预处理与算法 DAG。点击「详情」按任务类型打开对应页面并轮询进度。
       </Paragraph>
       <Table<TaskRunListItem>
         loading={loading}
@@ -64,7 +76,7 @@ export function TasksListPage() {
             width: 88,
             fixed: 'left',
             render: (_, r) => (
-              <Link to={`/tasks/pipeline?runId=${encodeURIComponent(r.run_id)}`}>详情</Link>
+              <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>
             )
           },
           { title: 'run_id', dataIndex: 'run_id', width: 280, ellipsis: true },

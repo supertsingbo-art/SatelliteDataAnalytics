@@ -43,6 +43,7 @@ public sealed record SatelliteCache(
     DateTimeOffset LastSyncedAt,
     int CachedParameterCount,
     int CachedCommandCount,
+    bool IsEnabled,
     JsonElement RawJson);
 
 /// <summary>

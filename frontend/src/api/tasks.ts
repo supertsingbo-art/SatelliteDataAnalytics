@@ -28,8 +28,11 @@ export interface CreatePreprocessBody {
 }
 
 export const tasksApi = {
-  list: (pageSize = 50) =>
-    request<TaskRunListItem[]>('get', TASKS_BASE, undefined, { pageSize } as Record<string, unknown>),
+  list: (params?: { pageSize?: number; jobType?: string }) =>
+    request<TaskRunListItem[]>('get', TASKS_BASE, undefined, {
+      pageSize: params?.pageSize ?? 50,
+      jobType: params?.jobType
+    } as Record<string, unknown>),
   createPipeline: (body: CreatePipelineBody) =>
     request<JobAccepted>('post', `${TASKS_BASE}/pipeline`, {
       tasookNo: body.tasookNo,

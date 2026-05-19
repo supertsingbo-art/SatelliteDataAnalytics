@@ -6,6 +6,7 @@ import {
   Drawer,
   Input,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -156,6 +157,21 @@ export function SatellitesPage() {
   const [phases, setPhases] = useState<TestPhase[]>([]);
   const [mongoSummary, setMongoSummary] = useState<MongoConnectionSummary | null>(null);
   const [lastSync, setLastSync] = useState<AssetSyncResult | null>(null);
+  const [togglingKey, setTogglingKey] = useState<string | null>(null);
+
+  const handleToggleEnabled = async (record: SatelliteListItem, isEnabled: boolean) => {
+    const key = `${record.tasookNo}_${record.satelliteNo}`;
+    setTogglingKey(key);
+    try {
+      await assetsApi.setSatelliteEnabled(record.tasookNo, record.satelliteNo, isEnabled);
+      message.success(isEnabled ? '卫星已启用' : '卫星已禁用');
+      await reload();
+    } catch {
+      message.error('更新启用状态失败');
+    } finally {
+      setTogglingKey(null);
+    }
+  };
 
   const reload = async () => {
     setLoading(true);
@@ -334,7 +350,7 @@ export function SatellitesPage() {
         本页展示 satellite_cache、param_cache、command_cache、test_batch_cache 的同步快照（默认由
         AssetCache:UsePostgreSql=true 写入 ConnectionStrings:Postgres 对应库，见 6.1）。流程为：全量卫星 → 每星参数
         （POST /api/mass-data/basic/parameters）→ 每星指令（POST /api/mass-data/basic/commands）→ 每星测试阶段 → 每星
-        Mongo 配置。两列「参数 / 指令同步总量」为最近一次成功写入 PostgreSQL 缓存表的条数。
+        Mongo 配置。两列「参数 / 指令同步总量」为最近一次成功写入 PostgreSQL 缓存表的条数。禁用卫星后不可作为筛选模板参考卫星，全量同步不会自动改回启用。
       </Text>
 
       {lastSync && (
@@ -421,6 +437,24 @@ export function SatellitesPage() {
             dataIndex: 'cachedCommandCount',
             width: 120,
             render: (v: number | undefined) => (v ?? 0).toLocaleString()
+          },
+          {
+            title: '启用',
+            dataIndex: 'isEnabled',
+            width: 130,
+            render: (enabled: boolean, record) => {
+              const rowKey = `${record.tasookNo}_${record.satelliteNo}`;
+              return (
+                <Space size={4}>
+                  <Switch
+                    checked={enabled}
+                    loading={togglingKey === rowKey}
+                    onChange={(checked) => handleToggleEnabled(record, checked)}
+                  />
+                  <Tag color={enabled ? 'success' : 'default'}>{enabled ? '启用' : '禁用'}</Tag>
+                </Space>
+              );
+            }
           },
           {
             title: 'Mongo 同步状态',

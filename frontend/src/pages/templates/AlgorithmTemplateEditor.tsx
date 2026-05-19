@@ -141,7 +141,7 @@ function EditorInner() {
       try {
         const [reg, sat] = await Promise.all([
           algoRegistryApi.registry(),
-          assetsApi.listSatellites({ pageNo: 1, pageSize: 500 })
+          assetsApi.listSatellites({ pageNo: 1, pageSize: 500, enabledOnly: true })
         ]);
         setRegistry(reg);
         setSatellites(sat.items);

@@ -18,7 +18,15 @@ public sealed record AssetPageRequest(
     string? Keyword,
     int PageNo = 1,
     int PageSize = 50,
-    bool Unpaged = false);
+    bool Unpaged = false,
+    bool? EnabledOnly = null);
+
+public sealed record SetSatelliteEnabledRequest(bool IsEnabled);
+
+public static class AssetErrorCodes
+{
+    public const string SatelliteDisabled = "ASSET_SATELLITE_DISABLED";
+}
 
 public sealed record PagedResult<T>(
     int PageNo,
@@ -38,6 +46,7 @@ public sealed record SatelliteListItem(
     DateTimeOffset LastSyncedAt,
     int CachedParameterCount,
     int CachedCommandCount,
+    bool IsEnabled,
     IReadOnlyList<string> DevelopmentPhases);
 
 /// <summary>
@@ -111,6 +120,12 @@ public interface IAssetCacheRepository
     Task<IReadOnlyCollection<SatelliteCache>> GetSatellitesAsync(CancellationToken cancellationToken);
 
     Task<SatelliteCache?> GetSatelliteAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
+
+    Task SetSatelliteEnabledAsync(
+        string tasookNo,
+        string satelliteNo,
+        bool isEnabled,
+        CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 

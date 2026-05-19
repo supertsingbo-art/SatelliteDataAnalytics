@@ -37,6 +37,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
                     now,
                     CachedParameterCount: 0,
                     CachedCommandCount: 0,
+                    IsEnabled: true,
                     item.Clone());
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.TasookNo) && !string.IsNullOrWhiteSpace(item.SatelliteNo))

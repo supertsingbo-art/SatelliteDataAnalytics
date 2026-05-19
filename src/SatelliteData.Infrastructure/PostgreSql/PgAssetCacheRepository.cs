@@ -28,6 +28,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             last_synced_at timestamptz NOT NULL,
             cached_parameter_count int NOT NULL DEFAULT 0,
             cached_command_count int NOT NULL DEFAULT 0,
+            is_enabled boolean NOT NULL DEFAULT true,
             raw_json jsonb NOT NULL,
             PRIMARY KEY (tasook_no, satellite_no)
         );
@@ -149,6 +150,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_parameter_count integer NOT NULL DEFAULT 0;
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_command_count integer NOT NULL DEFAULT 0;
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS tasook_name varchar(256);
+        ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
         """;
 
     private readonly string _connectionString;
@@ -180,11 +182,11 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             INSERT INTO satellite_cache (
                 tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
                 mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
-                cached_parameter_count, cached_command_count, raw_json)
+                cached_parameter_count, cached_command_count, is_enabled, raw_json)
             VALUES (
                 @tasook_no, @tasook_name, @satellite_no, @satellite_name, @satellite_type, @db_stage,
                 @mongo_uri, @mongo_db_name, @mongo_auth_ref, @source_version, @last_synced_at,
-                @cached_parameter_count, @cached_command_count, @raw_json)
+                @cached_parameter_count, @cached_command_count, @is_enabled, @raw_json)
             ON CONFLICT (tasook_no, satellite_no) DO UPDATE SET
                 tasook_name = EXCLUDED.tasook_name,
                 satellite_name = EXCLUDED.satellite_name,
@@ -214,6 +216,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         cmd.Parameters.AddWithValue("last_synced_at", satellite.LastSyncedAt);
         cmd.Parameters.AddWithValue("cached_parameter_count", satellite.CachedParameterCount);
         cmd.Parameters.AddWithValue("cached_command_count", satellite.CachedCommandCount);
+        cmd.Parameters.AddWithValue("is_enabled", satellite.IsEnabled);
         var pRaw = cmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb);
         pRaw.Value = rawJson;
 
@@ -406,7 +409,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             """
             SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
                    mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
-                   cached_parameter_count, cached_command_count, raw_json::text
+                   cached_parameter_count, cached_command_count, is_enabled, raw_json::text
             FROM satellite_cache
             ORDER BY tasook_no, satellite_no;
             """,
@@ -422,6 +425,30 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         return list;
     }
 
+    public async Task SetSatelliteEnabledAsync(
+        string tasookNo,
+        string satelliteNo,
+        bool isEnabled,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE satellite_cache
+            SET is_enabled = @is_enabled
+            WHERE tasook_no = @tasook_no AND satellite_no = @satellite_no;
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("tasook_no", tasookNo);
+        cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
+        cmd.Parameters.AddWithValue("is_enabled", isEnabled);
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<SatelliteCache?> GetSatelliteAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken)
     {
         await EnsureSchemaAsync(cancellationToken).ConfigureAwait(false);
@@ -432,7 +459,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             """
             SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
                    mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
-                   cached_parameter_count, cached_command_count, raw_json::text
+                   cached_parameter_count, cached_command_count, is_enabled, raw_json::text
             FROM satellite_cache
             WHERE tasook_no = @tasook_no AND satellite_no = @satellite_no;
             """,
@@ -662,6 +689,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_synced_at")),
             reader.GetInt32(reader.GetOrdinal("cached_parameter_count")),
             reader.GetInt32(reader.GetOrdinal("cached_command_count")),
+            reader.GetBoolean(reader.GetOrdinal("is_enabled")),
             raw);
     }
 

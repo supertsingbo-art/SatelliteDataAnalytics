@@ -111,7 +111,7 @@ export function FilterTemplateEditor() {
       try {
         const [tree, satResult] = await Promise.all([
           groupsApi.getTree(),
-          assetsApi.listSatellites({ pageNo: 1, pageSize: 500 })
+          assetsApi.listSatellites({ pageNo: 1, pageSize: 500, enabledOnly: true })
         ]);
         setGroups(tree);
         setSatellites(satResult.items);

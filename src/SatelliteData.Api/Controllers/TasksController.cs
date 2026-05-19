@@ -111,13 +111,19 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
             HttpContext));
     }
 
-    /// <summary>任务列表（按创建时间倒序，默认 50 条，最大 200）。</summary>
+    /// <summary>任务列表（按创建时间倒序，默认 50 条，最大 200）。<paramref name="jobType"/> 可选：PIPELINE / PREPROCESS / ALGORITHM。</summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<TaskRunListItemResponse>>>> List(
         [FromQuery] int pageSize = 50,
+        [FromQuery] string? jobType = null,
         CancellationToken cancellationToken = default)
     {
         var runs = await taskRuns.ListRecentAsync(pageSize, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(jobType) && TryParseJobTypeFilter(jobType, out var filter))
+        {
+            runs = runs.Where(r => r.JobType == filter).ToArray();
+        }
+
         var items = runs.Select(ToListItem).ToArray();
         return Ok(ApiResponse<IReadOnlyList<TaskRunListItemResponse>>.Ok(items, HttpContext));
     }
@@ -157,6 +163,28 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
             r.CurrentStep,
             r.CreatedAt,
             r.EndTime);
+
+    private static bool TryParseJobTypeFilter(string raw, out TaskJobType jobType)
+    {
+        switch (raw.Trim().ToUpperInvariant())
+        {
+            case "PIPELINE":
+                jobType = TaskJobType.Pipeline;
+                return true;
+            case "PREPROCESS":
+                jobType = TaskJobType.Preprocess;
+                return true;
+            case "ALGORITHM":
+                jobType = TaskJobType.Algorithm;
+                return true;
+            case "WEBHOOK":
+                jobType = TaskJobType.Webhook;
+                return true;
+            default:
+                jobType = TaskJobType.Pipeline;
+                return false;
+        }
+    }
 
     private static string JobTypeToApi(TaskJobType t) =>
         t switch

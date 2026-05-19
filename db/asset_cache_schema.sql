@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS satellite_cache (
     last_synced_at timestamptz NOT NULL,
     cached_parameter_count int NOT NULL DEFAULT 0,
     cached_command_count int NOT NULL DEFAULT 0,
+    is_enabled boolean NOT NULL DEFAULT true,
     raw_json jsonb NOT NULL,
     PRIMARY KEY (tasook_no, satellite_no)
 );

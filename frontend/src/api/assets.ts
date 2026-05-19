@@ -46,8 +46,18 @@ export const assetsApi = {
     ),
   clearCache: () => request<{ cleared: boolean }>('delete', `${BASE}/cache`),
 
-  listSatellites: (params: { keyword?: string; pageNo?: number; pageSize?: number }) =>
-    request<PagedResult<SatelliteListItem>>('get', `${BASE}/satellites`, undefined, params),
+  listSatellites: (params: {
+    keyword?: string;
+    pageNo?: number;
+    pageSize?: number;
+    enabledOnly?: boolean;
+  }) => request<PagedResult<SatelliteListItem>>('get', `${BASE}/satellites`, undefined, params),
+  setSatelliteEnabled: (tasookNo: string, satelliteNo: string, isEnabled: boolean) =>
+    request<SatelliteCache>(
+      'patch',
+      `${BASE}/satellites/${encodeURIComponent(tasookNo)}/${encodeURIComponent(satelliteNo)}/enabled`,
+      { isEnabled }
+    ),
   getSatellite: (tasookNo: string, satelliteNo: string) =>
     request<SatelliteCache>(
       'get',

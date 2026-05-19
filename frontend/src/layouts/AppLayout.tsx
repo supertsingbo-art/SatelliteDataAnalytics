@@ -36,7 +36,7 @@ const menuItems = [
     children: [
       { key: '/tasks', label: '任务列表' },
       { key: '/tasks/pipeline', label: '新建 PIPELINE' },
-      { key: '/tasks/preprocess', label: '仅预处理入仓' }
+      { key: '/tasks/preprocess', label: '新建预处理入仓' }
     ]
   }
 ];
@@ -64,7 +64,7 @@ export function AppLayout() {
     if (path.startsWith('/algorithms/packages')) return '算法仓库 / 算法包列表';
     if (path === '/tasks') return '任务编排 / 任务列表';
     if (path.startsWith('/tasks/pipeline')) return '任务编排 / 新建 PIPELINE';
-    if (path.startsWith('/tasks/preprocess')) return '任务编排 / 仅预处理入仓';
+    if (path.startsWith('/tasks/preprocess')) return '任务编排 / 新建预处理入仓';
     return '卫星测试数据预处理与数据分析平台';
   }, [location.pathname]);
 

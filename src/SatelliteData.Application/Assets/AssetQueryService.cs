@@ -19,6 +19,11 @@ public sealed class AssetQueryService(
         var satellites = await cacheRepository.GetSatellitesAsync(cancellationToken);
         var phaseLabels = await cacheRepository.GetDevelopmentPhaseLabelsBySatelliteAsync(cancellationToken);
 
+        if (request.EnabledOnly == true)
+        {
+            satellites = satellites.Where(item => item.IsEnabled).ToArray();
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = request.Keyword!;
@@ -46,6 +51,22 @@ public sealed class AssetQueryService(
             .ToArray();
 
         return new PagedResult<SatelliteListItem>(pageNo, pageSize, ordered.Length, pageItems);
+    }
+
+    public async Task<SatelliteCache> SetSatelliteEnabledAsync(
+        string tasookNo,
+        string satelliteNo,
+        bool isEnabled,
+        CancellationToken cancellationToken)
+    {
+        var existing = await cacheRepository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
+        if (existing is null)
+        {
+            throw new InvalidOperationException("卫星缓存不存在");
+        }
+
+        await cacheRepository.SetSatelliteEnabledAsync(tasookNo, satelliteNo, isEnabled, cancellationToken);
+        return (await cacheRepository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken))!;
     }
 
     public Task<SatelliteCache?> GetSatelliteAsync(

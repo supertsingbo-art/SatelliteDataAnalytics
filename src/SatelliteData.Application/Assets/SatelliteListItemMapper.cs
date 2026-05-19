@@ -18,5 +18,6 @@ internal static class SatelliteListItemMapper
             satellite.LastSyncedAt,
             satellite.CachedParameterCount,
             satellite.CachedCommandCount,
+            satellite.IsEnabled,
             developmentPhases);
 }

@@ -13,12 +13,35 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
         [FromQuery] string? keyword,
         [FromQuery] int pageNo = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] bool? enabledOnly = null,
         CancellationToken cancellationToken = default)
     {
         var page = await queryService.GetSatellitesAsync(
-            new AssetPageRequest(keyword, pageNo, pageSize),
+            new AssetPageRequest(keyword, pageNo, pageSize, EnabledOnly: enabledOnly),
             cancellationToken);
         return Ok(ApiResponse<PagedResult<SatelliteListItem>>.Ok(page, HttpContext));
+    }
+
+    [HttpPatch("{tasookNo}/{satelliteNo}/enabled")]
+    public async Task<ActionResult<ApiResponse<SatelliteCache>>> SetEnabled(
+        string tasookNo,
+        string satelliteNo,
+        [FromBody] SetSatelliteEnabledRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var satellite = await queryService.SetSatelliteEnabledAsync(
+                tasookNo,
+                satelliteNo,
+                request.IsEnabled,
+                cancellationToken);
+            return Ok(ApiResponse<SatelliteCache>.Ok(satellite, HttpContext));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail("ASSET_SATELLITE_NOT_FOUND", ex.Message, HttpContext));
+        }
     }
 
     [HttpGet("{tasookNo}/{satelliteNo}")]

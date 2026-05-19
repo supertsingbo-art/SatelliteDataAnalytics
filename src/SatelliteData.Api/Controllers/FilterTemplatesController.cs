@@ -214,6 +214,7 @@ public sealed class FilterTemplatesController(FilterTemplateService templateServ
             TemplateErrorCodes.FilterTemplateInvalidState => StatusCodes.Status409Conflict,
             TemplateErrorCodes.FilterTemplateConfigInvalid => StatusCodes.Status422UnprocessableEntity,
             TemplateErrorCodes.FilterTemplateResolveFailed => StatusCodes.Status422UnprocessableEntity,
+            TemplateErrorCodes.AssetSatelliteDisabled => StatusCodes.Status422UnprocessableEntity,
             _ => StatusCodes.Status400BadRequest
         };
         return StatusCode(status, ApiResponse<T>.Fail(ex.ErrorCode, ex.Message, HttpContext));

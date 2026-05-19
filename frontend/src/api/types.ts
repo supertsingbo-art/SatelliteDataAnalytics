@@ -42,6 +42,7 @@ export interface SatelliteCache {
   lastSyncedAt: string;
   cachedParameterCount: number;
   cachedCommandCount: number;
+  isEnabled: boolean;
 }
 
 /** 卫星列表项：含测试阶段（卫星测试流程规划 teststages 同步至 test_batch_cache） */
@@ -56,6 +57,7 @@ export interface SatelliteListItem {
   lastSyncedAt: string;
   cachedParameterCount: number;
   cachedCommandCount: number;
+  isEnabled: boolean;
   developmentPhases: string[];
 }
 

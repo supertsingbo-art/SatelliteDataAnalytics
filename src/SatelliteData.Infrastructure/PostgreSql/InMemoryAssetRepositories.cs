@@ -83,6 +83,11 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
 
     public Task UpsertSatelliteAsync(SatelliteCache satellite, CancellationToken cancellationToken)
     {
+        if (_satellites.TryGetValue((satellite.TasookNo, satellite.SatelliteNo), out var existing))
+        {
+            satellite = satellite with { IsEnabled = existing.IsEnabled };
+        }
+
         _satellites[(satellite.TasookNo, satellite.SatelliteNo)] = satellite;
         return Task.CompletedTask;
     }
@@ -137,6 +142,20 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
     {
         _satellites.TryGetValue((tasookNo, satelliteNo), out var satellite);
         return Task.FromResult(satellite);
+    }
+
+    public Task SetSatelliteEnabledAsync(
+        string tasookNo,
+        string satelliteNo,
+        bool isEnabled,
+        CancellationToken cancellationToken)
+    {
+        if (_satellites.TryGetValue((tasookNo, satelliteNo), out var existing))
+        {
+            _satellites[(tasookNo, satelliteNo)] = existing with { IsEnabled = isEnabled };
+        }
+
+        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken)

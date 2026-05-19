@@ -102,6 +102,7 @@ public sealed class FilterTemplateService(
             await groupRepository.GetByIdAsync(request.GroupId, cancellationToken));
         FilterTemplateValidator.Validate(configJson);
         await EnsureReferenceSatelliteInGroupAsync(request.GroupId, configJson, cancellationToken);
+        await EnsureReferenceSatelliteEnabledAsync(configJson, cancellationToken);
         configJson = await NormalizeReferenceParamsAsync(configJson, cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
@@ -146,6 +147,7 @@ public sealed class FilterTemplateService(
             await groupRepository.GetByIdAsync(request.GroupId, cancellationToken));
         FilterTemplateValidator.Validate(configJson);
         await EnsureReferenceSatelliteInGroupAsync(request.GroupId, configJson, cancellationToken);
+        await EnsureReferenceSatelliteEnabledAsync(configJson, cancellationToken);
         configJson = await NormalizeReferenceParamsAsync(configJson, cancellationToken);
 
         var updated = existing with
@@ -179,6 +181,7 @@ public sealed class FilterTemplateService(
                 "只有 Draft 状态可以发布");
         }
 
+        await EnsureReferenceSatelliteEnabledAsync(existing.ConfigJson, cancellationToken);
         var configJson = await NormalizeReferenceParamsAsync(existing.ConfigJson, cancellationToken);
         FilterTemplateValidator.Validate(configJson);
 
@@ -315,6 +318,8 @@ public sealed class FilterTemplateService(
         var template = await templateRepository.GetVersionAsync(templateId, version, cancellationToken)
             ?? throw new TemplateGovernanceException(TemplateErrorCodes.FilterTemplateNotFound, "筛选模板版本不存在");
 
+        await EnsureSatelliteEnabledAsync(targetTasookNo, targetSatelliteNo, "目标卫星", cancellationToken);
+
         if (!await groupService.IsSatelliteInGroupSubtreeAsync(
                 template.GroupId,
                 targetTasookNo,
@@ -422,6 +427,29 @@ public sealed class FilterTemplateService(
         }
 
         return FilterTemplateConfigMapper.EnrichTargetParamNames(configJson, byId);
+    }
+
+    private async Task EnsureReferenceSatelliteEnabledAsync(
+        JsonElement configJson,
+        CancellationToken cancellationToken)
+    {
+        var (tasook, sat) = ReadScopeReference(configJson);
+        await EnsureSatelliteEnabledAsync(tasook, sat, "参考卫星", cancellationToken);
+    }
+
+    private async Task EnsureSatelliteEnabledAsync(
+        string tasookNo,
+        string satelliteNo,
+        string roleLabel,
+        CancellationToken cancellationToken)
+    {
+        var satellite = await assetCacheRepository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken);
+        if (satellite is not null && !satellite.IsEnabled)
+        {
+            throw new TemplateGovernanceException(
+                TemplateErrorCodes.AssetSatelliteDisabled,
+                $"{roleLabel} {tasookNo}/{satelliteNo} 已禁用，不能用于筛选模板");
+        }
     }
 
     private async Task EnsureReferenceSatelliteInGroupAsync(

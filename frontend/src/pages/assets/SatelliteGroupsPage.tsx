@@ -192,7 +192,7 @@ export function SatelliteGroupsPage() {
 
   const openAddMembers = async () => {
     if (!selected) return;
-    const result = await assetsApi.listSatellites({ pageNo: 1, pageSize: 500 });
+    const result = await assetsApi.listSatellites({ pageNo: 1, pageSize: 500, enabledOnly: true });
     setAllSatellites(result.items);
     setPickedSatellites([]);
     setMemberModalOpen(true);
