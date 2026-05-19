@@ -412,8 +412,10 @@ export interface TaskRunDetail {
   window_end: string | null;
   filter_template_id: string | null;
   filter_template_version: number | null;
+  filter_template_name: string | null;
   algorithm_template_id: string | null;
   algorithm_template_version: number | null;
+  algorithm_template_name: string | null;
   progress_percent: number;
   current_step: string | null;
   start_time: string | null;

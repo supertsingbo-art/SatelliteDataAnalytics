@@ -9,6 +9,19 @@ function formatTime(iso: string | null | undefined) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+function formatTemplateDisplay(
+  name: string | null | undefined,
+  version: number | null | undefined,
+  id: string | null | undefined
+) {
+  if (!name && !id) return '—';
+  const label = name?.trim() || id;
+  if (version != null && label) {
+    return `${label} v${version}`;
+  }
+  return label ?? '—';
+}
+
 type Props = {
   detail: TaskRunDetail | null;
   loading?: boolean;
@@ -58,15 +71,19 @@ export function TaskDetailCard({ detail, loading, title = '任务详情' }: Prop
         <Descriptions.Item label="开始时间">{formatTime(detail.window_start)}</Descriptions.Item>
         <Descriptions.Item label="结束时间">{formatTime(detail.window_end)}</Descriptions.Item>
         <Descriptions.Item label="筛选模板" span={2}>
-          {detail.filter_template_id
-            ? `${detail.filter_template_id} v${detail.filter_template_version ?? '?'}`
-            : '—'}
+          {formatTemplateDisplay(
+            detail.filter_template_name,
+            detail.filter_template_version,
+            detail.filter_template_id
+          )}
         </Descriptions.Item>
         {(detail.job_type === 'PIPELINE' || detail.algorithm_template_id) && (
           <Descriptions.Item label="算法模板" span={2}>
-            {detail.algorithm_template_id
-              ? `${detail.algorithm_template_id} v${detail.algorithm_template_version ?? '?'}`
-              : '—'}
+            {formatTemplateDisplay(
+              detail.algorithm_template_name,
+              detail.algorithm_template_version,
+              detail.algorithm_template_id
+            )}
           </Descriptions.Item>
         )}
         <Descriptions.Item label="任务开始">{formatTime(detail.start_time)}</Descriptions.Item>

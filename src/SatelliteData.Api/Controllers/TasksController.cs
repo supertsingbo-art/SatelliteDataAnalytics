@@ -1,13 +1,18 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using SatelliteData.Application.Tasks;
+using SatelliteData.Application.Templates;
 using SatelliteData.Domain.Tasks;
 
 namespace SatelliteData.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/tasks")]
-public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepository taskRuns) : ControllerBase
+public sealed class TasksController(
+    TaskOrchestrator orchestrator,
+    ITaskRunRepository taskRuns,
+    IFilterTemplateRepository filterTemplates,
+    IAlgorithmTemplateRepository algorithmTemplates) : ControllerBase
 {
     public sealed record TaskRunListItemResponse(
         [property: JsonPropertyName("run_id")] Guid RunId,
@@ -162,7 +167,8 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
             return NotFound(ApiResponse<object>.Fail(TaskErrorCodes.NotFound, "任务不存在", HttpContext));
         }
 
-        return Ok(ApiResponse<TaskRunDetailResponse>.Ok(ToDetail(run), HttpContext));
+        var detail = await ToDetailAsync(run, cancellationToken).ConfigureAwait(false);
+        return Ok(ApiResponse<TaskRunDetailResponse>.Ok(detail, HttpContext));
     }
 
     [HttpPost("{runId:guid}/cancel")]
@@ -189,8 +195,25 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
         }
     }
 
-    private static TaskRunDetailResponse ToDetail(TaskRun r) =>
-        new(
+    private async Task<TaskRunDetailResponse> ToDetailAsync(TaskRun r, CancellationToken cancellationToken)
+    {
+        string? filterTemplateName = null;
+        if (r.FilterTemplateId is Guid filterId && r.FilterTemplateVersion is int filterVersion)
+        {
+            var filter = await filterTemplates.GetVersionAsync(filterId, filterVersion, cancellationToken)
+                .ConfigureAwait(false);
+            filterTemplateName = filter?.TemplateName;
+        }
+
+        string? algorithmTemplateName = null;
+        if (r.AlgorithmTemplateId is Guid algoId && r.AlgorithmTemplateVersion is int algoVersion)
+        {
+            var algo = await algorithmTemplates.GetVersionAsync(algoId, algoVersion, cancellationToken)
+                .ConfigureAwait(false);
+            algorithmTemplateName = algo?.TemplateName;
+        }
+
+        return new TaskRunDetailResponse(
             r.RunId,
             r.JobId,
             JobTypeToApi(r.JobType),
@@ -203,8 +226,10 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
             r.WindowEnd,
             r.FilterTemplateId,
             r.FilterTemplateVersion,
+            filterTemplateName,
             r.AlgorithmTemplateId,
             r.AlgorithmTemplateVersion,
+            algorithmTemplateName,
             r.ProgressPercent,
             r.CurrentStep,
             r.StartTime,
@@ -212,6 +237,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
             r.CreatedAt,
             r.ErrorCode,
             r.ErrorMsg);
+    }
 
     private static TaskRunListItemResponse ToListItem(TaskRun r) =>
         new(
