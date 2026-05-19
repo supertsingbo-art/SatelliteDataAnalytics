@@ -443,6 +443,8 @@ export interface TaskListItemV2 {
   job_id: string | null;
   job_type: string;
   execution_mode: string | null;
+  /** 是否可点击「执行」（立即待执行 / 每日计划启用） */
+  can_execute?: boolean;
   display_status: string;
   status: string;
   tasook_no: string;

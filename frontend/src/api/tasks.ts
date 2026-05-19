@@ -83,7 +83,7 @@ export const tasksApi = {
   disableSchedule: (scheduleId: string) =>
     request<{ scheduleId: string; enabled: boolean }>('post', `${TASKS_BASE}/schedules/${scheduleId}/disable`),
   executeRun: (runId: string) =>
-    request<ExecuteTaskResult>('post', `${TASKS_BASE}/runs/${runId}/execute`),
+    request<ExecuteTaskResult>('post', `${TASKS_BASE}/${runId}/execute`),
   executeSchedule: (scheduleId: string) =>
     request<ExecuteTaskResult>('post', `${TASKS_BASE}/schedules/${scheduleId}/execute`),
   listRunExecutions: (runId: string) =>

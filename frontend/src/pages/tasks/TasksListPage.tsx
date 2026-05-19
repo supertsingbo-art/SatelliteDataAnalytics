@@ -55,8 +55,24 @@ function rowKey(r: TaskListItemV2): string {
 }
 
 function canExecute(row: TaskListItemV2): boolean {
+  if (row.can_execute === true) return true;
+  if (row.can_execute === false) return false;
   if (row.item_type === 'SCHEDULE') return true;
-  return row.execution_mode === 'IMMEDIATE' && row.display_status === '待执行';
+  if (row.execution_mode === 'IMMEDIATE' && row.display_status === '待执行') return true;
+  return (
+    row.item_type === 'RUN' &&
+    row.job_type === 'PREPROCESS' &&
+    row.status === 'Queued' &&
+    (row.execution_mode === 'IMMEDIATE' || row.execution_mode == null) &&
+    row.display_status === '待执行'
+  );
+}
+
+function isImmediateRun(row: TaskListItemV2): boolean {
+  return (
+    row.item_type === 'RUN' &&
+    (row.execution_mode === 'IMMEDIATE' || row.execution_mode == null)
+  );
 }
 
 export function TasksListPage() {
@@ -126,9 +142,9 @@ export function TasksListPage() {
       if (row.item_type === 'SCHEDULE' && row.schedule_id) {
         await tasksApi.executeSchedule(row.schedule_id);
         message.success('每天定时计划已启用');
-      } else if (row.run_id) {
-        await tasksApi.executeRun(row.run_id);
-        message.success('任务已提交执行');
+      } else if (row.run_id && isImmediateRun(row)) {
+        const res = await tasksApi.executeRun(row.run_id);
+        message.success(`任务已提交执行（${res.display_status}）`);
       }
       await load();
     } catch {
@@ -185,22 +201,31 @@ export function TasksListPage() {
           {
             title: '操作',
             key: 'act',
-            width: 220,
+            width: 260,
             fixed: 'left',
             render: (_, r) => (
               <Space size="small" wrap>
-                {r.run_id && <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>}
-                {canExecute(r) && (
+                {canExecute(r) && isImmediateRun(r) && (
                   <Button
-                    type="link"
+                    type="primary"
                     size="small"
-                    style={{ padding: 0 }}
                     loading={executingKey === rowKey(r)}
                     onClick={() => void handleExecute(r)}
                   >
                     执行
                   </Button>
                 )}
+                {canExecute(r) && r.item_type === 'SCHEDULE' && (
+                  <Button
+                    type="default"
+                    size="small"
+                    loading={executingKey === rowKey(r)}
+                    onClick={() => void handleExecute(r)}
+                  >
+                    启用计划
+                  </Button>
+                )}
+                {r.run_id && <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>}
                 <Button
                   type="link"
                   size="small"

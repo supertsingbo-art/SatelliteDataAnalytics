@@ -21,7 +21,8 @@ public sealed class TaskExecutionService(
 
         var now = DateTimeOffset.UtcNow;
 
-        if (run.ExecutionMode == PreprocessExecutionMode.Immediate)
+        if (PreprocessExecutionModeMapper.IsImmediatePending(run)
+            || run.ExecutionMode == PreprocessExecutionMode.Immediate)
         {
             if (!string.IsNullOrWhiteSpace(run.HangfireJobId))
             {
@@ -34,7 +35,12 @@ public sealed class TaskExecutionService(
             }
 
             var hangfireId = scheduler.EnqueuePreprocess(runId);
-            run = run with { HangfireJobId = hangfireId, CurrentStep = "queued" };
+            run = run with
+            {
+                HangfireJobId = hangfireId,
+                CurrentStep = "queued",
+                ExecutionMode = run.ExecutionMode ?? PreprocessExecutionMode.Immediate
+            };
             await taskRuns.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
             logger.LogInformation("Manual execute preprocess {RunId}, Hangfire {JobId}", runId, hangfireId);
             return ToResult(run, now);

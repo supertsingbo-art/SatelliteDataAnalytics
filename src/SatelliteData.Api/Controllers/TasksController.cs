@@ -26,6 +26,7 @@ public sealed class TasksController(
         [property: JsonPropertyName("job_id")] string? JobId,
         [property: JsonPropertyName("job_type")] string JobType,
         [property: JsonPropertyName("execution_mode")] string? ExecutionMode,
+        [property: JsonPropertyName("can_execute")] bool CanExecute,
         [property: JsonPropertyName("display_status")] string DisplayStatus,
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("tasook_no")] string TasookNo,
@@ -236,6 +237,13 @@ public sealed class TasksController(
             HttpContext));
     }
 
+    /// <summary>立即预处理任务手动执行（与 POST runs/{runId}/execute 相同）。</summary>
+    [HttpPost("{runId:guid}/execute")]
+    public Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteRunShortcut(
+        Guid runId,
+        CancellationToken cancellationToken) =>
+        ExecuteRun(runId, cancellationToken);
+
     [HttpPost("runs/{runId:guid}/execute")]
     public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteRun(
         Guid runId,
@@ -424,6 +432,7 @@ public sealed class TasksController(
             i.JobId,
             i.JobType,
             i.ExecutionMode,
+            i.CanExecute,
             i.DisplayStatus,
             i.Status,
             i.TasookNo,

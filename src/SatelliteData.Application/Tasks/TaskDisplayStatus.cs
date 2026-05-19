@@ -31,9 +31,7 @@ public static class TaskDisplayStatus
             return Scheduled;
         }
 
-        if (run.ExecutionMode == PreprocessExecutionMode.Immediate
-            && string.IsNullOrWhiteSpace(run.HangfireJobId)
-            && run.Status == TaskRunStatus.Queued)
+        if (PreprocessExecutionModeMapper.IsImmediatePending(run))
         {
             return Pending;
         }

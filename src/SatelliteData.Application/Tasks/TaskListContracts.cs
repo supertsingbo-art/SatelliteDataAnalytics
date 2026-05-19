@@ -10,6 +10,7 @@ public sealed record TaskListItemDto(
     string? JobId,
     string JobType,
     string? ExecutionMode,
+    bool CanExecute,
     string DisplayStatus,
     string Status,
     string TasookNo,
