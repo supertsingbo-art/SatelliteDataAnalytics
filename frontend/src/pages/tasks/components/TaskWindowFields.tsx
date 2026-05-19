@@ -36,11 +36,11 @@ export function TaskWindowFields({ form }: Props) {
     }
   };
 
-  const onPhasePick = (testBatchId: string) => {
-    const p = phases.find((x) => x.testBatchId === testBatchId);
+  const onPhasePick = (testBatchName: string) => {
+    const p = phases.find((x) => x.testBatchName === testBatchName);
     if (!p) return;
     form.setFieldsValue({
-      testBatchId: p.testBatchId,
+      testBatchName: p.testBatchName,
       timeRange: [dayjs(p.startTs), dayjs(p.endTs)] as [Dayjs, Dayjs]
     });
   };
@@ -60,22 +60,22 @@ export function TaskWindowFields({ form }: Props) {
         </Button>
         <Button onClick={clearWindow}>清空时间窗</Button>
       </Space>
-      <Form.Item label="测试阶段（快捷选择）" help="选择后写入 test_batch_id 与下方起止时间">
+      <Form.Item label="测试阶段（快捷选择）" help="选择后写入 test_batch_name 与下方起止时间">
         <Select
           allowClear
-          placeholder={phases.length ? '选择阶段名称 / 编号' : '请先点击「加载测试阶段」'}
+          placeholder={phases.length ? '选择阶段名称' : '请先点击「加载测试阶段」'}
           style={{ width: '100%' }}
           disabled={phases.length === 0}
           options={phases.map((p) => ({
-            value: p.testBatchId,
-            label: `${p.scenario ?? '(无名称)'} (${p.testBatchId}) — ${dayjs(p.startTs).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(p.endTs).format('YYYY-MM-DD HH:mm')}`
+            value: p.testBatchName,
+            label: `${p.testBatchName} — ${dayjs(p.startTs).format('YYYY-MM-DD HH:mm')} ~ ${dayjs(p.endTs).format('YYYY-MM-DD HH:mm')}`
           }))}
           onChange={(v) => {
             if (v) onPhasePick(v as string);
           }}
         />
       </Form.Item>
-      <Form.Item name="testBatchId" label="测试阶段 test_batch_id" help="可手输，或与上方快捷选择同步">
+      <Form.Item name="testBatchName" label="测试阶段名称" help="可手输，或与上方快捷选择同步（写入 task_run.test_batch_name，非外键）">
         <Input placeholder="可选；与筛选模板 TEST_BATCH 模式配合" />
       </Form.Item>
       <Form.Item

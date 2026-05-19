@@ -3,25 +3,25 @@ using SatelliteData.Domain.Assets;
 namespace SatelliteData.Application.Pipeline;
 
 /// <summary>
-/// 根据任务入参或有效时间窗，从 <c>test_batch_cache</c> 解析 Mongo / 元数据使用的 <c>test_batch_id</c>。
+/// 根据任务入参或有效时间窗，从 <c>test_batch_cache</c> 解析 Mongo / 元数据使用的阶段名称（<c>test_batch_name</c>）。
 /// </summary>
 public static class TestBatchWindowResolver
 {
-    public static string ResolveBatchId(
-        string? testBatchId,
+    public static string ResolveBatchName(
+        string? testBatchName,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         IReadOnlyCollection<TestBatchCache> testBatches)
     {
-        if (!string.IsNullOrWhiteSpace(testBatchId))
+        if (!string.IsNullOrWhiteSpace(testBatchName))
         {
-            return testBatchId.Trim();
+            return testBatchName.Trim();
         }
 
         var matched = TryMatchByWindow(windowStart, windowEnd, testBatches);
         if (matched is not null)
         {
-            return matched.TestBatchId;
+            return matched.TestBatchName;
         }
 
         if (testBatches.Count > 0)
@@ -29,7 +29,7 @@ public static class TestBatchWindowResolver
             return testBatches
                 .OrderByDescending(b => b.StartTs)
                 .First()
-                .TestBatchId;
+                .TestBatchName;
         }
 
         return "default";

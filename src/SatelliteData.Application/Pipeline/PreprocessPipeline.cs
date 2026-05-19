@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
 using SatelliteData.Domain.Assets;
 using SatelliteData.Application.Tasks;
+using static SatelliteData.Application.Tasks.PreprocessTaskLabels;
 using SatelliteData.Application.Templates;
 using SatelliteData.Domain.Tasks;
 
@@ -32,6 +33,11 @@ public sealed class PreprocessPipeline(
             ?? throw new InvalidOperationException($"task_run 不存在：{runId}");
 
         if (run.Status == TaskRunStatus.Cancelled)
+        {
+            return;
+        }
+
+        if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -76,6 +82,8 @@ public sealed class PreprocessPipeline(
         }
 
         var testBatches = await assetCache.GetTestBatchesAsync(run.TasookNo, run.SatelliteNo, cancellationToken);
+        var batchKeyForProcessing = IsCustomTimeWindowLabel(run.TestBatchName) ? null : run.TestBatchName;
+
         EffectiveWindow window;
         IReadOnlyList<TargetParamSpec> targets;
         try
@@ -84,7 +92,7 @@ public sealed class PreprocessPipeline(
                 filter.ConfigJson,
                 run.TasookNo,
                 run.SatelliteNo,
-                run.TestBatchId,
+                batchKeyForProcessing,
                 run.WindowStart,
                 run.WindowEnd,
                 testBatches,
@@ -96,20 +104,11 @@ public sealed class PreprocessPipeline(
             return;
         }
 
-        var resolvedBatchId = TestBatchWindowResolver.ResolveBatchId(
-            run.TestBatchId,
+        var mongoBatchKey = TestBatchWindowResolver.ResolveBatchName(
+            batchKeyForProcessing,
             window.Start,
             window.End,
             testBatches);
-        var matchedBatch = testBatches.FirstOrDefault(b =>
-            string.Equals(b.TestBatchId, resolvedBatchId, StringComparison.Ordinal));
-        var scenario = string.IsNullOrWhiteSpace(matchedBatch?.Scenario) ? null : matchedBatch!.Scenario!.Trim();
-        if (!string.Equals(run.TestBatchId, resolvedBatchId, StringComparison.Ordinal)
-            || run.TestPhaseScenario != scenario)
-        {
-            run = run with { TestBatchId = resolvedBatchId, TestPhaseScenario = scenario };
-            await taskRuns.UpdateAsync(run, cancellationToken);
-        }
 
         run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
         run = run with { ProgressPercent = TaskProgressBands.PreprocessMax, CurrentStep = "preprocess" };
@@ -136,7 +135,7 @@ public sealed class PreprocessPipeline(
 
         var mongoUri = satellite.MongoInfo.MongoUri;
         var mongoDb = string.IsNullOrWhiteSpace(satellite.MongoInfo.DbName) ? "test" : satellite.MongoInfo.DbName;
-        var batchId = run.TestBatchId ?? resolvedBatchId;
+        var batchId = mongoBatchKey;
 
         var parameters = (await assetCache.GetParametersAsync(run.TasookNo, run.SatelliteNo, cancellationToken))
             .ToDictionary(p => p.ParamId, StringComparer.Ordinal);
@@ -146,6 +145,11 @@ public sealed class PreprocessPipeline(
 
         foreach (var spec in targets)
         {
+            if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
             parameters.TryGetValue(spec.ParamId, out var pcache);
             IReadOnlyList<RawSeriesPoint> points;
             try
@@ -234,7 +238,17 @@ public sealed class PreprocessPipeline(
             await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
         }
 
+        if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
+        if (run.Status == TaskRunStatus.Cancelled)
+        {
+            return;
+        }
+
         var end = DateTimeOffset.UtcNow;
 
         if (run.JobType == TaskJobType.Preprocess)
@@ -270,6 +284,11 @@ public sealed class PreprocessPipeline(
 
     private async Task FailAsync(TaskRun run, string code, string message, CancellationToken cancellationToken)
     {
+        if (await TaskRunCancellation.IsCancelledAsync(taskRuns, run.RunId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         logger.LogWarning("Run {RunId} failed {Code}: {Message}", run.RunId, code, message);
         var end = DateTimeOffset.UtcNow;
         var failProgress = run.JobType == TaskJobType.Preprocess

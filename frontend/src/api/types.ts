@@ -136,8 +136,7 @@ export function commandCacheRowKey(c: CommandCache): string {
 export interface TestPhase {
   tasookNo: string;
   satelliteNo: string;
-  testBatchId: string;
-  scenario: string | null;
+  testBatchName: string;
   startTs: string;
   endTs: string;
   sourceVersion: string | null;
@@ -399,6 +398,31 @@ export interface JobStatus {
   error_msg: string | null;
 }
 
+/** GET /api/v1/tasks/{runId} 任务详情 */
+export interface TaskRunDetail {
+  run_id: string;
+  job_id: string;
+  job_type: string;
+  trigger_type: string;
+  status: string;
+  tasook_no: string;
+  satellite_no: string;
+  test_batch_name: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  filter_template_id: string | null;
+  filter_template_version: number | null;
+  algorithm_template_id: string | null;
+  algorithm_template_version: number | null;
+  progress_percent: number;
+  current_step: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  created_at: string;
+  error_code: string | null;
+  error_msg: string | null;
+}
+
 /** GET /api/v1/tasks 列表项 */
 export interface TaskRunListItem {
   run_id: string;
@@ -408,7 +432,7 @@ export interface TaskRunListItem {
   status: string;
   tasook_no: string;
   satellite_no: string;
-  test_batch_id: string | null;
+  test_batch_name: string | null;
   progress_percent: number;
   current_step: string | null;
   created_at: string;

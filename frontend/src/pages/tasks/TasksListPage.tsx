@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Space, Table, Tag, Typography } from 'antd';
+import { Button, Card, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
 import { Link } from 'react-router-dom';
 import { ReloadOutlined } from '@ant-design/icons';
 import { tasksApi } from '@/api/tasks';
@@ -24,14 +24,17 @@ const statusColor: Record<string, string> = {
   Cancelled: 'default'
 };
 
+const cancellableStatuses = new Set(['Queued', 'Running']);
+
 export function TasksListPage() {
   const [rows, setRows] = useState<TaskRunListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await tasksApi.list(100);
+      const data = await tasksApi.list({ pageSize: 100 });
       setRows(data);
     } finally {
       setLoading(false);
@@ -41,6 +44,19 @@ export function TasksListPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleCancel = async (runId: string) => {
+    setCancellingId(runId);
+    try {
+      await tasksApi.cancel(runId);
+      message.success('任务已取消');
+      await load();
+    } catch {
+      /* axios 已提示 */
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   return (
     <Card
@@ -60,23 +76,43 @@ export function TasksListPage() {
       }
     >
       <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        数据来源：<code>GET /api/v1/tasks</code>（按创建时间倒序）。「新建预处理入仓」进入仅入仓任务创建页（
-        <code>POST /api/v1/tasks/preprocess</code>）；PIPELINE 含预处理与算法 DAG。点击「详情」按任务类型打开对应页面并轮询进度。
+        数据来源：<code>GET /api/v1/tasks</code>（按创建时间倒序）。「详情」按任务类型打开对应页面展示完整信息；运行中或排队中的任务可「取消」。
       </Paragraph>
       <Table<TaskRunListItem>
         loading={loading}
         rowKey={(r) => r.run_id}
         dataSource={rows}
         pagination={{ pageSize: 20, showSizeChanger: true }}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1200 }}
         columns={[
           {
             title: '操作',
             key: 'act',
-            width: 88,
+            width: 140,
             fixed: 'left',
             render: (_, r) => (
-              <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>
+              <Space size="small">
+                <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>
+                {cancellableStatuses.has(r.status) && (
+                  <Popconfirm
+                    title="确认取消该任务？"
+                    description="已运行的任务将在下一检查点停止，状态变为 Cancelled。"
+                    onConfirm={() => void handleCancel(r.run_id)}
+                    okText="取消任务"
+                    cancelText="返回"
+                  >
+                    <Button
+                      type="link"
+                      danger
+                      size="small"
+                      loading={cancellingId === r.run_id}
+                      style={{ padding: 0 }}
+                    >
+                      取消
+                    </Button>
+                  </Popconfirm>
+                )}
+              </Space>
             )
           },
           { title: 'run_id', dataIndex: 'run_id', width: 280, ellipsis: true },
@@ -91,7 +127,7 @@ export function TasksListPage() {
           },
           { title: '型号', dataIndex: 'tasook_no', width: 120 },
           { title: '卫星', dataIndex: 'satellite_no', width: 110 },
-          { title: '阶段', dataIndex: 'test_batch_id', width: 120, ellipsis: true },
+          { title: '测试阶段', dataIndex: 'test_batch_name', width: 140, ellipsis: true },
           {
             title: '进度',
             dataIndex: 'progress_percent',

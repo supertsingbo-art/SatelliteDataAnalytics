@@ -36,7 +36,7 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
             if (!string.IsNullOrWhiteSpace(testBatchId))
             {
                 var batch = testBatches.FirstOrDefault(b =>
-                    string.Equals(b.TestBatchId, testBatchId, StringComparison.Ordinal));
+                    string.Equals(b.TestBatchName, testBatchId, StringComparison.Ordinal));
                 if (batch is null)
                 {
                     throw new InvalidOperationException($"测试阶段未缓存：{testBatchId}");
@@ -53,7 +53,7 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
             else
             {
                 throw new InvalidOperationException(
-                    "timeWindow.mode=TEST_BATCH 时需要 test_batch_id，或任务指定 window_start/window_end（由测试阶段快捷选择填入）");
+                    "timeWindow.mode=TEST_BATCH 时需要 test_batch_name，或任务指定 window_start/window_end（由测试阶段快捷选择填入）");
             }
         }
         else if (string.Equals(mode, "CUSTOM", StringComparison.OrdinalIgnoreCase))

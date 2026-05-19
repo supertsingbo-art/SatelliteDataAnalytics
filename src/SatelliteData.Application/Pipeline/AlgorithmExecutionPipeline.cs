@@ -65,12 +65,17 @@ public sealed class AlgorithmExecutionPipeline(
             .ToDictionary(g => g.Key, g => g.Select(e => e.Source).FirstOrDefault(), StringComparer.Ordinal);
 
         var outputs = new Dictionary<string, NodeOutput>(StringComparer.Ordinal);
-        var batchId = run.TestBatchId ?? "default";
+        var batchId = run.TestBatchName ?? "default";
         var winStart = run.WindowStart ?? DateTimeOffset.MinValue;
         var winEnd = run.WindowEnd ?? DateTimeOffset.MaxValue;
 
         foreach (var nodeId in order)
         {
+            if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
             var node = nodeMap[nodeId];
             preds.TryGetValue(nodeId, out var predId);
             outputs.TryGetValue(predId ?? "", out var input);
@@ -165,8 +170,18 @@ public sealed class AlgorithmExecutionPipeline(
             await clickHouse.InsertJsonEachRowAsync("algo_result", algoRows, cancellationToken);
         }
 
+        if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var end = DateTimeOffset.UtcNow;
         run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
+        if (run.Status == TaskRunStatus.Cancelled)
+        {
+            return;
+        }
+
         run = run with
         {
             Status = TaskRunStatus.Succeeded,
@@ -200,6 +215,11 @@ public sealed class AlgorithmExecutionPipeline(
 
     private async Task FailAsync(TaskRun run, string code, string message, CancellationToken cancellationToken)
     {
+        if (await TaskRunCancellation.IsCancelledAsync(taskRuns, run.RunId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var end = DateTimeOffset.UtcNow;
         await taskRuns.UpdateAsync(
             run with

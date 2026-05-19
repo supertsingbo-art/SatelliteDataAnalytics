@@ -79,7 +79,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
     private readonly Dictionary<(string TasookNo, string SatelliteNo), SatelliteCache> _satellites = [];
     private readonly Dictionary<(string TasookNo, string SatelliteNo, int ParaId), ParamCache> _parameters = [];
     private readonly Dictionary<(string TasookNo, string SatelliteNo, int CmdId), CommandCache> _commands = [];
-    private readonly Dictionary<(string TasookNo, string SatelliteNo, string TestBatchId), TestBatchCache> _testBatches = [];
+    private readonly Dictionary<(string TasookNo, string SatelliteNo, string TestBatchName), TestBatchCache> _testBatches = [];
 
     public Task UpsertSatelliteAsync(SatelliteCache satellite, CancellationToken cancellationToken)
     {
@@ -127,7 +127,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
     {
         foreach (var testBatch in testBatches)
         {
-            _testBatches[(testBatch.TasookNo, testBatch.SatelliteNo, testBatch.TestBatchId)] = testBatch;
+            _testBatches[(testBatch.TasookNo, testBatch.SatelliteNo, testBatch.TestBatchName)] = testBatch;
         }
 
         return Task.CompletedTask;
@@ -199,7 +199,7 @@ public sealed class InMemoryAssetCacheRepository : IAssetCacheRepository
                     .OrderByDescending(t => t.StartTs)
                     .Select(t =>
                     {
-                        var label = string.IsNullOrWhiteSpace(t.Scenario) ? t.TestBatchId : t.Scenario!.Trim();
+                        var label = t.TestBatchName.Trim();
                         return label;
                     })
                     .Where(label => !string.IsNullOrWhiteSpace(label))

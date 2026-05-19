@@ -28,6 +28,10 @@ import {
   commandCacheRowKey,
   paramCacheRowKey
 } from '@/api/types';
+import {
+  normalizeSatelliteListItem,
+  testPhaseNamesFromCache
+} from '@/pages/assets/satelliteTestPhaseUtils';
 
 const DEV_PHASE_TAG_COLORS = ['blue', 'geekblue', 'cyan', 'purple', 'magenta', 'volcano', 'gold', 'green'];
 
@@ -158,6 +162,24 @@ export function SatellitesPage() {
   const [mongoSummary, setMongoSummary] = useState<MongoConnectionSummary | null>(null);
   const [lastSync, setLastSync] = useState<AssetSyncResult | null>(null);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const [phaseLabelsLoading, setPhaseLabelsLoading] = useState(false);
+
+  const enrichSatellitesWithTestPhases = async (items: SatelliteListItem[]) => {
+    return Promise.all(
+      items.map(async (item) => {
+        const base = normalizeSatelliteListItem(item);
+        try {
+          const phases = await assetsApi.listTestPhases(base.tasookNo, base.satelliteNo);
+          return {
+            ...base,
+            developmentPhases: testPhaseNamesFromCache(phases)
+          };
+        } catch {
+          return base;
+        }
+      })
+    );
+  };
 
   const handleToggleEnabled = async (record: SatelliteListItem, isEnabled: boolean) => {
     const key = `${record.tasookNo}_${record.satelliteNo}`;
@@ -175,11 +197,14 @@ export function SatellitesPage() {
 
   const reload = async () => {
     setLoading(true);
+    setPhaseLabelsLoading(true);
     try {
       const result = await assetsApi.listSatellites({ keyword, pageNo, pageSize });
-      setData(result);
+      const items = await enrichSatellitesWithTestPhases(result.items);
+      setData({ ...result, items });
     } finally {
       setLoading(false);
+      setPhaseLabelsLoading(false);
     }
   };
 
@@ -412,13 +437,27 @@ export function SatellitesPage() {
             dataIndex: 'developmentPhases',
             width: 260,
             render: (phases: string[] | undefined) => {
+              if (phaseLabelsLoading) {
+                return <Text type="secondary">加载中…</Text>;
+              }
               if (!phases?.length) {
-                return <Text type="secondary">未同步</Text>;
+                return (
+                  <Text type="secondary">
+                    未同步
+                    <br />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      请执行全量/单星同步
+                    </Text>
+                  </Text>
+                );
               }
               return (
                 <Space size={[4, 4]} wrap style={{ maxWidth: 248 }}>
                   {phases.map((name, i) => (
-                    <Tag key={name} color={DEV_PHASE_TAG_COLORS[i % DEV_PHASE_TAG_COLORS.length]}>
+                    <Tag
+                      key={`${name}-${i}`}
+                      color={DEV_PHASE_TAG_COLORS[i % DEV_PHASE_TAG_COLORS.length]}
+                    >
                       {name}
                     </Tag>
                   ))}
@@ -601,10 +640,10 @@ export function SatellitesPage() {
                       <Space size={[6, 6]} wrap style={{ marginBottom: 12 }}>
                         {phases.map((p, i) => (
                           <Tag
-                            key={p.testBatchId}
+                            key={p.testBatchName}
                             color={DEV_PHASE_TAG_COLORS[i % DEV_PHASE_TAG_COLORS.length]}
                           >
-                            {p.scenario ?? p.testBatchId}
+                            {p.testBatchName}
                           </Tag>
                         ))}
                       </Space>
@@ -618,20 +657,19 @@ export function SatellitesPage() {
                     )}
                     <Table<TestPhase>
                       size="small"
-                      rowKey={(record) => record.testBatchId}
+                      rowKey={(record) => record.testBatchName}
                       pagination={false}
                       dataSource={phases}
                       columns={[
                         {
                           title: '测试阶段',
-                          dataIndex: 'scenario',
-                          render: (v, record, index) => (
+                          dataIndex: 'testBatchName',
+                          render: (v, _record, index) => (
                             <Tag color={DEV_PHASE_TAG_COLORS[index % DEV_PHASE_TAG_COLORS.length]}>
-                              {v ?? record.testBatchId}
+                              {v}
                             </Tag>
                           )
                         },
-                        { title: '阶段编号', dataIndex: 'testBatchId', width: 120 },
                         {
                           title: '起止时间 (UTC)',
                           render: (_, record) => (

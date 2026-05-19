@@ -10,6 +10,9 @@ const { RangePicker } = DatePicker;
 
 export const CUSTOM_PHASE = '__CUSTOM_TIME__';
 
+/** 写入 task_run.test_batch_name，表示用户选择了自定义时间窗（非 test_batch_cache 外键）。 */
+export const CUSTOM_TIME_DISPLAY_NAME = '自定义时间段';
+
 type Props = {
   form: FormInstance;
 };
@@ -208,7 +211,7 @@ export function PreprocessFormFields({ form }: Props) {
       form.setFieldsValue({ timeRange: undefined });
       return;
     }
-    const p = phases.find((x) => x.testBatchId === value);
+    const p = phases.find((x) => x.testBatchName === value);
     if (!p) {
       return;
     }
@@ -220,10 +223,10 @@ export function PreprocessFormFields({ form }: Props) {
 
   const phaseSelectOptions = [
     ...phases.map((p) => ({
-      value: p.testBatchId,
-      label: p.scenario?.trim() || p.testBatchId
+      value: p.testBatchName,
+      label: p.testBatchName
     })),
-    { value: CUSTOM_PHASE, label: '自定义时间' }
+    { value: CUSTOM_PHASE, label: CUSTOM_TIME_DISPLAY_NAME }
   ];
 
   return (
@@ -276,7 +279,12 @@ export function PreprocessFormFields({ form }: Props) {
         </Button>
       </Space>
 
-      <Form.Item name="phasePick" label="测试阶段（快捷选择）" help="仅显示阶段名称；选「自定义时间」可编辑下方日期">
+      <Form.Item
+        name="phasePick"
+        label="测试阶段（快捷选择）"
+        rules={[{ required: true, message: '请选择测试阶段或自定义时间段' }]}
+        help="选缓存中的阶段名称，或「自定义时间段」后手动填写下方日期"
+      >
         <Select
           allowClear
           placeholder={phases.length ? '选择测试阶段' : '请先点击「加载测试阶段」'}

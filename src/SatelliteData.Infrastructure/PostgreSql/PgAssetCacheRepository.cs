@@ -137,15 +137,39 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         CREATE TABLE IF NOT EXISTS test_batch_cache (
             tasook_no varchar(64) NOT NULL,
             satellite_no varchar(64) NOT NULL,
-            test_batch_id varchar(128) NOT NULL,
-            scenario varchar(256),
+            test_batch_name varchar(256) NOT NULL,
             start_ts timestamptz NOT NULL,
             end_ts timestamptz NOT NULL,
             source_version varchar(128),
             last_synced_at timestamptz NOT NULL,
             raw_json jsonb NOT NULL,
-            PRIMARY KEY (tasook_no, satellite_no, test_batch_id)
+            PRIMARY KEY (tasook_no, satellite_no, test_batch_name)
         );
+
+        DO $migrate_test_batch$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'test_batch_cache'
+                  AND column_name = 'test_batch_id') THEN
+                ALTER TABLE test_batch_cache ADD COLUMN IF NOT EXISTS test_batch_name varchar(256);
+                UPDATE test_batch_cache
+                SET test_batch_name = COALESCE(NULLIF(TRIM(scenario), ''), test_batch_id)
+                WHERE test_batch_name IS NULL;
+                ALTER TABLE test_batch_cache DROP COLUMN IF EXISTS scenario;
+                ALTER TABLE test_batch_cache DROP CONSTRAINT IF EXISTS test_batch_cache_pkey;
+                ALTER TABLE test_batch_cache DROP COLUMN IF EXISTS test_batch_id;
+                ALTER TABLE test_batch_cache ALTER COLUMN test_batch_name SET NOT NULL;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'test_batch_cache_pkey'
+                      AND conrelid = 'test_batch_cache'::regclass) THEN
+                    ALTER TABLE test_batch_cache
+                        ADD PRIMARY KEY (tasook_no, satellite_no, test_batch_name);
+                END IF;
+            END IF;
+        END $migrate_test_batch$;
 
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_parameter_count integer NOT NULL DEFAULT 0;
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_command_count integer NOT NULL DEFAULT 0;
@@ -367,13 +391,12 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             await using var cmd = new NpgsqlCommand(
                 """
                 INSERT INTO test_batch_cache (
-                    tasook_no, satellite_no, test_batch_id, scenario, start_ts, end_ts,
+                    tasook_no, satellite_no, test_batch_name, start_ts, end_ts,
                     source_version, last_synced_at, raw_json)
                 VALUES (
-                    @tasook_no, @satellite_no, @test_batch_id, @scenario, @start_ts, @end_ts,
+                    @tasook_no, @satellite_no, @test_batch_name, @start_ts, @end_ts,
                     @source_version, @last_synced_at, @raw_json)
-                ON CONFLICT (tasook_no, satellite_no, test_batch_id) DO UPDATE SET
-                    scenario = EXCLUDED.scenario,
+                ON CONFLICT (tasook_no, satellite_no, test_batch_name) DO UPDATE SET
                     start_ts = EXCLUDED.start_ts,
                     end_ts = EXCLUDED.end_ts,
                     source_version = EXCLUDED.source_version,
@@ -385,8 +408,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
             cmd.Parameters.AddWithValue("tasook_no", t.TasookNo);
             cmd.Parameters.AddWithValue("satellite_no", t.SatelliteNo);
-            cmd.Parameters.AddWithValue("test_batch_id", t.TestBatchId);
-            cmd.Parameters.AddWithValue("scenario", (object?)t.Scenario ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("test_batch_name", t.TestBatchName);
             cmd.Parameters.AddWithValue("start_ts", t.StartTs);
             cmd.Parameters.AddWithValue("end_ts", t.EndTs);
             cmd.Parameters.AddWithValue("source_version", (object?)t.SourceVersion ?? DBNull.Value);
@@ -541,7 +563,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, satellite_no, test_batch_id, scenario, start_ts, end_ts,
+            SELECT tasook_no, satellite_no, test_batch_name, start_ts, end_ts,
                    source_version, last_synced_at, raw_json::text
             FROM test_batch_cache
             WHERE tasook_no = @tasook_no AND satellite_no = @satellite_no
@@ -570,7 +592,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, satellite_no, scenario, test_batch_id, start_ts
+            SELECT tasook_no, satellite_no, test_batch_name, start_ts
             FROM test_batch_cache
             ORDER BY tasook_no, satellite_no, start_ts DESC;
             """,
@@ -582,10 +604,9 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         {
             var tasook = reader.GetString(0);
             var sat = reader.GetString(1);
-            var scenario = reader.IsDBNull(2) ? null : reader.GetString(2);
-            var batchId = reader.GetString(3);
-            var startTs = reader.GetFieldValue<DateTimeOffset>(4);
-            var label = string.IsNullOrWhiteSpace(scenario) ? batchId : scenario.Trim();
+            var batchName = reader.GetString(2);
+            var startTs = reader.GetFieldValue<DateTimeOffset>(3);
+            var label = batchName.Trim();
             if (string.IsNullOrWhiteSpace(label))
             {
                 continue;
@@ -754,8 +775,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         return new TestBatchCache(
             reader.GetString(reader.GetOrdinal("tasook_no")),
             reader.GetString(reader.GetOrdinal("satellite_no")),
-            reader.GetString(reader.GetOrdinal("test_batch_id")),
-            reader.IsDBNull(reader.GetOrdinal("scenario")) ? null : reader.GetString(reader.GetOrdinal("scenario")),
+            reader.GetString(reader.GetOrdinal("test_batch_name")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("start_ts")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("end_ts")),
             reader.IsDBNull(reader.GetOrdinal("source_version")) ? null : reader.GetString(reader.GetOrdinal("source_version")),

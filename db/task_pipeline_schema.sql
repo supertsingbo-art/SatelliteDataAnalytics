@@ -24,9 +24,8 @@ CREATE TABLE IF NOT EXISTS task_run (
     idempotency_key varchar(128) NOT NULL,
     tasook_no varchar(64) NOT NULL,
     satellite_no varchar(64) NOT NULL,
-    -- 可选：预处理页仅传 window 时由管线按时间窗从 test_batch_cache 推断并回写
-    test_batch_id varchar(128),
-    test_phase_scenario varchar(256),
+    -- 展示用阶段名（可为 test_batch_cache.test_batch_name 或「自定义时间段」），非外键；处理以 window_start/end 为准
+    test_batch_name varchar(256),
     window_start timestamptz,
     window_end timestamptz,
     filter_template_id uuid,
@@ -49,8 +48,6 @@ CREATE TABLE IF NOT EXISTS task_run (
 
 CREATE INDEX IF NOT EXISTS idx_task_run_status_created ON task_run(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_run_satellite ON task_run(tasook_no, satellite_no);
-
-ALTER TABLE task_run ADD COLUMN IF NOT EXISTS test_phase_scenario varchar(256);
 
 CREATE TABLE IF NOT EXISTS task_event (
     event_id uuid PRIMARY KEY,

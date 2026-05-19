@@ -38,7 +38,7 @@ public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<Asse
 
         return root.GetArrayItems("datas", "items", "data", "testPhases", "phases", "testBatches")
             .Select(item => MapTestStage(tasookNo, satelliteNo, item, now))
-            .Where(item => !string.IsNullOrWhiteSpace(item.TestBatchId) && item.StartTs != DateTimeOffset.MinValue)
+            .Where(item => !string.IsNullOrWhiteSpace(item.TestBatchName) && item.StartTs != DateTimeOffset.MinValue)
             .ToArray();
     }
 
@@ -48,7 +48,7 @@ public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<Asse
         JsonElement item,
         DateTimeOffset syncedAt)
     {
-        var stageName = item.GetStringOrNull(
+        var batchName = item.GetStringOrNull(
             "teststagename",
             "testStageName",
             "test_stage_name",
@@ -56,23 +56,17 @@ public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<Asse
             "scenario",
             "scene",
             "testScenario",
-            "测试阶段");
-        stageName = string.IsNullOrWhiteSpace(stageName) ? null : stageName.Trim();
+            "测试阶段") ?? "";
 
         var start = item.GetDateTimeOffsetOrNull("fromdt", "fromDt", "from", "startTs", "start", "startTime")
             ?? DateTimeOffset.MinValue;
         var end = item.GetDateTimeOffsetOrNull("todt", "toDt", "to", "endTs", "end", "endTime")
             ?? DateTimeOffset.MinValue;
 
-        var batchId = item.GetStringOrNull("phaseId", "testBatchId", "batchId", "id")
-            ?? stageName
-            ?? "";
-
         return new TestBatchCache(
             tasookNo,
             satelliteNo,
-            batchId.Trim(),
-            stageName,
+            batchName.Trim(),
             start,
             end,
             item.GetStringOrNull("sourceVersion", "version"),

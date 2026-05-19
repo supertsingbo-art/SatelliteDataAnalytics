@@ -38,9 +38,8 @@ public sealed record TaskRun(
     string IdempotencyKey,
     string TasookNo,
     string SatelliteNo,
-    string? TestBatchId,
-    /// <summary>测试阶段名称（<c>test_batch_cache.scenario</c>）；管线按时间窗推断阶段时回写。</summary>
-    string? TestPhaseScenario,
+    /// <summary>测试阶段展示名（可为 <c>test_batch_cache.test_batch_name</c> 或「自定义时间段」）；非外键，处理以时间窗为准。</summary>
+    string? TestBatchName,
     DateTimeOffset? WindowStart,
     DateTimeOffset? WindowEnd,
     Guid? FilterTemplateId,

@@ -44,8 +44,7 @@ public sealed class TaskOrchestrator(
             IdempotencyKey: idempotencyKey,
             TasookNo: command.TasookNo,
             SatelliteNo: command.SatelliteNo,
-            TestBatchId: command.TestBatchId,
-            TestPhaseScenario: null,
+            TestBatchName: command.TestBatchName,
             WindowStart: command.WindowStart,
             WindowEnd: command.WindowEnd,
             FilterTemplateId: command.FilterTemplateId,
@@ -115,8 +114,7 @@ public sealed class TaskOrchestrator(
             IdempotencyKey: idempotencyKey,
             TasookNo: command.TasookNo,
             SatelliteNo: command.SatelliteNo,
-            TestBatchId: command.TestBatchId,
-            TestPhaseScenario: null,
+            TestBatchName: command.TestBatchName,
             WindowStart: command.WindowStart,
             WindowEnd: command.WindowEnd,
             FilterTemplateId: command.FilterTemplateId,
@@ -154,6 +152,46 @@ public sealed class TaskOrchestrator(
         return new PipelineCreateResult(runId, jobId, TaskRunStatus.Queued, Created: true);
     }
 
+    public async Task<PipelineCreateResult> CancelAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken);
+        if (run is null)
+        {
+            throw new TaskValidationException(TaskErrorCodes.NotFound, "任务不存在");
+        }
+
+        if (run.Status is TaskRunStatus.Succeeded or TaskRunStatus.Failed or TaskRunStatus.Timeout
+            or TaskRunStatus.Cancelled)
+        {
+            throw new TaskValidationException(
+                TaskErrorCodes.NotCancellable,
+                $"任务已结束，无法取消（当前状态：{run.Status}）");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        run = run with
+        {
+            Status = TaskRunStatus.Cancelled,
+            CurrentStep = "cancelled",
+            EndTime = now
+        };
+        await taskRuns.UpdateAsync(run, cancellationToken);
+        await taskEvents.AppendAsync(
+            new TaskEvent(
+                Guid.NewGuid(),
+                runId,
+                "task.cancelled",
+                "Cancelled",
+                JsonSerializer.Serialize(new { run.JobId }),
+                null,
+                null,
+                now),
+            cancellationToken);
+
+        logger.LogInformation("Task {RunId} cancelled by user", runId);
+        return new PipelineCreateResult(run.RunId, run.JobId, TaskRunStatus.Cancelled, Created: false);
+    }
+
     private static void EnsureValidWindow(DateTimeOffset? windowStart, DateTimeOffset? windowEnd)
     {
         if (windowStart is null || windowEnd is null) return;
@@ -163,7 +201,7 @@ public sealed class TaskOrchestrator(
     private static string BuildIdempotencyKey(PipelineCreateCommand command)
     {
         var raw =
-            $"{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchId}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.AlgorithmTemplateId}|{command.AlgorithmTemplateVersion}|{command.TriggerType}";
+            $"{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchName}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.AlgorithmTemplateId}|{command.AlgorithmTemplateVersion}|{command.TriggerType}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
@@ -171,7 +209,7 @@ public sealed class TaskOrchestrator(
     private static string BuildPreprocessIdempotencyKey(PreprocessCreateCommand command)
     {
         var raw =
-            $"PREPROCESS|{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchId}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.TriggerType}";
+            $"PREPROCESS|{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchName}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.TriggerType}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
@@ -180,7 +218,7 @@ public sealed class TaskOrchestrator(
 public sealed record PreprocessCreateCommand(
     string TasookNo,
     string SatelliteNo,
-    string? TestBatchId,
+    string? TestBatchName,
     DateTimeOffset? WindowStart,
     DateTimeOffset? WindowEnd,
     Guid FilterTemplateId,
@@ -191,7 +229,7 @@ public sealed record PreprocessCreateCommand(
 public sealed record PipelineCreateCommand(
     string TasookNo,
     string SatelliteNo,
-    string? TestBatchId,
+    string? TestBatchName,
     DateTimeOffset? WindowStart,
     DateTimeOffset? WindowEnd,
     Guid FilterTemplateId,

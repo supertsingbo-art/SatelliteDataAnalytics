@@ -1022,15 +1022,15 @@ function TrialRunDialog({
               .map((s) => ({ value: s.satelliteNo, label: `${s.satelliteNo}（${s.satelliteName}）` }))}
           />
         </Form.Item>
-        <Form.Item label="测试阶段 test_batch_id">
+        <Form.Item label="测试阶段">
           <Select
             value={testBatchId}
             allowClear
             onChange={setTestBatchId}
             placeholder="可选；不填将走任务自身窗口逻辑"
             options={phases.map((p) => ({
-              value: p.testBatchId,
-              label: `${p.testBatchId} / ${p.scenario ?? ''}`
+              value: p.testBatchName,
+              label: p.testBatchName
             }))}
           />
         </Form.Item>

@@ -16,4 +16,6 @@ public static class TaskErrorCodes
     public const string SatelliteRequired = "TASK_SATELLITE_REQUIRED";
     public const string WindowRequired = "TASK_WINDOW_REQUIRED";
     public const string FilterTemplateRequired = "TASK_FILTER_TEMPLATE_REQUIRED";
+    public const string NotFound = "TASK_001";
+    public const string NotCancellable = "TASK_NOT_CANCELLABLE";
 }

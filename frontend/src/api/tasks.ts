@@ -1,12 +1,12 @@
 import { request } from './client';
-import type { JobAccepted, JobStatus, TaskRunListItem } from './types';
+import type { JobAccepted, TaskRunDetail, TaskRunListItem } from './types';
 
 const TASKS_BASE = '/api/v1/tasks';
 
 export interface CreatePipelineBody {
   tasookNo: string;
   satelliteNo: string;
-  testBatchId?: string | null;
+  testBatchName?: string | null;
   windowStart?: string | null;
   windowEnd?: string | null;
   filterTemplateId?: string | null;
@@ -19,7 +19,7 @@ export interface CreatePipelineBody {
 export interface CreatePreprocessBody {
   tasookNo: string;
   satelliteNo: string;
-  testBatchId?: string | null;
+  testBatchName?: string | null;
   windowStart?: string | null;
   windowEnd?: string | null;
   filterTemplateId?: string | null;
@@ -37,7 +37,7 @@ export const tasksApi = {
     request<JobAccepted>('post', `${TASKS_BASE}/pipeline`, {
       tasookNo: body.tasookNo,
       satelliteNo: body.satelliteNo,
-      testBatchId: body.testBatchId,
+      testBatchName: body.testBatchName,
       windowStart: body.windowStart,
       windowEnd: body.windowEnd,
       filterTemplateId: body.filterTemplateId,
@@ -50,12 +50,14 @@ export const tasksApi = {
     request<JobAccepted>('post', `${TASKS_BASE}/preprocess`, {
       tasookNo: body.tasookNo,
       satelliteNo: body.satelliteNo,
-      testBatchId: body.testBatchId,
+      testBatchName: body.testBatchName,
       windowStart: body.windowStart,
       windowEnd: body.windowEnd,
       filterTemplateId: body.filterTemplateId,
       filterTemplateVersion: body.filterTemplateVersion,
       idempotencyKey: body.idempotencyKey
     }),
-  get: (runId: string) => request<JobStatus>('get', `${TASKS_BASE}/${runId}`)
+  get: (runId: string) => request<TaskRunDetail>('get', `${TASKS_BASE}/${runId}`),
+  cancel: (runId: string) =>
+    request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`)
 };

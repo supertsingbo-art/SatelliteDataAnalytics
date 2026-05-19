@@ -58,14 +58,13 @@ CREATE TABLE IF NOT EXISTS command_cache (
 CREATE TABLE IF NOT EXISTS test_batch_cache (
     tasook_no varchar(64) NOT NULL,
     satellite_no varchar(64) NOT NULL,
-    test_batch_id varchar(128) NOT NULL,
-    scenario varchar(256),
+    test_batch_name varchar(256) NOT NULL,
     start_ts timestamptz NOT NULL,
     end_ts timestamptz NOT NULL,
     source_version varchar(128),
     last_synced_at timestamptz NOT NULL,
     raw_json jsonb NOT NULL,
-    PRIMARY KEY (tasook_no, satellite_no, test_batch_id)
+    PRIMARY KEY (tasook_no, satellite_no, test_batch_name)
 );
 
 ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_parameter_count integer NOT NULL DEFAULT 0;

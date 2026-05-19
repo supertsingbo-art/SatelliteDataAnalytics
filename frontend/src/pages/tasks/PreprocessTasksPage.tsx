@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, Form, Progress, Space, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Space, Typography, message } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tasksApi } from '@/api/tasks';
 import {
   CUSTOM_PHASE,
+  CUSTOM_TIME_DISPLAY_NAME,
   PreprocessFormFields,
   parseFilterTemplateKey,
   timeRangeToWindowIso
 } from '@/pages/tasks/components/PreprocessFormFields';
+import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
+import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
 
 const { Paragraph } = Typography;
 
@@ -17,40 +19,13 @@ export function PreprocessTasksPage() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [runId, setRunId] = useState<string | null>(null);
-  const [status, setStatus] = useState<Awaited<ReturnType<typeof tasksApi.get>> | null>(null);
-  const [polling, setPolling] = useState(false);
-
   const urlRunId = searchParams.get('runId');
-  useEffect(() => {
-    if (urlRunId && runIdPattern.test(urlRunId)) {
-      setRunId(urlRunId);
-      setPolling(true);
-      setStatus(null);
-    }
-  }, [urlRunId]);
-
-  useEffect(() => {
-    if (!runId || !polling) {
-      return;
-    }
-    const id = window.setInterval(async () => {
-      try {
-        const s = await tasksApi.get(runId);
-        setStatus(s);
-        if (['Succeeded', 'Failed', 'Timeout', 'Cancelled'].includes(s.status)) {
-          setPolling(false);
-        }
-      } catch {
-        setPolling(false);
-      }
-    }, 2000);
-    return () => window.clearInterval(id);
-  }, [runId, polling]);
+  const viewRunId = urlRunId && runIdPattern.test(urlRunId) ? urlRunId : null;
+  const { detail, loading, setPolling, refresh } = useTaskRunDetail(viewRunId);
 
   return (
     <Card
-      title="新建预处理入仓（PREPROCESS）"
+      title={viewRunId ? '预处理入仓任务详情（PREPROCESS）' : '新建预处理入仓（PREPROCESS）'}
       extra={
         <Link to="/tasks">
           <Button type="link">返回任务列表</Button>
@@ -59,77 +34,76 @@ export function PreprocessTasksPage() {
     >
       <Paragraph type="secondary">
         调用 <code>POST /api/v1/tasks/preprocess</code>：Mongo 拉取、筛选、离群打标与 ClickHouse 入仓，不执行算法 DAG。
-        从任务列表「详情」进入时可带 <code>?runId=</code> 自动轮询状态。
+        从任务列表「详情」进入时可查看完整任务信息并自动刷新进度。
       </Paragraph>
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={async (v) => {
-          try {
-            const { filterTemplateId, filterTemplateVersion } = parseFilterTemplateKey(v.filterTemplateKey);
-            if (!filterTemplateId || filterTemplateVersion == null) {
-              message.warning('请选择筛选模板');
-              return;
-            }
-            const { windowStart, windowEnd } = timeRangeToWindowIso(v.timeRange);
-            if (!windowStart || !windowEnd) {
-              message.warning('请选择开始与结束日期');
-              return;
-            }
-            const phasePick = v.phasePick as string | undefined;
-            const testBatchId = phasePick && phasePick !== CUSTOM_PHASE ? phasePick : null;
-            const res = await tasksApi.createPreprocess({
-              tasookNo: v.tasookNo,
-              satelliteNo: v.satelliteNo,
-              testBatchId,
-              windowStart,
-              windowEnd,
-              filterTemplateId,
-              filterTemplateVersion
-            });
-            message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
-            setRunId(res.runId);
-            setPolling(true);
-            setStatus(null);
-            setSearchParams({ runId: res.runId });
-            navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, { replace: true });
-          } catch {
-            /* axios 已提示 */
-          }
-        }}
-      >
-        <PreprocessFormFields form={form} />
-        <Form.Item>
-          <Button type="primary" htmlType="submit">
-            创建预处理入仓任务
-          </Button>
-        </Form.Item>
-      </Form>
 
-      {status && (
-        <Card size="small" title="任务状态" style={{ marginTop: 16 }}>
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <div>
-              <strong>run_id</strong> {status.run_id}
-            </div>
-            <div>
-              <strong>status</strong> {status.status}
-            </div>
-            <div>
-              <strong>step</strong> {status.current_step ?? '—'}
-            </div>
-            <Progress
-              percent={Number(status.progress_percent)}
-              status={status.status === 'Failed' ? 'exception' : 'active'}
-            />
-            {status.error_code && (
-              <Typography.Text type="danger">
-                {status.error_code}: {status.error_msg}
-              </Typography.Text>
-            )}
-          </Space>
-        </Card>
-      )}
+      {viewRunId && <TaskDetailCard detail={detail} loading={loading} />}
+
+      <Collapse
+        defaultActiveKey={viewRunId ? [] : ['create']}
+        items={[
+          {
+            key: 'create',
+            label: viewRunId ? '新建任务（展开填写）' : '新建任务',
+            children: (
+              <Form
+                form={form}
+                layout="vertical"
+                onFinish={async (v) => {
+                  try {
+                    const { filterTemplateId, filterTemplateVersion } = parseFilterTemplateKey(
+                      v.filterTemplateKey
+                    );
+                    if (!filterTemplateId || filterTemplateVersion == null) {
+                      message.warning('请选择筛选模板');
+                      return;
+                    }
+                    const { windowStart, windowEnd } = timeRangeToWindowIso(v.timeRange);
+                    if (!windowStart || !windowEnd) {
+                      message.warning('请选择开始与结束日期');
+                      return;
+                    }
+                    const phasePick = v.phasePick as string;
+                    const testBatchName =
+                      phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
+                    const res = await tasksApi.createPreprocess({
+                      tasookNo: v.tasookNo,
+                      satelliteNo: v.satelliteNo,
+                      testBatchName,
+                      windowStart,
+                      windowEnd,
+                      filterTemplateId,
+                      filterTemplateVersion
+                    });
+                    message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
+                    setPolling(true);
+                    setSearchParams({ runId: res.runId });
+                    navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, {
+                      replace: true
+                    });
+                  } catch {
+                    /* axios 已提示 */
+                  }
+                }}
+              >
+                <PreprocessFormFields form={form} />
+                <Form.Item>
+                  <Space>
+                    <Button type="primary" htmlType="submit">
+                      创建预处理入仓任务
+                    </Button>
+                    {viewRunId && (
+                      <Button onClick={() => void refresh()} loading={loading}>
+                        刷新状态
+                      </Button>
+                    )}
+                  </Space>
+                </Form.Item>
+              </Form>
+            )
+          }
+        ]}
+      />
     </Card>
   );
 }

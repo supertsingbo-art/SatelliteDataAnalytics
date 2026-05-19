@@ -133,7 +133,7 @@ public interface IAssetCacheRepository
 
     Task<IReadOnlyCollection<TestBatchCache>> GetTestBatchesAsync(string tasookNo, string satelliteNo, CancellationToken cancellationToken);
 
-    /// <summary>按星聚合测试阶段名称（<c>test_batch_cache.scenario</c>，去重、按最近阶段时间倒序）。</summary>
+    /// <summary>按星聚合测试阶段名称（<c>test_batch_cache.test_batch_name</c>，去重、按最近阶段时间倒序）。</summary>
     Task<IReadOnlyDictionary<(string TasookNo, string SatelliteNo), IReadOnlyList<string>>> GetDevelopmentPhaseLabelsBySatelliteAsync(
         CancellationToken cancellationToken);
 

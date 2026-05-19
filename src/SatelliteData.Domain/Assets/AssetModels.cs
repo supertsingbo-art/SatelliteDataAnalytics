@@ -103,14 +103,12 @@ public sealed record CommandCache(
 }
 
 /// <summary>
-/// 测试阶段缓存。<paramref name="TestBatchId"/> 即阶段编号，<paramref name="Scenario"/> 即阶段名（如「单机测试」「整星综测」「在轨」）。
-/// 表名 <c>test_batch_cache</c> 沿用以保证向后兼容；语义自 V2.0.1 起统一改述为「测试阶段」。
+/// 测试阶段缓存。<paramref name="TestBatchName"/> 为阶段名称（流程规划 <c>teststagename</c> 等），主键组成部分。
 /// </summary>
 public sealed record TestBatchCache(
     string TasookNo,
     string SatelliteNo,
-    string TestBatchId,
-    string? Scenario,
+    string TestBatchName,
     DateTimeOffset StartTs,
     DateTimeOffset EndTs,
     string? SourceVersion,

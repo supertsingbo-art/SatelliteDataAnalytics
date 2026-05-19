@@ -49,3 +49,27 @@ public sealed record JobStatusResponse(
     [property: JsonPropertyName("current_step")] string? CurrentStep,
     [property: JsonPropertyName("error_code")] string? ErrorCode,
     [property: JsonPropertyName("error_msg")] string? ErrorMsg);
+
+/// <summary>任务详情（管理端 GET /api/v1/tasks/{runId}）。</summary>
+public sealed record TaskRunDetailResponse(
+    [property: JsonPropertyName("run_id")] Guid RunId,
+    [property: JsonPropertyName("job_id")] string JobId,
+    [property: JsonPropertyName("job_type")] string JobType,
+    [property: JsonPropertyName("trigger_type")] string TriggerType,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("tasook_no")] string TasookNo,
+    [property: JsonPropertyName("satellite_no")] string SatelliteNo,
+    [property: JsonPropertyName("test_batch_name")] string? TestBatchName,
+    [property: JsonPropertyName("window_start")] DateTimeOffset? WindowStart,
+    [property: JsonPropertyName("window_end")] DateTimeOffset? WindowEnd,
+    [property: JsonPropertyName("filter_template_id")] Guid? FilterTemplateId,
+    [property: JsonPropertyName("filter_template_version")] int? FilterTemplateVersion,
+    [property: JsonPropertyName("algorithm_template_id")] Guid? AlgorithmTemplateId,
+    [property: JsonPropertyName("algorithm_template_version")] int? AlgorithmTemplateVersion,
+    [property: JsonPropertyName("progress_percent")] decimal ProgressPercent,
+    [property: JsonPropertyName("current_step")] string? CurrentStep,
+    [property: JsonPropertyName("start_time")] DateTimeOffset? StartTime,
+    [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime,
+    [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
+    [property: JsonPropertyName("error_code")] string? ErrorCode,
+    [property: JsonPropertyName("error_msg")] string? ErrorMsg);

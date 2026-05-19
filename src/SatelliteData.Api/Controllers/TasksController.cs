@@ -17,7 +17,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("tasook_no")] string TasookNo,
         [property: JsonPropertyName("satellite_no")] string SatelliteNo,
-        [property: JsonPropertyName("test_batch_id")] string? TestBatchId,
+        [property: JsonPropertyName("test_batch_name")] string? TestBatchName,
         [property: JsonPropertyName("progress_percent")] decimal ProgressPercent,
         [property: JsonPropertyName("current_step")] string? CurrentStep,
         [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
@@ -26,7 +26,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
     public sealed record CreatePipelineBody(
         string TasookNo,
         string SatelliteNo,
-        string? TestBatchId,
+        string? TestBatchName,
         DateTimeOffset? WindowStart,
         DateTimeOffset? WindowEnd,
         Guid? FilterTemplateId,
@@ -43,7 +43,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
         var cmd = new PipelineCreateCommand(
             body.TasookNo,
             body.SatelliteNo,
-            body.TestBatchId,
+            body.TestBatchName,
             body.WindowStart,
             body.WindowEnd,
             body.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
@@ -72,7 +72,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
     public sealed record CreatePreprocessBody(
         string TasookNo,
         string SatelliteNo,
-        string? TestBatchId,
+        string? TestBatchName,
         DateTimeOffset? WindowStart,
         DateTimeOffset? WindowEnd,
         Guid? FilterTemplateId,
@@ -97,7 +97,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
         var cmd = new PreprocessCreateCommand(
             body.TasookNo.Trim(),
             body.SatelliteNo.Trim(),
-            body.TestBatchId,
+            body.TestBatchName,
             body.WindowStart,
             body.WindowEnd,
             body.FilterTemplateId.Value,
@@ -154,25 +154,64 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
     }
 
     [HttpGet("{runId:guid}")]
-    public async Task<ActionResult<ApiResponse<JobStatusResponse>>> GetRun(Guid runId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApiResponse<TaskRunDetailResponse>>> GetRun(Guid runId, CancellationToken cancellationToken)
     {
         var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken);
         if (run is null)
         {
-            return NotFound(ApiResponse<object>.Fail("TASK_001", "任务不存在", HttpContext));
+            return NotFound(ApiResponse<object>.Fail(TaskErrorCodes.NotFound, "任务不存在", HttpContext));
         }
 
-        return Ok(ApiResponse<JobStatusResponse>.Ok(
-            new JobStatusResponse(
-                run.RunId,
-                run.JobId,
-                run.Status.ToString(),
-                run.ProgressPercent,
-                run.CurrentStep,
-                run.ErrorCode,
-                run.ErrorMsg),
-            HttpContext));
+        return Ok(ApiResponse<TaskRunDetailResponse>.Ok(ToDetail(run), HttpContext));
     }
+
+    [HttpPost("{runId:guid}/cancel")]
+    public async Task<ActionResult<ApiResponse<AcceptedJobResponse>>> CancelRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await orchestrator.CancelAsync(runId, cancellationToken);
+            return Ok(ApiResponse<AcceptedJobResponse>.Ok(
+                new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString()),
+                HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotCancellable)
+        {
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    private static TaskRunDetailResponse ToDetail(TaskRun r) =>
+        new(
+            r.RunId,
+            r.JobId,
+            JobTypeToApi(r.JobType),
+            TriggerTypeToApi(r.TriggerType),
+            r.Status.ToString(),
+            r.TasookNo,
+            r.SatelliteNo,
+            r.TestBatchName,
+            r.WindowStart,
+            r.WindowEnd,
+            r.FilterTemplateId,
+            r.FilterTemplateVersion,
+            r.AlgorithmTemplateId,
+            r.AlgorithmTemplateVersion,
+            r.ProgressPercent,
+            r.CurrentStep,
+            r.StartTime,
+            r.EndTime,
+            r.CreatedAt,
+            r.ErrorCode,
+            r.ErrorMsg);
 
     private static TaskRunListItemResponse ToListItem(TaskRun r) =>
         new(
@@ -183,7 +222,7 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
             r.Status.ToString(),
             r.TasookNo,
             r.SatelliteNo,
-            r.TestBatchId,
+            r.TestBatchName,
             r.ProgressPercent,
             r.CurrentStep,
             r.CreatedAt,
