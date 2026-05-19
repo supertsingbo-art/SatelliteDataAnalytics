@@ -53,7 +53,7 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
             else
             {
                 throw new InvalidOperationException(
-                    "timeWindow.mode=TEST_BATCH 时需要 test_batch_name，或任务指定 window_start/window_end（由测试阶段快捷选择填入）");
+                    "timeWindow.mode=TEST_BATCH 时需要任务 window_start/window_end（预处理流水线不再按 test_batch_cache 反查时间窗）");
             }
         }
         else if (string.Equals(mode, "CUSTOM", StringComparison.OrdinalIgnoreCase))

@@ -85,12 +85,17 @@ public sealed class PreprocessPipeline(
             return;
         }
 
-        var testBatches = await assetCache.GetTestBatchesAsync(run.TasookNo, run.SatelliteNo, cancellationToken);
-        var batchKeyForProcessing =
-            IsCustomTimeWindowLabel(run.TestBatchName)
-            || run.ExecutionMode == PreprocessExecutionMode.DailyInstance
-                ? null
-                : run.TestBatchName;
+        // 数据时间窗仅以 task_run.window_start / window_end 为准（立即/一次定时为用户所选时段，每天定时为前一日同刻至当日同刻）。
+        // test_batch_name 仅用于界面展示与 ClickHouse/PG 元数据中的阶段标签，不与 test_batch_cache 按时间重叠匹配。
+        if (run.WindowStart is null || run.WindowEnd is null)
+        {
+            await FailAsync(run, "PRE_002", "任务缺少 window_start / window_end，无法确定数据时间窗", cancellationToken);
+            return;
+        }
+
+        var warehouseBatchLabel = string.IsNullOrWhiteSpace(run.TestBatchName)
+            ? CustomTimeWindowDisplayName
+            : run.TestBatchName.Trim();
 
         EffectiveWindow window;
         IReadOnlyList<TargetParamSpec> targets;
@@ -100,10 +105,10 @@ public sealed class PreprocessPipeline(
                 filter.ConfigJson,
                 run.TasookNo,
                 run.SatelliteNo,
-                batchKeyForProcessing,
+                testBatchId: null,
                 run.WindowStart,
                 run.WindowEnd,
-                testBatches,
+                testBatches: Array.Empty<TestBatchCache>(),
                 cancellationToken);
         }
         catch (Exception ex)
@@ -111,12 +116,6 @@ public sealed class PreprocessPipeline(
             await FailAsync(run, "PRE_002", ex.Message, cancellationToken);
             return;
         }
-
-        var mongoBatchKey = TestBatchWindowResolver.ResolveBatchName(
-            batchKeyForProcessing,
-            window.Start,
-            window.End,
-            testBatches);
 
         run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
         run = run with { ProgressPercent = TaskProgressBands.PreprocessMax, CurrentStep = "preprocess" };
@@ -270,7 +269,7 @@ public sealed class PreprocessPipeline(
                 {
                     ["tasook_no"] = run.TasookNo,
                     ["satellite_no"] = run.SatelliteNo,
-                    ["test_batch_id"] = mongoBatchKey,
+                    ["test_batch_id"] = warehouseBatchLabel,
                     ["param_id"] = spec.ParamId,
                     ["ts"] = points[i].Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
                     ["raw_value"] = points[i].Value,
@@ -303,7 +302,7 @@ public sealed class PreprocessPipeline(
                     runId,
                     run.TasookNo,
                     run.SatelliteNo,
-                    mongoBatchKey,
+                    warehouseBatchLabel,
                     spec.ParamId,
                     window.Start,
                     window.End,
