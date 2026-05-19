@@ -90,7 +90,9 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
                 outlierMethod = om.GetString() ?? "SIGMA";
             }
 
-            targets.Add(new TargetParamSpec(id.Trim(), outlierMethod));
+            var bufBefore = ReadOptionalInt(item, "boundaryBufferBeforeSec");
+            var bufAfter = ReadOptionalInt(item, "boundaryBufferAfterSec");
+            targets.Add(new TargetParamSpec(id.Trim(), outlierMethod, bufBefore, bufAfter));
         }
 
         if (targets.Count == 0)
@@ -102,9 +104,9 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
         return Task.FromResult((new EffectiveWindow(start, end), (IReadOnlyList<TargetParamSpec>)targets));
     }
 
-    private static int ReadOptionalInt(JsonElement tw, string name)
+    private static int ReadOptionalInt(JsonElement parent, string name)
     {
-        if (!tw.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.Number) return 0;
+        if (!parent.TryGetProperty(name, out var node) || node.ValueKind != JsonValueKind.Number) return 0;
         return node.TryGetInt32(out var v) ? Math.Max(0, v) : 0;
     }
 }

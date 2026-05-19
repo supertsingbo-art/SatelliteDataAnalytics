@@ -5,7 +5,11 @@ namespace SatelliteData.Application.Pipeline;
 
 public sealed record EffectiveWindow(DateTimeOffset Start, DateTimeOffset End);
 
-public sealed record TargetParamSpec(string ParamId, string OutlierMethod);
+public sealed record TargetParamSpec(
+    string ParamId,
+    string OutlierMethod,
+    int BoundaryBufferBeforeSec = 0,
+    int BoundaryBufferAfterSec = 0);
 
 public interface IFilterRuleEvaluator
 {

@@ -1,5 +1,11 @@
 import { request } from './client';
-import type { JobAccepted, PreprocessExecutionMode, TaskRunDetail, TaskRunListItem } from './types';
+import type {
+  JobAccepted,
+  PreprocessExecutionMode,
+  TaskExecutionRecord,
+  TaskListItemV2,
+  TaskRunDetail
+} from './types';
 
 const TASKS_BASE = '/api/v1/tasks';
 
@@ -32,11 +38,18 @@ export interface CreatePreprocessBody {
   idempotencyKey?: string | null;
 }
 
+export interface ExecuteTaskResult {
+  display_status: string;
+  run_id: string | null;
+  schedule_id: string | null;
+  job_id: string | null;
+  status: string;
+}
+
 export const tasksApi = {
-  list: (params?: { pageSize?: number; jobType?: string }) =>
-    request<TaskRunListItem[]>('get', TASKS_BASE, undefined, {
-      pageSize: params?.pageSize ?? 50,
-      jobType: params?.jobType
+  list: (params?: { pageSize?: number }) =>
+    request<TaskListItemV2[]>('get', TASKS_BASE, undefined, {
+      pageSize: params?.pageSize ?? 50
     } as Record<string, unknown>),
   createPipeline: (body: CreatePipelineBody) =>
     request<JobAccepted>('post', `${TASKS_BASE}/pipeline`, {
@@ -69,6 +82,14 @@ export const tasksApi = {
     }),
   disableSchedule: (scheduleId: string) =>
     request<{ scheduleId: string; enabled: boolean }>('post', `${TASKS_BASE}/schedules/${scheduleId}/disable`),
+  executeRun: (runId: string) =>
+    request<ExecuteTaskResult>('post', `${TASKS_BASE}/runs/${runId}/execute`),
+  executeSchedule: (scheduleId: string) =>
+    request<ExecuteTaskResult>('post', `${TASKS_BASE}/schedules/${scheduleId}/execute`),
+  listRunExecutions: (runId: string) =>
+    request<TaskExecutionRecord[]>('get', `${TASKS_BASE}/runs/${runId}/executions`),
+  listScheduleExecutions: (scheduleId: string) =>
+    request<TaskExecutionRecord[]>('get', `${TASKS_BASE}/schedules/${scheduleId}/executions`),
   get: (runId: string) => request<TaskRunDetail>('get', `${TASKS_BASE}/${runId}`),
   cancel: (runId: string) =>
     request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`)

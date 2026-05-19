@@ -12,5 +12,8 @@ public sealed record PreprocessSchedule(
     DateOnly EffectiveFrom,
     bool Enabled,
     string HangfireRecurringId,
+    Guid? LastRunId,
+    string? LastRunStatus,
+    DateTimeOffset? LastRunEndAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

@@ -40,6 +40,9 @@ public sealed class PreprocessScheduleService(
             effectiveFrom,
             Enabled: true,
             recurringId,
+            LastRunId: null,
+            LastRunStatus: null,
+            LastRunEndAt: null,
             now,
             now);
 
@@ -142,6 +145,16 @@ public sealed class PreprocessScheduleService(
                 now),
             cancellationToken);
 
+        await schedules.UpdateAsync(
+            schedule with
+            {
+                LastRunId = runId,
+                LastRunStatus = TaskRunStatus.Queued.ToString(),
+                LastRunEndAt = null,
+                UpdatedAt = now
+            },
+            cancellationToken);
+
         scheduler.EnqueuePreprocess(runId);
         logger.LogInformation(
             "Daily preprocess instance {RunId} for schedule {ScheduleId} window {Start}..{End}",
@@ -149,6 +162,30 @@ public sealed class PreprocessScheduleService(
             scheduleId,
             windowStart,
             windowEnd);
+    }
+
+    public async Task UpdateScheduleFromRunAsync(TaskRun run, CancellationToken cancellationToken)
+    {
+        if (run.ScheduleId is not Guid scheduleId)
+        {
+            return;
+        }
+
+        var schedule = await schedules.GetByIdAsync(scheduleId, cancellationToken);
+        if (schedule is null)
+        {
+            return;
+        }
+
+        await schedules.UpdateAsync(
+            schedule with
+            {
+                LastRunId = run.RunId,
+                LastRunStatus = run.Status.ToString(),
+                LastRunEndAt = run.EndTime,
+                UpdatedAt = DateTimeOffset.UtcNow
+            },
+            cancellationToken);
     }
 
     public async Task DisableScheduleAsync(Guid scheduleId, CancellationToken cancellationToken)

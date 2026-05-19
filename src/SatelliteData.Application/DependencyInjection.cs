@@ -30,6 +30,8 @@ public static class DependencyInjection
         services.AddScoped<AlgorithmPackageUploadService>();
 
         services.AddScoped<PreprocessTaskValidator>();
+        services.AddScoped<TaskListService>();
+        services.AddScoped<TaskExecutionService>();
 
         return services;
     }

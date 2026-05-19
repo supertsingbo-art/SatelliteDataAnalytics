@@ -41,6 +41,28 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         }
     }
 
+    public Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken) =>
+        ExecuteNonQueryAsync(
+            """
+            CREATE TABLE IF NOT EXISTS hq_param_point
+            (
+                tasook_no LowCardinality(String),
+                satellite_no LowCardinality(String),
+                test_batch_id LowCardinality(String),
+                param_id LowCardinality(String),
+                ts DateTime64(3, 'UTC'),
+                raw_value Nullable(Float64),
+                processed_value Nullable(Float64),
+                is_outlier UInt8,
+                version UInt64,
+                ingested_at DateTime64(3, 'UTC') DEFAULT now64(3)
+            )
+            ENGINE = ReplacingMergeTree(version)
+            PARTITION BY (toYYYYMM(ts), tasook_no, satellite_no)
+            ORDER BY (tasook_no, satellite_no, test_batch_id, param_id, ts)
+            """,
+            cancellationToken);
+
     public async Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken)
     {
         if (jsonRows.Count == 0) return;

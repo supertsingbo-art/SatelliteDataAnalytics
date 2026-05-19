@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Button,
+  Card,
+  Drawer,
+  Popconfirm,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  message
+} from 'antd';
 import { Link } from 'react-router-dom';
 import { ReloadOutlined } from '@ant-design/icons';
 import { tasksApi } from '@/api/tasks';
-import type { TaskRunListItem } from '@/api/types';
+import type { TaskExecutionRecord, TaskListItemV2 } from '@/api/types';
 
 const { Paragraph } = Typography;
 
@@ -18,7 +28,8 @@ function taskDetailPath(jobType: string, runId: string): string {
 const executionModeLabel: Record<string, string> = {
   IMMEDIATE: '立即',
   ONCE_SCHEDULED: '一次定时',
-  DAILY_INSTANCE: '每日实例'
+  DAILY_INSTANCE: '每日实例',
+  DAILY_RECURRING: '每天定时'
 };
 
 const statusColor: Record<string, string> = {
@@ -27,15 +38,37 @@ const statusColor: Record<string, string> = {
   Succeeded: 'success',
   Failed: 'error',
   Timeout: 'warning',
-  Cancelled: 'default'
+  Cancelled: 'default',
+  Scheduled: 'default'
+};
+
+const displayStatusColor: Record<string, string> = {
+  待执行: 'default',
+  任务定时中: 'blue',
+  任务执行中: 'processing',
+  任务执行完毕: 'success'
 };
 
 const cancellableStatuses = new Set(['Queued', 'Running']);
+function rowKey(r: TaskListItemV2): string {
+  return `${r.item_type}:${r.item_id}`;
+}
+
+function canExecute(row: TaskListItemV2): boolean {
+  if (row.item_type === 'SCHEDULE') return true;
+  return row.execution_mode === 'IMMEDIATE' && row.display_status === '待执行';
+}
 
 export function TasksListPage() {
-  const [rows, setRows] = useState<TaskRunListItem[]>([]);
+  const [rows, setRows] = useState<TaskListItemV2[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [executingKey, setExecutingKey] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRows, setDetailRows] = useState<TaskExecutionRecord[]>([]);
+  const [detailTitle, setDetailTitle] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,6 +84,28 @@ export function TasksListPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const needsPoll = rows.some(
+      (r) => r.display_status === '任务执行中' || r.display_status === '待执行'
+    );
+    if (!needsPoll) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      return;
+    }
+    pollRef.current = setInterval(() => {
+      void load();
+    }, 2000);
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [rows, load]);
+
   const handleCancel = async (runId: string) => {
     setCancellingId(runId);
     try {
@@ -61,6 +116,42 @@ export function TasksListPage() {
       /* axios 已提示 */
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  const handleExecute = async (row: TaskListItemV2) => {
+    const key = rowKey(row);
+    setExecutingKey(key);
+    try {
+      if (row.item_type === 'SCHEDULE' && row.schedule_id) {
+        await tasksApi.executeSchedule(row.schedule_id);
+        message.success('每天定时计划已启用');
+      } else if (row.run_id) {
+        await tasksApi.executeRun(row.run_id);
+        message.success('任务已提交执行');
+      }
+      await load();
+    } catch {
+      /* axios 已提示 */
+    } finally {
+      setExecutingKey(null);
+    }
+  };
+
+  const openExecutions = async (row: TaskListItemV2) => {
+    setDetailTitle(row.job_id ?? row.item_id);
+    setDetailOpen(true);
+    setDetailLoading(true);
+    try {
+      if (row.item_type === 'SCHEDULE' && row.schedule_id) {
+        setDetailRows(await tasksApi.listScheduleExecutions(row.schedule_id));
+      } else if (row.run_id) {
+        setDetailRows(await tasksApi.listRunExecutions(row.run_id));
+      } else {
+        setDetailRows([]);
+      }
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -82,28 +173,47 @@ export function TasksListPage() {
       }
     >
       <Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        数据来源：<code>GET /api/v1/tasks</code>（按创建时间倒序）。「详情」按任务类型打开对应页面展示完整信息；运行中或排队中的任务可「取消」。
+        立即执行的任务创建后需在列表点击「执行」；「运行明细」展示每次实例的开始/结束与结果。执行中或待执行状态每 2 秒自动刷新。
       </Paragraph>
-      <Table<TaskRunListItem>
+      <Table<TaskListItemV2>
         loading={loading}
-        rowKey={(r) => r.run_id}
+        rowKey={rowKey}
         dataSource={rows}
         pagination={{ pageSize: 20, showSizeChanger: true }}
-        scroll={{ x: 1200 }}
+        scroll={{ x: 1300 }}
         columns={[
           {
             title: '操作',
             key: 'act',
-            width: 140,
+            width: 220,
             fixed: 'left',
             render: (_, r) => (
-              <Space size="small">
-                <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>
-                {cancellableStatuses.has(r.status) && (
+              <Space size="small" wrap>
+                {r.run_id && <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>}
+                {canExecute(r) && (
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{ padding: 0 }}
+                    loading={executingKey === rowKey(r)}
+                    onClick={() => void handleExecute(r)}
+                  >
+                    执行
+                  </Button>
+                )}
+                <Button
+                  type="link"
+                  size="small"
+                  style={{ padding: 0 }}
+                  onClick={() => void openExecutions(r)}
+                >
+                  运行明细
+                </Button>
+                {r.run_id && cancellableStatuses.has(r.status) && (
                   <Popconfirm
                     title="确认取消该任务？"
                     description="已运行的任务将在下一检查点停止，状态变为 Cancelled。"
-                    onConfirm={() => void handleCancel(r.run_id)}
+                    onConfirm={() => void handleCancel(r.run_id!)}
                     okText="取消任务"
                     cancelText="返回"
                   >
@@ -121,16 +231,23 @@ export function TasksListPage() {
               </Space>
             )
           },
-          { title: 'run_id', dataIndex: 'run_id', width: 280, ellipsis: true },
+          {
+            title: '展示状态',
+            dataIndex: 'display_status',
+            width: 120,
+            render: (s: string) => (
+              <Tag color={displayStatusColor[s] ?? 'default'}>{s}</Tag>
+            )
+          },
+          { title: '类型', dataIndex: 'item_type', width: 88 },
           { title: 'job_id', dataIndex: 'job_id', width: 200, ellipsis: true },
-          { title: '类型', dataIndex: 'job_type', width: 100 },
+          { title: '任务类型', dataIndex: 'job_type', width: 100 },
           {
             title: '处理类型',
             dataIndex: 'execution_mode',
             width: 100,
             render: (m: string | null) => (m ? executionModeLabel[m] ?? m : '—')
           },
-          { title: '触发', dataIndex: 'trigger_type', width: 88 },
           {
             title: '状态',
             dataIndex: 'status',
@@ -152,6 +269,40 @@ export function TasksListPage() {
           { title: '结束时间', dataIndex: 'end_time', width: 180 }
         ]}
       />
+
+      <Drawer
+        title={`运行明细 — ${detailTitle}`}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        width={720}
+      >
+        <Table<TaskExecutionRecord>
+          loading={detailLoading}
+          rowKey="run_id"
+          dataSource={detailRows}
+          pagination={false}
+          size="small"
+          columns={[
+            { title: 'run_id', dataIndex: 'run_id', ellipsis: true },
+            { title: '展示状态', dataIndex: 'display_status', width: 110 },
+            { title: '状态', dataIndex: 'status', width: 90 },
+            { title: '开始', dataIndex: 'started_at', width: 170 },
+            { title: '结束', dataIndex: 'ended_at', width: 170 },
+            {
+              title: '结果',
+              key: 'result',
+              render: (_, r) =>
+                r.error_code ? (
+                  <span style={{ color: '#cf1322' }}>
+                    {r.error_code}: {r.error_msg}
+                  </span>
+                ) : (
+                  r.status
+                )
+            }
+          ]}
+        />
+      </Drawer>
     </Card>
   );
 }

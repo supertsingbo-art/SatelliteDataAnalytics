@@ -434,20 +434,39 @@ export interface TaskRunDetail {
   schedule_effective_from: string | null;
 }
 
-/** GET /api/v1/tasks 列表项 */
-export interface TaskRunListItem {
-  run_id: string;
-  job_id: string;
+/** GET /api/v1/tasks 列表项（RUN 或 SCHEDULE） */
+export interface TaskListItemV2 {
+  item_type: 'RUN' | 'SCHEDULE';
+  item_id: string;
+  run_id: string | null;
+  schedule_id: string | null;
+  job_id: string | null;
   job_type: string;
-  trigger_type: string;
   execution_mode: string | null;
+  display_status: string;
   status: string;
-  scheduled_at: string | null;
   tasook_no: string;
   satellite_no: string;
   test_batch_name: string | null;
   progress_percent: number;
   current_step: string | null;
+  scheduled_at: string | null;
   created_at: string;
   end_time: string | null;
 }
+
+export interface TaskExecutionRecord {
+  run_id: string;
+  job_id: string | null;
+  status: string;
+  display_status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  error_code: string | null;
+  error_msg: string | null;
+}
+
+/** @deprecated 使用 TaskListItemV2 */
+export type TaskRunListItem = TaskListItemV2;

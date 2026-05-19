@@ -11,17 +11,22 @@ namespace SatelliteData.Api.Controllers;
 public sealed class TasksController(
     TaskOrchestrator orchestrator,
     PreprocessScheduleService scheduleService,
+    TaskListService taskListService,
+    TaskExecutionService taskExecutionService,
     ITaskRunRepository taskRuns,
     IPreprocessScheduleRepository scheduleRepository,
     IFilterTemplateRepository filterTemplates,
     IAlgorithmTemplateRepository algorithmTemplates) : ControllerBase
 {
-    public sealed record TaskRunListItemResponse(
-        [property: JsonPropertyName("run_id")] Guid RunId,
-        [property: JsonPropertyName("job_id")] string JobId,
+    public sealed record TaskListItemResponse(
+        [property: JsonPropertyName("item_type")] string ItemType,
+        [property: JsonPropertyName("item_id")] Guid ItemId,
+        [property: JsonPropertyName("run_id")] Guid? RunId,
+        [property: JsonPropertyName("schedule_id")] Guid? ScheduleId,
+        [property: JsonPropertyName("job_id")] string? JobId,
         [property: JsonPropertyName("job_type")] string JobType,
-        [property: JsonPropertyName("trigger_type")] string TriggerType,
         [property: JsonPropertyName("execution_mode")] string? ExecutionMode,
+        [property: JsonPropertyName("display_status")] string DisplayStatus,
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("tasook_no")] string TasookNo,
         [property: JsonPropertyName("satellite_no")] string SatelliteNo,
@@ -31,6 +36,25 @@ public sealed class TasksController(
         [property: JsonPropertyName("scheduled_at")] DateTimeOffset? ScheduledAt,
         [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
         [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime);
+
+    public sealed record TaskExecutionRecordResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("job_id")] string? JobId,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("display_status")] string DisplayStatus,
+        [property: JsonPropertyName("started_at")] DateTimeOffset? StartedAt,
+        [property: JsonPropertyName("ended_at")] DateTimeOffset? EndedAt,
+        [property: JsonPropertyName("window_start")] DateTimeOffset? WindowStart,
+        [property: JsonPropertyName("window_end")] DateTimeOffset? WindowEnd,
+        [property: JsonPropertyName("error_code")] string? ErrorCode,
+        [property: JsonPropertyName("error_msg")] string? ErrorMsg);
+
+    public sealed record ExecuteTaskResponse(
+        [property: JsonPropertyName("display_status")] string DisplayStatus,
+        [property: JsonPropertyName("run_id")] Guid? RunId,
+        [property: JsonPropertyName("schedule_id")] Guid? ScheduleId,
+        [property: JsonPropertyName("job_id")] string? JobId,
+        [property: JsonPropertyName("status")] string Status);
 
     public sealed record CreatePipelineBody(
         string TasookNo,
@@ -200,21 +224,93 @@ public sealed class TasksController(
         }
     }
 
-    /// <summary>任务列表（按创建时间倒序，默认 50 条，最大 200）。<paramref name="jobType"/> 可选：PIPELINE / PREPROCESS / ALGORITHM。</summary>
+    /// <summary>任务列表（预处理 RUN + 每日 SCHEDULE 联合，默认 50 条，最大 200）。</summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IReadOnlyList<TaskRunListItemResponse>>>> List(
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<TaskListItemResponse>>>> List(
         [FromQuery] int pageSize = 50,
-        [FromQuery] string? jobType = null,
         CancellationToken cancellationToken = default)
     {
-        var runs = await taskRuns.ListRecentAsync(pageSize, cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(jobType) && TryParseJobTypeFilter(jobType, out var filter))
+        var items = await taskListService.ListAsync(pageSize, cancellationToken).ConfigureAwait(false);
+        return Ok(ApiResponse<IReadOnlyList<TaskListItemResponse>>.Ok(
+            items.Select(ToListItem).ToArray(),
+            HttpContext));
+    }
+
+    [HttpPost("runs/{runId:guid}/execute")]
+    public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteRun(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            runs = runs.Where(r => r.JobType == filter).ToArray();
+            var result = await taskExecutionService.ExecuteRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<ExecuteTaskResponse>.Ok(ToExecuteResponse(result), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpPost("schedules/{scheduleId:guid}/execute")]
+    public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteSchedule(
+        Guid scheduleId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await taskExecutionService.ExecuteScheduleAsync(scheduleId, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<ExecuteTaskResponse>.Ok(ToExecuteResponse(result), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpGet("runs/{runId:guid}/executions")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<TaskExecutionRecordResponse>>>> ListRunExecutions(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var records = await taskListService.ListExecutionsForRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (records.Count == 0)
+        {
+            var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (run is null)
+            {
+                return NotFound(ApiResponse<object>.Fail(TaskErrorCodes.NotFound, "任务不存在", HttpContext));
+            }
         }
 
-        var items = runs.Select(ToListItem).ToArray();
-        return Ok(ApiResponse<IReadOnlyList<TaskRunListItemResponse>>.Ok(items, HttpContext));
+        return Ok(ApiResponse<IReadOnlyList<TaskExecutionRecordResponse>>.Ok(
+            records.Select(ToExecutionRecord).ToArray(),
+            HttpContext));
+    }
+
+    [HttpGet("schedules/{scheduleId:guid}/executions")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<TaskExecutionRecordResponse>>>> ListScheduleExecutions(
+        Guid scheduleId,
+        CancellationToken cancellationToken)
+    {
+        var schedule = await scheduleRepository.GetByIdAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+        if (schedule is null)
+        {
+            return NotFound(ApiResponse<object>.Fail(TaskErrorCodes.NotFound, "定时计划不存在", HttpContext));
+        }
+
+        var records = await taskListService.ListExecutionsForScheduleAsync(scheduleId, cancellationToken)
+            .ConfigureAwait(false);
+        return Ok(ApiResponse<IReadOnlyList<TaskExecutionRecordResponse>>.Ok(
+            records.Select(ToExecutionRecord).ToArray(),
+            HttpContext));
     }
 
     [HttpGet("{runId:guid}")]
@@ -319,44 +415,41 @@ public sealed class TasksController(
             _ => null
         };
 
-    private static TaskRunListItemResponse ToListItem(TaskRun r) =>
+    private static TaskListItemResponse ToListItem(TaskListItemDto i) =>
+        new(
+            i.ItemType,
+            i.ItemId,
+            i.RunId,
+            i.ScheduleId,
+            i.JobId,
+            i.JobType,
+            i.ExecutionMode,
+            i.DisplayStatus,
+            i.Status,
+            i.TasookNo,
+            i.SatelliteNo,
+            i.TestBatchName,
+            i.ProgressPercent,
+            i.CurrentStep,
+            i.ScheduledAt,
+            i.CreatedAt,
+            i.EndTime);
+
+    private static TaskExecutionRecordResponse ToExecutionRecord(TaskExecutionRecordDto r) =>
         new(
             r.RunId,
             r.JobId,
-            JobTypeToApi(r.JobType),
-            TriggerTypeToApi(r.TriggerType),
-            ExecutionModeToApi(r.ExecutionMode),
-            r.Status.ToString(),
-            r.TasookNo,
-            r.SatelliteNo,
-            r.TestBatchName,
-            r.ProgressPercent,
-            r.CurrentStep,
-            r.ScheduledAt,
-            r.CreatedAt,
-            r.EndTime);
+            r.Status,
+            r.DisplayStatus,
+            r.StartedAt,
+            r.EndedAt,
+            r.WindowStart,
+            r.WindowEnd,
+            r.ErrorCode,
+            r.ErrorMsg);
 
-    private static bool TryParseJobTypeFilter(string raw, out TaskJobType jobType)
-    {
-        switch (raw.Trim().ToUpperInvariant())
-        {
-            case "PIPELINE":
-                jobType = TaskJobType.Pipeline;
-                return true;
-            case "PREPROCESS":
-                jobType = TaskJobType.Preprocess;
-                return true;
-            case "ALGORITHM":
-                jobType = TaskJobType.Algorithm;
-                return true;
-            case "WEBHOOK":
-                jobType = TaskJobType.Webhook;
-                return true;
-            default:
-                jobType = TaskJobType.Pipeline;
-                return false;
-        }
-    }
+    private static ExecuteTaskResponse ToExecuteResponse(ExecuteTaskResultDto r) =>
+        new(r.DisplayStatus, r.RunId, r.ScheduleId, r.JobId, r.Status);
 
     private static string JobTypeToApi(TaskJobType t) =>
         t switch

@@ -111,8 +111,12 @@ export function PreprocessTasksPage() {
                     if (res.scheduleId) {
                       message.success(`已创建每天定时计划 ${res.scheduleId}`);
                     } else if (res.runId) {
-                      message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
-                      setPolling(true);
+                      if (executionMode === 'IMMEDIATE') {
+                        message.success('已创建，请到任务列表点击「执行」');
+                      } else {
+                        message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
+                      }
+                      setPolling(executionMode !== 'IMMEDIATE');
                       setSearchParams({ runId: res.runId });
                       navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, {
                         replace: true

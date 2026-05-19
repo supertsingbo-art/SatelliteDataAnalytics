@@ -65,6 +65,32 @@ public sealed class InMemoryTaskRunRepository : ITaskRunRepository
             return Task.FromResult<IReadOnlyList<TaskRun>>(arr);
         }
     }
+
+    public Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _byId.Values
+                .Where(r => r.ScheduleId == scheduleId)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<TaskRun>>(arr);
+        }
+    }
+
+    public Task<TaskRun?> GetLatestByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var latest = _byId.Values
+                .Where(r => r.ScheduleId == scheduleId)
+                .OrderByDescending(r => r.CreatedAt)
+                .FirstOrDefault();
+            return Task.FromResult(latest);
+        }
+    }
 }
 
 public sealed class InMemoryTaskEventRepository : ITaskEventRepository
@@ -116,6 +142,44 @@ public sealed class InMemoryPreprocessScheduleRepository : IPreprocessScheduleRe
         {
             _byId[schedule.ScheduleId] = schedule;
             return Task.CompletedTask;
+        }
+    }
+
+    public Task<IReadOnlyList<PreprocessSchedule>> ListEnabledAsync(CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _byId.Values.Where(s => s.Enabled).OrderByDescending(s => s.CreatedAt).ToArray();
+            return Task.FromResult<IReadOnlyList<PreprocessSchedule>>(arr);
+        }
+    }
+}
+
+public sealed class InMemoryPreprocessOutlierSegmentRepository : IPreprocessOutlierSegmentRepository
+{
+    private readonly List<PreprocessOutlierSegment> _segments = [];
+    private readonly object _gate = new();
+
+    public Task InsertBatchAsync(IReadOnlyList<PreprocessOutlierSegment> segments, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _segments.AddRange(segments);
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _segments.Where(s => s.RunId == runId).OrderBy(s => s.SegmentStart).ToArray();
+            return Task.FromResult<IReadOnlyList<PreprocessOutlierSegment>>(arr);
         }
     }
 }

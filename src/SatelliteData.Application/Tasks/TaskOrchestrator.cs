@@ -145,7 +145,7 @@ public sealed class TaskOrchestrator(
             ReportTemplateId: null,
             ReportTemplateVersion: null,
             ProgressPercent: 3m,
-            CurrentStep: isOnceScheduled ? "scheduled" : "Queued",
+            CurrentStep: isOnceScheduled ? "scheduled" : "pending",
             StartTime: null,
             EndTime: null,
             TimeoutFlag: false,
@@ -191,8 +191,7 @@ public sealed class TaskOrchestrator(
         }
         else
         {
-            hangfireId = scheduler.EnqueuePreprocess(runId);
-            logger.LogInformation("Preprocess {RunId} queued, Hangfire {HangfireId}", runId, hangfireId);
+            logger.LogInformation("Preprocess {RunId} created pending manual execute", runId);
         }
 
         return new PreprocessCreateResult(runId, null, jobId, TaskRunStatus.Queued, Created: true);

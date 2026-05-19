@@ -3,11 +3,11 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
-using SatelliteData.Domain.Assets;
 using SatelliteData.Application.Tasks;
-using static SatelliteData.Application.Tasks.PreprocessTaskLabels;
 using SatelliteData.Application.Templates;
+using SatelliteData.Domain.Assets;
 using SatelliteData.Domain.Tasks;
+using static SatelliteData.Application.Tasks.PreprocessTaskLabels;
 
 namespace SatelliteData.Application.Pipeline;
 
@@ -18,10 +18,14 @@ public sealed class PreprocessPipeline(
     IAssetCacheRepository assetCache,
     MongoConnectionPool mongoPool,
     IFilterRuleEvaluator filterEvaluator,
-    IMongoRawSeriesReader mongoReader,
+    IMongoPkgSeriesReader mongoPkgReader,
+    IMongoRawSeriesReader mongoRawReader,
+    RuleTreeSegmentEvaluator ruleTreeEvaluator,
     IOutlierDetector outlierDetector,
     IClickHouseGateway clickHouse,
     IHqParamMetadataRepository hqMetadata,
+    IPreprocessOutlierSegmentRepository outlierSegments,
+    PreprocessScheduleService scheduleService,
     IBackgroundJobScheduler scheduler,
     IOptions<PipelineOptions> pipelineOptions,
     ILogger<PreprocessPipeline> logger) : IPreprocessPipeline
@@ -135,13 +139,66 @@ public sealed class PreprocessPipeline(
 
         var mongoUri = satellite.MongoInfo.MongoUri;
         var mongoDb = string.IsNullOrWhiteSpace(satellite.MongoInfo.DbName) ? "test" : satellite.MongoInfo.DbName;
-        var batchId = mongoBatchKey;
 
         var parameters = (await assetCache.GetParametersAsync(run.TasookNo, run.SatelliteNo, cancellationToken))
             .ToDictionary(p => p.ParamId, StringComparer.Ordinal);
 
+        var (refTasook, refSatellite) = ResolveReferenceSatellite(filter.ConfigJson, run.TasookNo, run.SatelliteNo);
+        var refParameters = string.Equals(refTasook, run.TasookNo, StringComparison.Ordinal)
+                            && string.Equals(refSatellite, run.SatelliteNo, StringComparison.Ordinal)
+            ? parameters
+            : (await assetCache.GetParametersAsync(refTasook, refSatellite, cancellationToken))
+                .ToDictionary(p => p.ParamId, StringComparer.Ordinal);
+
+        await clickHouse.EnsureHqParamPointTableAsync(cancellationToken);
+
+        var durationSeconds = filter.ConfigJson.TryGetProperty("durationSeconds", out var durNode)
+                              && durNode.TryGetInt32(out var d)
+            ? Math.Max(0, d)
+            : 0;
+
+        IReadOnlyList<TimeRange> validRanges;
+        if (filter.ConfigJson.TryGetProperty("ruleTree", out var ruleTree))
+        {
+            var conditionParamIds = RuleTreeSegmentEvaluator.CollectConditionParamIds(ruleTree);
+            var conditionSeries = new Dictionary<string, IReadOnlyList<RawSeriesPoint>>(StringComparer.Ordinal);
+            foreach (var paramId in conditionParamIds)
+            {
+                var series = await ReadParamSeriesAsync(
+                    mongoUri,
+                    mongoDb,
+                    refTasook,
+                    refSatellite,
+                    refParameters,
+                    paramId,
+                    window.Start,
+                    window.End,
+                    opt,
+                    cancellationToken);
+                conditionSeries[paramId] = series;
+            }
+
+            validRanges = ruleTreeEvaluator.ComputeValidRanges(
+                ruleTree,
+                durationSeconds,
+                window,
+                conditionSeries);
+        }
+        else
+        {
+            validRanges = [new TimeRange(window.Start, window.End)];
+        }
+
+        if (validRanges.Count == 0)
+        {
+            await FailAsync(run, "PRE_004", "ruleTree 未产生有效时间段", cancellationToken);
+            return;
+        }
+
         ulong versionCounter = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var buffer = new List<string>();
+        var allOutlierSegments = new List<PreprocessOutlierSegment>();
+        var now = DateTimeOffset.UtcNow;
 
         foreach (var spec in targets)
         {
@@ -150,31 +207,41 @@ public sealed class PreprocessPipeline(
                 return;
             }
 
-            parameters.TryGetValue(spec.ParamId, out var pcache);
-            IReadOnlyList<RawSeriesPoint> points;
-            try
+            var paramRanges = RuleTreeSegmentEvaluator.ApplyBuffer(
+                validRanges,
+                window,
+                spec.BoundaryBufferBeforeSec,
+                spec.BoundaryBufferAfterSec);
+
+            if (paramRanges.Count == 0)
             {
-                points = await mongoReader.ReadSeriesAsync(
+                logger.LogWarning("参数 {Param} 缓冲后无有效窗，跳过", spec.ParamId);
+                continue;
+            }
+
+            var points = new List<RawSeriesPoint>();
+            foreach (var range in paramRanges)
+            {
+                var chunk = await ReadParamSeriesAsync(
                     mongoUri,
                     mongoDb,
-                    opt.MongoRawCollection,
                     run.TasookNo,
                     run.SatelliteNo,
-                    batchId,
+                    parameters,
                     spec.ParamId,
-                    window.Start,
-                    window.End,
+                    range.Start,
+                    range.End,
+                    opt,
                     cancellationToken);
+                points.AddRange(chunk);
             }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Mongo 读取失败 {Param}", spec.ParamId);
-                points = Array.Empty<RawSeriesPoint>();
-            }
+
+            points = points.OrderBy(p => p.Ts).ToList();
 
             if (points.Count == 0 && opt.SyntheticMongoWhenEmpty)
             {
-                points = BuildSynthetic(window, spec.ParamId);
+                var merged = MergeRanges(paramRanges);
+                points = BuildSynthetic(merged, spec.ParamId).ToList();
                 logger.LogInformation("使用合成数据 param={Param} points={N}", spec.ParamId, points.Count);
             }
 
@@ -184,6 +251,7 @@ public sealed class PreprocessPipeline(
                 return;
             }
 
+            parameters.TryGetValue(spec.ParamId, out var pcache);
             var values = points.Select(p => p.Value).ToList();
             var sigmaK = 3d;
             var flags = outlierDetector.MarkOutliers(
@@ -200,7 +268,7 @@ public sealed class PreprocessPipeline(
                 {
                     ["tasook_no"] = run.TasookNo,
                     ["satellite_no"] = run.SatelliteNo,
-                    ["test_batch_id"] = batchId,
+                    ["test_batch_id"] = mongoBatchKey,
                     ["param_id"] = spec.ParamId,
                     ["ts"] = points[i].Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
                     ["raw_value"] = points[i].Value,
@@ -216,13 +284,24 @@ public sealed class PreprocessPipeline(
                 }
             }
 
+            allOutlierSegments.AddRange(
+                RuleTreeSegmentEvaluator.MergeOutlierSegments(
+                    runId,
+                    run.TasookNo,
+                    run.SatelliteNo,
+                    spec.ParamId,
+                    points,
+                    flags,
+                    spec.OutlierMethod,
+                    now));
+
             await hqMetadata.InsertAsync(
                 new HqParamMetadataRow(
                     Guid.NewGuid(),
                     runId,
                     run.TasookNo,
                     run.SatelliteNo,
-                    batchId,
+                    mongoBatchKey,
                     spec.ParamId,
                     window.Start,
                     window.End,
@@ -236,6 +315,11 @@ public sealed class PreprocessPipeline(
         if (buffer.Count > 0)
         {
             await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
+        }
+
+        if (allOutlierSegments.Count > 0)
+        {
+            await outlierSegments.InsertBatchAsync(allOutlierSegments, cancellationToken);
         }
 
         if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
@@ -261,6 +345,7 @@ public sealed class PreprocessPipeline(
                 EndTime = end
             };
             await taskRuns.UpdateAsync(run, cancellationToken);
+            await scheduleService.UpdateScheduleFromRunAsync(run, cancellationToken);
             await taskEvents.AppendAsync(
                 new TaskEvent(
                     Guid.NewGuid(),
@@ -282,6 +367,83 @@ public sealed class PreprocessPipeline(
         scheduler.EnqueueAlgorithm(runId);
     }
 
+    private async Task<IReadOnlyList<RawSeriesPoint>> ReadParamSeriesAsync(
+        string mongoUri,
+        string mongoDb,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyDictionary<string, ParamCache> parameters,
+        string paramId,
+        DateTimeOffset start,
+        DateTimeOffset end,
+        PipelineOptions opt,
+        CancellationToken cancellationToken)
+    {
+        if (!parameters.TryGetValue(paramId, out var meta) || meta.PrmSysId is not int prmSysId)
+        {
+            logger.LogWarning("参数 {Param} 缺少 prm_sys_id，尝试旧版 raw 集合", paramId);
+            return await mongoRawReader.ReadSeriesAsync(
+                mongoUri,
+                mongoDb,
+                opt.MongoRawCollection,
+                tasookNo,
+                satelliteNo,
+                "",
+                paramId,
+                start,
+                end,
+                cancellationToken);
+        }
+
+        var points = await mongoPkgReader.ReadSeriesAsync(
+            mongoUri,
+            mongoDb,
+            prmSysId,
+            meta.ParaId,
+            start,
+            end,
+            cancellationToken);
+
+        if (points.Count == 0 && opt.SyntheticMongoWhenEmpty)
+        {
+            return BuildSynthetic(new TimeRange(start, end), paramId);
+        }
+
+        return points;
+    }
+
+    private static (string TasookNo, string SatelliteNo) ResolveReferenceSatellite(
+        JsonElement config,
+        string defaultTasook,
+        string defaultSatellite)
+    {
+        if (!config.TryGetProperty("scope", out var scope) || scope.ValueKind != JsonValueKind.Object)
+        {
+            return (defaultTasook, defaultSatellite);
+        }
+
+        var t = scope.TryGetProperty("referenceTasookNo", out var tNode) && tNode.ValueKind == JsonValueKind.String
+            ? tNode.GetString()
+            : null;
+        var s = scope.TryGetProperty("referenceSatelliteNo", out var sNode) && sNode.ValueKind == JsonValueKind.String
+            ? sNode.GetString()
+            : null;
+
+        if (string.IsNullOrWhiteSpace(t) || string.IsNullOrWhiteSpace(s))
+        {
+            return (defaultTasook, defaultSatellite);
+        }
+
+        return (t.Trim(), s.Trim());
+    }
+
+    private static TimeRange MergeRanges(IReadOnlyList<TimeRange> ranges)
+    {
+        var start = ranges.Min(r => r.Start);
+        var end = ranges.Max(r => r.End);
+        return new TimeRange(start, end);
+    }
+
     private async Task FailAsync(TaskRun run, string code, string message, CancellationToken cancellationToken)
     {
         if (await TaskRunCancellation.IsCancelledAsync(taskRuns, run.RunId, cancellationToken).ConfigureAwait(false))
@@ -294,17 +456,17 @@ public sealed class PreprocessPipeline(
         var failProgress = run.JobType == TaskJobType.Preprocess
             ? TaskProgressBands.WebhookMax
             : TaskProgressBands.AlgorithmMax;
-        await taskRuns.UpdateAsync(
-            run with
-            {
-                Status = TaskRunStatus.Failed,
-                ProgressPercent = failProgress,
-                CurrentStep = "failed",
-                EndTime = end,
-                ErrorCode = code,
-                ErrorMsg = message
-            },
-            cancellationToken);
+        var failed = run with
+        {
+            Status = TaskRunStatus.Failed,
+            ProgressPercent = failProgress,
+            CurrentStep = "failed",
+            EndTime = end,
+            ErrorCode = code,
+            ErrorMsg = message
+        };
+        await taskRuns.UpdateAsync(failed, cancellationToken);
+        await scheduleService.UpdateScheduleFromRunAsync(failed, cancellationToken);
         await taskEvents.AppendAsync(
             new TaskEvent(
                 Guid.NewGuid(),
@@ -319,7 +481,7 @@ public sealed class PreprocessPipeline(
         scheduler.EnqueueWebhook(run.RunId);
     }
 
-    private static IReadOnlyList<RawSeriesPoint> BuildSynthetic(EffectiveWindow window, string paramId)
+    private static IReadOnlyList<RawSeriesPoint> BuildSynthetic(TimeRange window, string paramId)
     {
         _ = paramId;
         var list = new List<RawSeriesPoint>();

@@ -4,6 +4,8 @@ public interface IClickHouseGateway
 {
     Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken);
 
+    Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken);
+
     Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<(DateTimeOffset Ts, double Value)>> QueryProcessedSeriesAsync(

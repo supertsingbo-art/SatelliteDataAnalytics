@@ -9,4 +9,6 @@ public interface IPreprocessScheduleRepository
     Task InsertAsync(PreprocessSchedule schedule, CancellationToken cancellationToken);
 
     Task UpdateAsync(PreprocessSchedule schedule, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<PreprocessSchedule>> ListEnabledAsync(CancellationToken cancellationToken);
 }

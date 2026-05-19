@@ -66,11 +66,28 @@ CREATE TABLE IF NOT EXISTS preprocess_schedule (
     effective_from date NOT NULL,
     enabled boolean NOT NULL DEFAULT true,
     hangfire_recurring_id varchar(128) NOT NULL,
+    last_run_id uuid,
+    last_run_status varchar(32),
+    last_run_end_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_preprocess_schedule_satellite ON preprocess_schedule(tasook_no, satellite_no);
+
+CREATE TABLE IF NOT EXISTS preprocess_outlier_segment (
+    segment_id uuid PRIMARY KEY,
+    run_id uuid NOT NULL,
+    tasook_no varchar(64) NOT NULL,
+    satellite_no varchar(64) NOT NULL,
+    param_id varchar(64) NOT NULL,
+    segment_start timestamptz NOT NULL,
+    segment_end timestamptz NOT NULL,
+    outlier_method varchar(32),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outlier_segment_run ON preprocess_outlier_segment(run_id);
 
 CREATE TABLE IF NOT EXISTS task_event (
     event_id uuid PRIMARY KEY,

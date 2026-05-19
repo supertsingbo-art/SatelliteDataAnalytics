@@ -145,10 +145,28 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             effective_from date NOT NULL,
             enabled boolean NOT NULL DEFAULT true,
             hangfire_recurring_id varchar(128) NOT NULL,
+            last_run_id uuid,
+            last_run_status varchar(32),
+            last_run_end_at timestamptz,
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS idx_preprocess_schedule_satellite ON preprocess_schedule(tasook_no, satellite_no);
+        CREATE TABLE IF NOT EXISTS preprocess_outlier_segment (
+            segment_id uuid PRIMARY KEY,
+            run_id uuid NOT NULL,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            param_id varchar(64) NOT NULL,
+            segment_start timestamptz NOT NULL,
+            segment_end timestamptz NOT NULL,
+            outlier_method varchar(32),
+            created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_outlier_segment_run ON preprocess_outlier_segment(run_id);
+        ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_id uuid;
+        ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_status varchar(32);
+        ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_end_at timestamptz;
         """;
 
     private readonly string _cs;
@@ -285,6 +303,31 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         return list;
     }
 
+    public async Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM task_run WHERE schedule_id=@sid ORDER BY created_at DESC",
+            conn);
+        cmd.Parameters.AddWithValue("sid", scheduleId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<TaskRun>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(Read(reader));
+        }
+
+        return list;
+    }
+
+    public async Task<TaskRun?> GetLatestByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        var list = await ListByScheduleIdAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+        return list.FirstOrDefault();
+    }
+
     private static void AddParams(NpgsqlCommand cmd, TaskRun run)
     {
         cmd.Parameters.AddWithValue("run_id", run.RunId);
@@ -392,9 +435,15 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
             effective_from date NOT NULL,
             enabled boolean NOT NULL DEFAULT true,
             hangfire_recurring_id varchar(128) NOT NULL,
+            last_run_id uuid,
+            last_run_status varchar(32),
+            last_run_end_at timestamptz,
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now()
         );
+        ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_id uuid;
+        ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_status varchar(32);
+        ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_end_at timestamptz;
         """;
 
     private readonly string _cs;
@@ -432,9 +481,10 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
             """
             INSERT INTO preprocess_schedule (
               schedule_id, tasook_no, satellite_no, filter_template_id, filter_template_version,
-              daily_time, interval_days, effective_from, enabled, hangfire_recurring_id, created_at, updated_at
+              daily_time, interval_days, effective_from, enabled, hangfire_recurring_id,
+              last_run_id, last_run_status, last_run_end_at, created_at, updated_at
             ) VALUES (
-              @id, @t, @s, @ft, @fv, @dt, @iv, @ef, @en, @hf, @ca, @ua
+              @id, @t, @s, @ft, @fv, @dt, @iv, @ef, @en, @hf, @lrid, @lrs, @lre, @ca, @ua
             )
             """,
             conn);
@@ -452,7 +502,8 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
             UPDATE preprocess_schedule SET
               tasook_no=@t, satellite_no=@s, filter_template_id=@ft, filter_template_version=@fv,
               daily_time=@dt, interval_days=@iv, effective_from=@ef, enabled=@en,
-              hangfire_recurring_id=@hf, updated_at=@ua
+              hangfire_recurring_id=@hf, last_run_id=@lrid, last_run_status=@lrs,
+              last_run_end_at=@lre, updated_at=@ua
             WHERE schedule_id=@id
             """,
             conn);
@@ -472,6 +523,24 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
         return Read(reader);
     }
 
+    public async Task<IReadOnlyList<PreprocessSchedule>> ListEnabledAsync(CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM preprocess_schedule WHERE enabled=true ORDER BY created_at DESC",
+            conn);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<PreprocessSchedule>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(Read(reader));
+        }
+
+        return list;
+    }
+
     private static void AddParams(NpgsqlCommand cmd, PreprocessSchedule s)
     {
         cmd.Parameters.AddWithValue("id", s.ScheduleId);
@@ -484,12 +553,25 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
         cmd.Parameters.AddWithValue("ef", s.EffectiveFrom);
         cmd.Parameters.AddWithValue("en", s.Enabled);
         cmd.Parameters.AddWithValue("hf", s.HangfireRecurringId);
+        cmd.Parameters.AddWithValue("lrid", (object?)s.LastRunId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("lrs", (object?)s.LastRunStatus ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("lre", (object?)s.LastRunEndAt ?? DBNull.Value);
         cmd.Parameters.AddWithValue("ca", s.CreatedAt);
         cmd.Parameters.AddWithValue("ua", s.UpdatedAt);
     }
 
-    private static PreprocessSchedule Read(NpgsqlDataReader r) =>
-        new(
+    private static PreprocessSchedule Read(NpgsqlDataReader r)
+    {
+        static Guid? GuidN(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetGuid(x.GetOrdinal(name));
+
+        static string? Str(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetString(x.GetOrdinal(name));
+
+        static DateTimeOffset? Ts(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetFieldValue<DateTimeOffset>(x.GetOrdinal(name));
+
+        return new PreprocessSchedule(
             r.GetGuid(r.GetOrdinal("schedule_id")),
             r.GetString(r.GetOrdinal("tasook_no")),
             r.GetString(r.GetOrdinal("satellite_no")),
@@ -500,8 +582,121 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
             DateOnly.FromDateTime(r.GetDateTime(r.GetOrdinal("effective_from"))),
             r.GetBoolean(r.GetOrdinal("enabled")),
             r.GetString(r.GetOrdinal("hangfire_recurring_id")),
+            GuidN(r, "last_run_id"),
+            Str(r, "last_run_status"),
+            Ts(r, "last_run_end_at"),
             r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("created_at")),
             r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")));
+    }
+}
+
+public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSegmentRepository
+{
+    private const string SchemaSql = """
+        CREATE TABLE IF NOT EXISTS preprocess_outlier_segment (
+            segment_id uuid PRIMARY KEY,
+            run_id uuid NOT NULL,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            param_id varchar(64) NOT NULL,
+            segment_start timestamptz NOT NULL,
+            segment_end timestamptz NOT NULL,
+            outlier_method varchar(32),
+            created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_outlier_segment_run ON preprocess_outlier_segment(run_id);
+        """;
+
+    private readonly string _cs;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private bool _ready;
+
+    public PgPreprocessOutlierSegmentRepository(IOptions<DatabaseConnectionOptions> options) =>
+        _cs = options.Value.Postgres;
+
+    private async Task EnsureAsync(CancellationToken cancellationToken)
+    {
+        if (_ready) return;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_ready) return;
+            await using var conn = new NpgsqlConnection(_cs);
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var cmd = new NpgsqlCommand(SchemaSql, conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            _ready = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task InsertBatchAsync(
+        IReadOnlyList<PreprocessOutlierSegment> segments,
+        CancellationToken cancellationToken)
+    {
+        if (segments.Count == 0) return;
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var s in segments)
+        {
+            await using var cmd = new NpgsqlCommand(
+                """
+                INSERT INTO preprocess_outlier_segment (
+                  segment_id, run_id, tasook_no, satellite_no, param_id,
+                  segment_start, segment_end, outlier_method, created_at
+                ) VALUES (
+                  @id, @run, @t, @sat, @p, @ss, @se, @om, @ca
+                )
+                """,
+                conn);
+            cmd.Parameters.AddWithValue("id", s.SegmentId);
+            cmd.Parameters.AddWithValue("run", s.RunId);
+            cmd.Parameters.AddWithValue("t", s.TasookNo);
+            cmd.Parameters.AddWithValue("sat", s.SatelliteNo);
+            cmd.Parameters.AddWithValue("p", s.ParamId);
+            cmd.Parameters.AddWithValue("ss", s.SegmentStart);
+            cmd.Parameters.AddWithValue("se", s.SegmentEnd);
+            cmd.Parameters.AddWithValue("om", (object?)s.OutlierMethod ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("ca", s.CreatedAt);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM preprocess_outlier_segment WHERE run_id=@run ORDER BY segment_start",
+            conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<PreprocessOutlierSegment>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(new PreprocessOutlierSegment(
+                reader.GetGuid(reader.GetOrdinal("segment_id")),
+                reader.GetGuid(reader.GetOrdinal("run_id")),
+                reader.GetString(reader.GetOrdinal("tasook_no")),
+                reader.GetString(reader.GetOrdinal("satellite_no")),
+                reader.GetString(reader.GetOrdinal("param_id")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("segment_start")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("segment_end")),
+                reader.IsDBNull(reader.GetOrdinal("outlier_method"))
+                    ? ""
+                    : reader.GetString(reader.GetOrdinal("outlier_method")),
+                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"))));
+        }
+
+        return list;
+    }
 }
 
 public sealed class PgTaskEventRepository : ITaskEventRepository

@@ -18,7 +18,9 @@ public static class PipelineServiceCollectionExtensions
         services.Configure<PipelineOptions>(configuration.GetSection(PipelineOptions.SectionName));
         services.AddSingleton<IClickHouseGateway, ClickHouseHttpGateway>();
         services.AddSingleton<IMongoRawSeriesReader, MongoRawSeriesReader>();
+        services.AddSingleton<IMongoPkgSeriesReader, MongoPkgSeriesReader>();
         services.AddSingleton<IFilterRuleEvaluator, FilterRuleEvaluator>();
+        services.AddSingleton<RuleTreeSegmentEvaluator>();
         services.AddSingleton<IOutlierDetector, DefaultOutlierDetector>();
 
         var po = configuration.GetSection(PipelineOptions.SectionName).Get<PipelineOptions>() ?? new PipelineOptions();
@@ -29,6 +31,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<IHqParamMetadataRepository, PgHqParamMetadataRepository>();
             services.AddSingleton<IClientCallbackRepository, PgClientCallbackRepository>();
             services.AddSingleton<IPreprocessScheduleRepository, PgPreprocessScheduleRepository>();
+            services.AddSingleton<IPreprocessOutlierSegmentRepository, PgPreprocessOutlierSegmentRepository>();
         }
         else
         {
@@ -37,6 +40,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<IHqParamMetadataRepository, InMemoryHqParamMetadataRepository>();
             services.AddSingleton<IClientCallbackRepository, InMemoryClientCallbackRepository>();
             services.AddSingleton<IPreprocessScheduleRepository, InMemoryPreprocessScheduleRepository>();
+            services.AddSingleton<IPreprocessOutlierSegmentRepository, InMemoryPreprocessOutlierSegmentRepository>();
         }
 
         services.AddScoped<PreprocessScheduleService>();
