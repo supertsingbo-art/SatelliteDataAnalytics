@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, InputNumber, Progress, Space, Typography, message } from 'antd';
+import { Button, Card, Form, Progress, Space, Typography, message } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import dayjs from 'dayjs';
 import { tasksApi } from '@/api/tasks';
-import { TaskWindowFields } from '@/pages/tasks/components/TaskWindowFields';
+import {
+  CUSTOM_PHASE,
+  PreprocessFormFields,
+  parseFilterTemplateKey,
+  timeRangeToWindowIso
+} from '@/pages/tasks/components/PreprocessFormFields';
 
 const { Paragraph } = Typography;
 
@@ -60,20 +64,28 @@ export function PreprocessTasksPage() {
       <Form
         form={form}
         layout="vertical"
-        initialValues={{
-          tasookNo: 'TASK-A100',
-          satelliteNo: 'SAT-001'
-        }}
         onFinish={async (v) => {
           try {
+            const { filterTemplateId, filterTemplateVersion } = parseFilterTemplateKey(v.filterTemplateKey);
+            if (!filterTemplateId || filterTemplateVersion == null) {
+              message.warning('请选择筛选模板');
+              return;
+            }
+            const { windowStart, windowEnd } = timeRangeToWindowIso(v.timeRange);
+            if (!windowStart || !windowEnd) {
+              message.warning('请选择开始与结束日期');
+              return;
+            }
+            const phasePick = v.phasePick as string | undefined;
+            const testBatchId = phasePick && phasePick !== CUSTOM_PHASE ? phasePick : null;
             const res = await tasksApi.createPreprocess({
               tasookNo: v.tasookNo,
               satelliteNo: v.satelliteNo,
-              testBatchId: v.testBatchId || null,
-              windowStart: v.timeRange?.[0] ? dayjs(v.timeRange[0]).toISOString() : null,
-              windowEnd: v.timeRange?.[1] ? dayjs(v.timeRange[1]).toISOString() : null,
-              filterTemplateId: v.filterTemplateId || null,
-              filterTemplateVersion: v.filterTemplateVersion ?? null
+              testBatchId,
+              windowStart,
+              windowEnd,
+              filterTemplateId,
+              filterTemplateVersion
             });
             message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
             setRunId(res.runId);
@@ -86,19 +98,7 @@ export function PreprocessTasksPage() {
           }
         }}
       >
-        <Form.Item name="tasookNo" label="型号代号 tasook_no" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-        <Form.Item name="satelliteNo" label="卫星代号 satellite_no" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
-        <TaskWindowFields form={form} />
-        <Form.Item name="filterTemplateId" label="筛选模板 ID（可选）">
-          <Input placeholder="留空则使用服务端默认开发模板" />
-        </Form.Item>
-        <Form.Item name="filterTemplateVersion" label="筛选模板版本（可选）">
-          <InputNumber min={1} style={{ width: '100%' }} placeholder="与模板 ID 同时填写时生效" />
-        </Form.Item>
+        <PreprocessFormFields form={form} />
         <Form.Item>
           <Button type="primary" htmlType="submit">
             创建预处理入仓任务

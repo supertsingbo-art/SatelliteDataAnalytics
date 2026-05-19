@@ -30,24 +30,31 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
         DateTimeOffset end;
         if (string.Equals(mode, "TEST_BATCH", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(testBatchId))
-            {
-                throw new InvalidOperationException("timeWindow.mode=TEST_BATCH 时需要 test_batch_id");
-            }
-
-            var batch = testBatches.FirstOrDefault(b =>
-                string.Equals(b.TestBatchId, testBatchId, StringComparison.Ordinal));
-            if (batch is null)
-            {
-                throw new InvalidOperationException($"测试阶段未缓存：{testBatchId}");
-            }
-
-            start = batch.StartTs;
-            end = batch.EndTs;
             var bufBefore = ReadOptionalInt(tw, "bufferBeforeSeconds");
             var bufAfter = ReadOptionalInt(tw, "bufferAfterSeconds");
-            start = start.AddSeconds(-bufBefore);
-            end = end.AddSeconds(bufAfter);
+
+            if (!string.IsNullOrWhiteSpace(testBatchId))
+            {
+                var batch = testBatches.FirstOrDefault(b =>
+                    string.Equals(b.TestBatchId, testBatchId, StringComparison.Ordinal));
+                if (batch is null)
+                {
+                    throw new InvalidOperationException($"测试阶段未缓存：{testBatchId}");
+                }
+
+                start = batch.StartTs.AddSeconds(-bufBefore);
+                end = batch.EndTs.AddSeconds(bufAfter);
+            }
+            else if (taskWindowStart is not null && taskWindowEnd is not null)
+            {
+                start = taskWindowStart.Value.AddSeconds(-bufBefore);
+                end = taskWindowEnd.Value.AddSeconds(bufAfter);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "timeWindow.mode=TEST_BATCH 时需要 test_batch_id，或任务指定 window_start/window_end（由测试阶段快捷选择填入）");
+            }
         }
         else if (string.Equals(mode, "CUSTOM", StringComparison.OrdinalIgnoreCase))
         {

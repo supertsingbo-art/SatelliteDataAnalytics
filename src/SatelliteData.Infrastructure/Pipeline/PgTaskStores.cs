@@ -63,6 +63,7 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             tasook_no varchar(64) NOT NULL,
             satellite_no varchar(64) NOT NULL,
             test_batch_id varchar(128),
+            test_phase_scenario varchar(256),
             window_start timestamptz,
             window_end timestamptz,
             filter_template_id uuid,
@@ -83,6 +84,8 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             UNIQUE (idempotency_key)
         );
         CREATE INDEX IF NOT EXISTS idx_task_run_status_created ON task_run(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_task_run_satellite ON task_run(tasook_no, satellite_no);
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS test_phase_scenario varchar(256);
         """;
 
     private readonly string _cs;
@@ -124,13 +127,13 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             """
             INSERT INTO task_run (
               run_id, parent_run_id, job_id, job_type, trigger_type, status, idempotency_key,
-              tasook_no, satellite_no, test_batch_id, window_start, window_end,
+              tasook_no, satellite_no, test_batch_id, test_phase_scenario, window_start, window_end,
               filter_template_id, filter_template_version, algorithm_template_id, algorithm_template_version,
               report_template_id, report_template_version, progress_percent, current_step, start_time, end_time,
               timeout_flag, error_code, error_msg, created_by, created_at
             ) VALUES (
               @run_id, @parent_run_id, @job_id, @job_type, @trigger_type, @status, @idempotency_key,
-              @tasook_no, @satellite_no, @test_batch_id, @window_start, @window_end,
+              @tasook_no, @satellite_no, @test_batch_id, @test_phase_scenario, @window_start, @window_end,
               @filter_template_id, @filter_template_version, @algorithm_template_id, @algorithm_template_version,
               @report_template_id, @report_template_version, @progress_percent, @current_step, @start_time, @end_time,
               @timeout_flag, @error_code, @error_msg, @created_by, @created_at
@@ -159,6 +162,7 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             UPDATE task_run SET
               job_type=@job_type, trigger_type=@trigger_type, status=@status,
               tasook_no=@tasook_no, satellite_no=@satellite_no, test_batch_id=@test_batch_id,
+              test_phase_scenario=@test_phase_scenario,
               window_start=@window_start, window_end=@window_end,
               filter_template_id=@filter_template_id, filter_template_version=@filter_template_version,
               algorithm_template_id=@algorithm_template_id, algorithm_template_version=@algorithm_template_version,
@@ -228,6 +232,7 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         cmd.Parameters.AddWithValue("tasook_no", run.TasookNo);
         cmd.Parameters.AddWithValue("satellite_no", run.SatelliteNo);
         cmd.Parameters.AddWithValue("test_batch_id", (object?)run.TestBatchId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("test_phase_scenario", (object?)run.TestPhaseScenario ?? DBNull.Value);
         cmd.Parameters.AddWithValue("window_start", (object?)run.WindowStart ?? DBNull.Value);
         cmd.Parameters.AddWithValue("window_end", (object?)run.WindowEnd ?? DBNull.Value);
         cmd.Parameters.AddWithValue("filter_template_id", (object?)run.FilterTemplateId ?? DBNull.Value);
@@ -249,37 +254,47 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
 
     private static TaskRun Read(NpgsqlDataReader r)
     {
-        static DateTimeOffset? Ts(NpgsqlDataReader x, int i) =>
-            x.IsDBNull(i) ? null : x.GetFieldValue<DateTimeOffset>(i);
+        static DateTimeOffset? Ts(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetFieldValue<DateTimeOffset>(x.GetOrdinal(name));
+
+        static string? Str(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetString(x.GetOrdinal(name));
+
+        static Guid? GuidN(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetGuid(x.GetOrdinal(name));
+
+        static int? IntN(NpgsqlDataReader x, string name) =>
+            x.IsDBNull(x.GetOrdinal(name)) ? null : x.GetInt32(x.GetOrdinal(name));
 
         return new TaskRun(
-            r.GetGuid(0),
-            r.IsDBNull(1) ? null : r.GetGuid(1),
-            r.GetString(2),
-            TaskRunDbMapper.JobTypeFromDb(r.GetString(3)),
-            TaskRunDbMapper.TriggerFromDb(r.GetString(4)),
-            TaskRunDbMapper.StatusFromDb(r.GetString(5)),
-            r.GetString(6),
-            r.GetString(7),
-            r.GetString(8),
-            r.IsDBNull(9) ? null : r.GetString(9),
-            Ts(r, 10),
-            Ts(r, 11),
-            r.IsDBNull(12) ? null : r.GetGuid(12),
-            r.IsDBNull(13) ? null : r.GetInt32(13),
-            r.IsDBNull(14) ? null : r.GetGuid(14),
-            r.IsDBNull(15) ? null : r.GetInt32(15),
-            r.IsDBNull(16) ? null : r.GetGuid(16),
-            r.IsDBNull(17) ? null : r.GetInt32(17),
-            r.GetDecimal(18),
-            r.IsDBNull(19) ? null : r.GetString(19),
-            Ts(r, 20),
-            Ts(r, 21),
-            r.GetBoolean(22),
-            r.IsDBNull(23) ? null : r.GetString(23),
-            r.IsDBNull(24) ? null : r.GetString(24),
-            r.IsDBNull(25) ? null : r.GetGuid(25),
-            r.GetFieldValue<DateTimeOffset>(26));
+            r.GetGuid(r.GetOrdinal("run_id")),
+            GuidN(r, "parent_run_id"),
+            r.GetString(r.GetOrdinal("job_id")),
+            TaskRunDbMapper.JobTypeFromDb(r.GetString(r.GetOrdinal("job_type"))),
+            TaskRunDbMapper.TriggerFromDb(r.GetString(r.GetOrdinal("trigger_type"))),
+            TaskRunDbMapper.StatusFromDb(r.GetString(r.GetOrdinal("status"))),
+            r.GetString(r.GetOrdinal("idempotency_key")),
+            r.GetString(r.GetOrdinal("tasook_no")),
+            r.GetString(r.GetOrdinal("satellite_no")),
+            Str(r, "test_batch_id"),
+            Str(r, "test_phase_scenario"),
+            Ts(r, "window_start"),
+            Ts(r, "window_end"),
+            GuidN(r, "filter_template_id"),
+            IntN(r, "filter_template_version"),
+            GuidN(r, "algorithm_template_id"),
+            IntN(r, "algorithm_template_version"),
+            GuidN(r, "report_template_id"),
+            IntN(r, "report_template_version"),
+            r.GetDecimal(r.GetOrdinal("progress_percent")),
+            Str(r, "current_step"),
+            Ts(r, "start_time"),
+            Ts(r, "end_time"),
+            r.GetBoolean(r.GetOrdinal("timeout_flag")),
+            Str(r, "error_code"),
+            Str(r, "error_msg"),
+            GuidN(r, "created_by"),
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("created_at")));
     }
 }
 

@@ -96,6 +96,21 @@ public sealed class PreprocessPipeline(
             return;
         }
 
+        var resolvedBatchId = TestBatchWindowResolver.ResolveBatchId(
+            run.TestBatchId,
+            window.Start,
+            window.End,
+            testBatches);
+        var matchedBatch = testBatches.FirstOrDefault(b =>
+            string.Equals(b.TestBatchId, resolvedBatchId, StringComparison.Ordinal));
+        var scenario = string.IsNullOrWhiteSpace(matchedBatch?.Scenario) ? null : matchedBatch!.Scenario!.Trim();
+        if (!string.Equals(run.TestBatchId, resolvedBatchId, StringComparison.Ordinal)
+            || run.TestPhaseScenario != scenario)
+        {
+            run = run with { TestBatchId = resolvedBatchId, TestPhaseScenario = scenario };
+            await taskRuns.UpdateAsync(run, cancellationToken);
+        }
+
         run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
         run = run with { ProgressPercent = TaskProgressBands.PreprocessMax, CurrentStep = "preprocess" };
         await taskRuns.UpdateAsync(run, cancellationToken);
@@ -121,7 +136,7 @@ public sealed class PreprocessPipeline(
 
         var mongoUri = satellite.MongoInfo.MongoUri;
         var mongoDb = string.IsNullOrWhiteSpace(satellite.MongoInfo.DbName) ? "test" : satellite.MongoInfo.DbName;
-        var batchId = run.TestBatchId ?? targets[0].ParamId;
+        var batchId = run.TestBatchId ?? resolvedBatchId;
 
         var parameters = (await assetCache.GetParametersAsync(run.TasookNo, run.SatelliteNo, cancellationToken))
             .ToDictionary(p => p.ParamId, StringComparer.Ordinal);

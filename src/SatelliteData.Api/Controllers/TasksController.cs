@@ -84,31 +84,56 @@ public sealed class TasksController(TaskOrchestrator orchestrator, ITaskRunRepos
         [FromBody] CreatePreprocessBody body,
         CancellationToken cancellationToken)
     {
+        if (body.FilterTemplateId is null || body.FilterTemplateVersion is null)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(
+                    TaskErrorCodes.FilterTemplateRequired,
+                    "请选择筛选模板",
+                    HttpContext));
+        }
+
         var cmd = new PreprocessCreateCommand(
-            body.TasookNo,
-            body.SatelliteNo,
+            body.TasookNo.Trim(),
+            body.SatelliteNo.Trim(),
             body.TestBatchId,
             body.WindowStart,
             body.WindowEnd,
-            body.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
-            body.FilterTemplateVersion ?? 1,
+            body.FilterTemplateId.Value,
+            body.FilterTemplateVersion.Value,
             body.IdempotencyKey,
             TaskTriggerType.Api);
 
-        PipelineCreateResult result;
         try
         {
-            result = await orchestrator.CreatePreprocessAsync(cmd, createdBy: null, cancellationToken);
+            var result = await orchestrator.CreatePreprocessAsync(cmd, createdBy: null, cancellationToken);
+            return Ok(ApiResponse<AcceptedJobResponse>.Ok(
+                new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString()),
+                HttpContext));
         }
         catch (InvalidTaskWindowException)
         {
             return BadRequest(
                 ApiResponse<object>.Fail(InvalidTaskWindowException.Code, "window_start 必须早于 window_end", HttpContext));
         }
-
-        return Ok(ApiResponse<AcceptedJobResponse>.Ok(
-            new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString()),
-            HttpContext));
+        catch (TaskValidationException ex)
+        {
+            var status = ex.ErrorCode switch
+            {
+                TaskErrorCodes.SatelliteNotFound => StatusCodes.Status404NotFound,
+                TaskErrorCodes.SatelliteDisabled => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.FilterTemplateNotFound => StatusCodes.Status404NotFound,
+                TaskErrorCodes.FilterTemplateNotPublished => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.FilterTemplateNotApplicable => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.TasookRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.SatelliteRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.WindowRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.FilterTemplateRequired => StatusCodes.Status422UnprocessableEntity,
+                _ => StatusCodes.Status400BadRequest
+            };
+            return StatusCode(status, ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
     }
 
     /// <summary>任务列表（按创建时间倒序，默认 50 条，最大 200）。<paramref name="jobType"/> 可选：PIPELINE / PREPROCESS / ALGORITHM。</summary>

@@ -3,6 +3,7 @@ using SatelliteData.Application.Algorithms;
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
 using SatelliteData.Application.Integration;
+using SatelliteData.Application.Tasks;
 using SatelliteData.Application.Templates;
 
 namespace SatelliteData.Application;
@@ -27,6 +28,8 @@ public static class DependencyInjection
         services.AddScoped<AlgorithmTemplateValidator>();
         services.AddScoped<AlgorithmRegistryService>();
         services.AddScoped<AlgorithmPackageUploadService>();
+
+        services.AddScoped<PreprocessTaskValidator>();
 
         return services;
     }

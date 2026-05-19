@@ -10,6 +10,7 @@ public sealed class TaskOrchestrator(
     ITaskRunRepository taskRuns,
     ITaskEventRepository taskEvents,
     IBackgroundJobScheduler scheduler,
+    PreprocessTaskValidator preprocessValidator,
     ILogger<TaskOrchestrator> logger)
 {
     public async Task<PipelineCreateResult> CreatePipelineAsync(
@@ -44,6 +45,7 @@ public sealed class TaskOrchestrator(
             TasookNo: command.TasookNo,
             SatelliteNo: command.SatelliteNo,
             TestBatchId: command.TestBatchId,
+            TestPhaseScenario: null,
             WindowStart: command.WindowStart,
             WindowEnd: command.WindowEnd,
             FilterTemplateId: command.FilterTemplateId,
@@ -87,6 +89,7 @@ public sealed class TaskOrchestrator(
         CancellationToken cancellationToken)
     {
         EnsureValidWindow(command.WindowStart, command.WindowEnd);
+        await preprocessValidator.ValidateAsync(command, cancellationToken);
 
         var idempotencyKey = string.IsNullOrWhiteSpace(command.IdempotencyKey)
             ? BuildPreprocessIdempotencyKey(command)
@@ -113,6 +116,7 @@ public sealed class TaskOrchestrator(
             TasookNo: command.TasookNo,
             SatelliteNo: command.SatelliteNo,
             TestBatchId: command.TestBatchId,
+            TestPhaseScenario: null,
             WindowStart: command.WindowStart,
             WindowEnd: command.WindowEnd,
             FilterTemplateId: command.FilterTemplateId,

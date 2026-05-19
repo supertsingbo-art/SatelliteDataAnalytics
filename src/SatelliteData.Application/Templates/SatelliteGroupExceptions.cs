@@ -21,6 +21,7 @@ public static class TemplateErrorCodes
     public const string FilterTemplateInvalidState = "TPL_003";
     public const string FilterTemplateConfigInvalid = "TPL_004";
     public const string FilterTemplateResolveFailed = "TPL_005";
+    public const string FilterTemplateNotApplicable = "TPL_006";
     public const string AssetSatelliteDisabled = "ASSET_SATELLITE_DISABLED";
 
     public const string AlgorithmTemplateNotFound = "ALGO_TPL_001";
