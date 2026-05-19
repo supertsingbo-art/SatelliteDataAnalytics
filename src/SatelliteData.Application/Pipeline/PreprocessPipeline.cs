@@ -86,7 +86,11 @@ public sealed class PreprocessPipeline(
         }
 
         var testBatches = await assetCache.GetTestBatchesAsync(run.TasookNo, run.SatelliteNo, cancellationToken);
-        var batchKeyForProcessing = IsCustomTimeWindowLabel(run.TestBatchName) ? null : run.TestBatchName;
+        var batchKeyForProcessing =
+            IsCustomTimeWindowLabel(run.TestBatchName)
+            || run.ExecutionMode == PreprocessExecutionMode.DailyInstance
+                ? null
+                : run.TestBatchName;
 
         EffectiveWindow window;
         IReadOnlyList<TargetParamSpec> targets;
@@ -158,7 +162,8 @@ public sealed class PreprocessPipeline(
             : 0;
 
         IReadOnlyList<TimeRange> validRanges;
-        if (filter.ConfigJson.TryGetProperty("ruleTree", out var ruleTree))
+        if (filter.ConfigJson.TryGetProperty("ruleTree", out var ruleTree)
+            && RuleTreeSegmentEvaluator.HasConditionParameters(ruleTree))
         {
             var conditionParamIds = RuleTreeSegmentEvaluator.CollectConditionParamIds(ruleTree);
             var conditionSeries = new Dictionary<string, IReadOnlyList<RawSeriesPoint>>(StringComparer.Ordinal);
@@ -187,6 +192,10 @@ public sealed class PreprocessPipeline(
         else
         {
             validRanges = [new TimeRange(window.Start, window.End)];
+            logger.LogDebug(
+                "目标参数有效窗=任务数据时间范围 {Start:o}..{End:o}（无 ruleTree 参数条件）",
+                window.Start,
+                window.End);
         }
 
         if (validRanges.Count == 0)
@@ -237,13 +246,6 @@ public sealed class PreprocessPipeline(
             }
 
             points = points.OrderBy(p => p.Ts).ToList();
-
-            if (points.Count == 0 && opt.SyntheticMongoWhenEmpty)
-            {
-                var merged = MergeRanges(paramRanges);
-                points = BuildSynthetic(merged, spec.ParamId).ToList();
-                logger.LogInformation("使用合成数据 param={Param} points={N}", spec.ParamId, points.Count);
-            }
 
             if (points.Count == 0)
             {
@@ -395,7 +397,7 @@ public sealed class PreprocessPipeline(
                 cancellationToken);
         }
 
-        var points = await mongoPkgReader.ReadSeriesAsync(
+        return await mongoPkgReader.ReadSeriesAsync(
             mongoUri,
             mongoDb,
             prmSysId,
@@ -403,13 +405,6 @@ public sealed class PreprocessPipeline(
             start,
             end,
             cancellationToken);
-
-        if (points.Count == 0 && opt.SyntheticMongoWhenEmpty)
-        {
-            return BuildSynthetic(new TimeRange(start, end), paramId);
-        }
-
-        return points;
     }
 
     private static (string TasookNo, string SatelliteNo) ResolveReferenceSatellite(
@@ -435,13 +430,6 @@ public sealed class PreprocessPipeline(
         }
 
         return (t.Trim(), s.Trim());
-    }
-
-    private static TimeRange MergeRanges(IReadOnlyList<TimeRange> ranges)
-    {
-        var start = ranges.Min(r => r.Start);
-        var end = ranges.Max(r => r.End);
-        return new TimeRange(start, end);
     }
 
     private async Task FailAsync(TaskRun run, string code, string message, CancellationToken cancellationToken)
@@ -479,21 +467,5 @@ public sealed class PreprocessPipeline(
                 end),
             cancellationToken);
         scheduler.EnqueueWebhook(run.RunId);
-    }
-
-    private static IReadOnlyList<RawSeriesPoint> BuildSynthetic(TimeRange window, string paramId)
-    {
-        _ = paramId;
-        var list = new List<RawSeriesPoint>();
-        var span = window.End - window.Start;
-        var step = span.TotalSeconds < 1 ? TimeSpan.FromMilliseconds(100) : TimeSpan.FromSeconds(span.TotalSeconds / 64d);
-        for (var t = window.Start; t <= window.End; t += step)
-        {
-            var x = (t - window.Start).TotalSeconds;
-            var y = Math.Sin(x * 0.1) * 10d + 50d;
-            list.Add(new RawSeriesPoint(t, y));
-        }
-
-        return list;
     }
 }

@@ -13,6 +13,14 @@ public sealed class RuleTreeSegmentEvaluator(ILogger<RuleTreeSegmentEvaluator> l
         EffectiveWindow taskWindow,
         IReadOnlyDictionary<string, IReadOnlyList<RawSeriesPoint>> conditionSeriesByParamId)
     {
+        if (!HasConditionParameters(ruleTree))
+        {
+            logger.LogDebug("ruleTree 无参数条件，有效窗使用任务数据时间范围 {Start:o}..{End:o}",
+                taskWindow.Start,
+                taskWindow.End);
+            return [new TimeRange(taskWindow.Start, taskWindow.End)];
+        }
+
         if (durationSeconds < 0)
         {
             durationSeconds = 0;
@@ -74,6 +82,10 @@ public sealed class RuleTreeSegmentEvaluator(ILogger<RuleTreeSegmentEvaluator> l
         Collect(ruleTree, set);
         return set;
     }
+
+    /// <summary>ruleTree 是否包含参数条件叶子；无参数时表示目标参数使用任务数据时间窗。</summary>
+    public static bool HasConditionParameters(JsonElement ruleTree) =>
+        CollectConditionParamIds(ruleTree).Count > 0;
 
     private static void Collect(JsonElement node, HashSet<string> set)
     {

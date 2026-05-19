@@ -248,17 +248,20 @@ export function FilterTemplateEditor() {
       throw new Error('MISSING_REF_SAT');
     }
     const [refTasook, refSat] = refKey.split('||');
+    const filledRows = rows.filter((r) => r.paramId.trim() !== '');
     const ruleTree =
-      rows.length === 1
-        ? { paramId: rows[0].paramId, operator: rows[0].operator, value: rows[0].value }
-        : {
-            op: logicOp,
-            children: rows.map((row) => ({
-              paramId: row.paramId,
-              operator: row.operator,
-              value: row.value
-            }))
-          };
+      filledRows.length === 0
+        ? { op: 'AND' as const, children: [] }
+        : filledRows.length === 1
+          ? { paramId: filledRows[0].paramId, operator: filledRows[0].operator, value: filledRows[0].value }
+          : {
+              op: logicOp,
+              children: filledRows.map((row) => ({
+                paramId: row.paramId,
+                operator: row.operator,
+                value: row.value
+              }))
+            };
     return {
       scope: {
         groupId,
@@ -280,10 +283,6 @@ export function FilterTemplateEditor() {
     const values = await form.validateFields();
     if (!values.referenceSatelliteKey) {
       message.error('请选择适用数据范围中的具体参考卫星');
-      return;
-    }
-    if (rows.length === 0) {
-      message.error('至少需要 1 条参数条件');
       return;
     }
     if (targets.length === 0) {
@@ -429,6 +428,10 @@ export function FilterTemplateEditor() {
           </Card>
 
           <Card type="inner" title="1. 有效时间段提取规则" style={{ marginBottom: 16 }}>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+              参数条件可选。不添加任何条件时，目标参数的有效时间范围为任务的数据时间窗（立即/一次定时取任务所选时段；每天定时取当日设定时刻至前一日同一时刻）。
+              添加条件后，将先按条件与持续时长筛选有效时间段，再提取目标参数。
+            </Text>
             <Space style={{ marginBottom: 12 }}>
               <Text type="secondary">条件之间的逻辑算子：</Text>
               <Select
@@ -553,7 +556,7 @@ export function FilterTemplateEditor() {
 
           <Card type="inner" title="2. 目标参数提取与质量规则">
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              在计算出的有效时间段内提取目标参数；离群规则仅打标，不剔除、不插值（与 hq_param_point.is_outlier 一致）。
+              在有效时间段内提取目标参数（无参数条件时即为任务数据时间窗）；离群规则仅打标，不剔除、不插值。
             </Text>
             <Spin spinning={paramOptionsLoading} tip="正在加载参考星全部参数…">
             <Table<FilterTargetParam>

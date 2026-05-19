@@ -109,9 +109,19 @@ public static class FilterTemplateValidator
                 throw Invalid($"ruleTree 逻辑算子 op 必须是 AND/OR/NOT，当前 '{op}'");
             }
 
-            if (!node.TryGetProperty("children", out var children) || children.ValueKind != JsonValueKind.Array || children.GetArrayLength() == 0)
+            if (!node.TryGetProperty("children", out var children) || children.ValueKind != JsonValueKind.Array)
             {
-                throw Invalid("ruleTree 逻辑算子节点必须包含非空 children 数组");
+                throw Invalid("ruleTree 逻辑算子节点必须包含 children 数组");
+            }
+
+            if (children.GetArrayLength() == 0)
+            {
+                if (!string.Equals(op, "AND", StringComparison.Ordinal))
+                {
+                    throw Invalid("无参数条件时 ruleTree 仅允许 op=AND 且 children 为空");
+                }
+
+                return;
             }
 
             foreach (var child in children.EnumerateArray())

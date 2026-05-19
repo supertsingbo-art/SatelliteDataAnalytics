@@ -13,7 +13,8 @@ public sealed class PipelineOptions
     /// <summary>任务元数据使用 PostgreSQL。</summary>
     public bool UsePostgreSqlTaskStore { get; init; }
 
-    public bool SyntheticMongoWhenEmpty { get; init; } = true;
+    /// <summary>已废弃：不再注入与参数无关的合成时序，无 Mongo 数据时应任务失败。</summary>
+    public bool SyntheticMongoWhenEmpty { get; init; }
 
     public string MongoRawCollection { get; init; } = "parameter_raw";
 
