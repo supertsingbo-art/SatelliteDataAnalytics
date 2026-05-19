@@ -11,6 +11,7 @@ public sealed class TaskOrchestrator(
     ITaskEventRepository taskEvents,
     IBackgroundJobScheduler scheduler,
     PreprocessTaskValidator preprocessValidator,
+    PreprocessScheduleService scheduleService,
     ILogger<TaskOrchestrator> logger)
 {
     public async Task<PipelineCreateResult> CreatePipelineAsync(
@@ -82,12 +83,22 @@ public sealed class TaskOrchestrator(
         return new PipelineCreateResult(runId, jobId, TaskRunStatus.Queued, Created: true);
     }
 
-    public async Task<PipelineCreateResult> CreatePreprocessAsync(
+    public async Task<PreprocessCreateResult> CreatePreprocessAsync(
         PreprocessCreateCommand command,
         Guid? createdBy,
         CancellationToken cancellationToken)
     {
-        EnsureValidWindow(command.WindowStart, command.WindowEnd);
+        if (command.CreateMode == PreprocessCreateMode.DailyRecurring)
+        {
+            var sched = await scheduleService.CreateDailyScheduleAsync(command, createdBy, cancellationToken);
+            return new PreprocessCreateResult(
+                RunId: null,
+                ScheduleId: sched.ScheduleId,
+                JobId: null,
+                Status: TaskRunStatus.Queued,
+                Created: true);
+        }
+
         await preprocessValidator.ValidateAsync(command, cancellationToken);
 
         var idempotencyKey = string.IsNullOrWhiteSpace(command.IdempotencyKey)
@@ -97,19 +108,29 @@ public sealed class TaskOrchestrator(
         var existing = await taskRuns.GetByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return new PipelineCreateResult(existing.RunId, existing.JobId, existing.Status, Created: false);
+            return new PreprocessCreateResult(
+                existing.RunId,
+                existing.ScheduleId,
+                existing.JobId,
+                existing.Status,
+                Created: false);
         }
 
         var runId = Guid.NewGuid();
         var jobId = $"PRE-{DateTime.UtcNow:yyyyMMddHHmmss}-{runId.ToString("N")[..8]}";
         var now = DateTimeOffset.UtcNow;
+        var isOnceScheduled = command.CreateMode == PreprocessCreateMode.OnceScheduled;
+        var executionMode = isOnceScheduled
+            ? PreprocessExecutionMode.OnceScheduled
+            : PreprocessExecutionMode.Immediate;
+        var triggerType = isOnceScheduled ? TaskTriggerType.Scheduled : command.TriggerType;
 
         var run = new TaskRun(
             RunId: runId,
             ParentRunId: null,
             JobId: jobId,
             JobType: TaskJobType.Preprocess,
-            TriggerType: command.TriggerType,
+            TriggerType: triggerType,
             Status: TaskRunStatus.Queued,
             IdempotencyKey: idempotencyKey,
             TasookNo: command.TasookNo,
@@ -124,14 +145,18 @@ public sealed class TaskOrchestrator(
             ReportTemplateId: null,
             ReportTemplateVersion: null,
             ProgressPercent: 3m,
-            CurrentStep: "Queued",
+            CurrentStep: isOnceScheduled ? "scheduled" : "Queued",
             StartTime: null,
             EndTime: null,
             TimeoutFlag: false,
             ErrorCode: null,
             ErrorMsg: null,
             CreatedBy: createdBy,
-            CreatedAt: now);
+            CreatedAt: now,
+            ExecutionMode: executionMode,
+            ScheduledAt: isOnceScheduled ? command.ScheduledAt : null,
+            ScheduleId: null,
+            HangfireJobId: null);
 
         await taskRuns.InsertAsync(run, cancellationToken);
         await taskEvents.AppendAsync(
@@ -140,16 +165,37 @@ public sealed class TaskOrchestrator(
                 runId,
                 "preprocess.created",
                 "Succeeded",
-                JsonSerializer.Serialize(new { jobId, command.TasookNo, command.SatelliteNo }),
+                JsonSerializer.Serialize(new
+                {
+                    jobId,
+                    command.TasookNo,
+                    command.SatelliteNo,
+                    mode = PreprocessCreateModeParser.ToApi(command.CreateMode)
+                }),
                 null,
                 null,
                 now),
             cancellationToken);
 
-        var hangfireId = scheduler.EnqueuePreprocess(runId);
-        logger.LogInformation("Preprocess-only {RunId} queued, Hangfire {HangfireId}", runId, hangfireId);
+        string hangfireId;
+        if (isOnceScheduled)
+        {
+            hangfireId = scheduler.SchedulePreprocess(runId, command.ScheduledAt!.Value);
+            run = run with { HangfireJobId = hangfireId };
+            await taskRuns.UpdateAsync(run, cancellationToken);
+            logger.LogInformation(
+                "Preprocess {RunId} scheduled at {At}, Hangfire {HangfireId}",
+                runId,
+                command.ScheduledAt,
+                hangfireId);
+        }
+        else
+        {
+            hangfireId = scheduler.EnqueuePreprocess(runId);
+            logger.LogInformation("Preprocess {RunId} queued, Hangfire {HangfireId}", runId, hangfireId);
+        }
 
-        return new PipelineCreateResult(runId, jobId, TaskRunStatus.Queued, Created: true);
+        return new PreprocessCreateResult(runId, null, jobId, TaskRunStatus.Queued, Created: true);
     }
 
     public async Task<PipelineCreateResult> CancelAsync(Guid runId, CancellationToken cancellationToken)
@@ -166,6 +212,12 @@ public sealed class TaskOrchestrator(
             throw new TaskValidationException(
                 TaskErrorCodes.NotCancellable,
                 $"任务已结束，无法取消（当前状态：{run.Status}）");
+        }
+
+        if (run.ExecutionMode == PreprocessExecutionMode.OnceScheduled
+            && !string.IsNullOrWhiteSpace(run.HangfireJobId))
+        {
+            scheduler.TryDeleteScheduledJob(run.HangfireJobId);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -209,7 +261,7 @@ public sealed class TaskOrchestrator(
     private static string BuildPreprocessIdempotencyKey(PreprocessCreateCommand command)
     {
         var raw =
-            $"PREPROCESS|{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchName}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.TriggerType}";
+            $"PREPROCESS|{PreprocessCreateModeParser.ToApi(command.CreateMode)}|{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchName}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.ScheduledAt:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.TriggerType}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
@@ -224,7 +276,12 @@ public sealed record PreprocessCreateCommand(
     Guid FilterTemplateId,
     int FilterTemplateVersion,
     string? IdempotencyKey,
-    TaskTriggerType TriggerType);
+    TaskTriggerType TriggerType,
+    PreprocessCreateMode CreateMode = PreprocessCreateMode.Immediate,
+    DateTimeOffset? ScheduledAt = null,
+    TimeOnly? DailyTime = null,
+    int? IntervalDays = null,
+    DateOnly? EffectiveFrom = null);
 
 public sealed record PipelineCreateCommand(
     string TasookNo,
@@ -240,3 +297,10 @@ public sealed record PipelineCreateCommand(
     TaskTriggerType TriggerType);
 
 public sealed record PipelineCreateResult(Guid RunId, string JobId, TaskRunStatus Status, bool Created);
+
+public sealed record PreprocessCreateResult(
+    Guid? RunId,
+    Guid? ScheduleId,
+    string? JobId,
+    TaskRunStatus Status,
+    bool Created);

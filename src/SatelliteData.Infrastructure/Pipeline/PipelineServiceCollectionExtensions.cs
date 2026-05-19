@@ -28,6 +28,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<ITaskEventRepository, PgTaskEventRepository>();
             services.AddSingleton<IHqParamMetadataRepository, PgHqParamMetadataRepository>();
             services.AddSingleton<IClientCallbackRepository, PgClientCallbackRepository>();
+            services.AddSingleton<IPreprocessScheduleRepository, PgPreprocessScheduleRepository>();
         }
         else
         {
@@ -35,7 +36,10 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<ITaskEventRepository, InMemoryTaskEventRepository>();
             services.AddSingleton<IHqParamMetadataRepository, InMemoryHqParamMetadataRepository>();
             services.AddSingleton<IClientCallbackRepository, InMemoryClientCallbackRepository>();
+            services.AddSingleton<IPreprocessScheduleRepository, InMemoryPreprocessScheduleRepository>();
         }
+
+        services.AddScoped<PreprocessScheduleService>();
 
         services.AddScoped<IPreprocessPipeline, PreprocessPipeline>();
         services.AddScoped<IAlgorithmExecutionPipeline, AlgorithmExecutionPipeline>();

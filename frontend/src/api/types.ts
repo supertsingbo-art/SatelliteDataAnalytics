@@ -382,10 +382,13 @@ export interface AlgorithmPackageView {
 }
 
 export interface JobAccepted {
-  jobId: string;
-  runId: string;
+  jobId: string | null;
+  runId: string | null;
+  scheduleId?: string | null;
   status: string;
 }
+
+export type PreprocessExecutionMode = 'IMMEDIATE' | 'ONCE_SCHEDULED' | 'DAILY_RECURRING';
 
 
 export interface JobStatus {
@@ -423,6 +426,12 @@ export interface TaskRunDetail {
   created_at: string;
   error_code: string | null;
   error_msg: string | null;
+  execution_mode: string | null;
+  scheduled_at: string | null;
+  schedule_id: string | null;
+  schedule_daily_time: string | null;
+  schedule_interval_days: number | null;
+  schedule_effective_from: string | null;
 }
 
 /** GET /api/v1/tasks 列表项 */
@@ -431,7 +440,9 @@ export interface TaskRunListItem {
   job_id: string;
   job_type: string;
   trigger_type: string;
+  execution_mode: string | null;
   status: string;
+  scheduled_at: string | null;
   tasook_no: string;
   satellite_no: string;
   test_batch_name: string | null;

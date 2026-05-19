@@ -43,11 +43,34 @@ CREATE TABLE IF NOT EXISTS task_run (
     error_msg text,
     created_by uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
+    execution_mode varchar(32),
+    scheduled_at timestamptz,
+    schedule_id uuid,
+    hangfire_job_id varchar(128),
     UNIQUE (idempotency_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_run_status_created ON task_run(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_run_satellite ON task_run(tasook_no, satellite_no);
+CREATE INDEX IF NOT EXISTS idx_task_run_schedule_id ON task_run(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_task_run_scheduled_at ON task_run(scheduled_at);
+
+CREATE TABLE IF NOT EXISTS preprocess_schedule (
+    schedule_id uuid PRIMARY KEY,
+    tasook_no varchar(64) NOT NULL,
+    satellite_no varchar(64) NOT NULL,
+    filter_template_id uuid NOT NULL,
+    filter_template_version int NOT NULL,
+    daily_time time NOT NULL,
+    interval_days int NOT NULL DEFAULT 1,
+    effective_from date NOT NULL,
+    enabled boolean NOT NULL DEFAULT true,
+    hangfire_recurring_id varchar(128) NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_preprocess_schedule_satellite ON preprocess_schedule(tasook_no, satellite_no);
 
 CREATE TABLE IF NOT EXISTS task_event (
     event_id uuid PRIMARY KEY,

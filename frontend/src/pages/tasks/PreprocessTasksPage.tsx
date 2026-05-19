@@ -2,12 +2,20 @@ import { Button, Card, Collapse, Form, Space, Typography, message } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tasksApi } from '@/api/tasks';
 import {
-  CUSTOM_PHASE,
-  CUSTOM_TIME_DISPLAY_NAME,
   PreprocessFormFields,
   parseFilterTemplateKey,
   timeRangeToWindowIso
 } from '@/pages/tasks/components/PreprocessFormFields';
+import {
+  CUSTOM_PHASE,
+  CUSTOM_TIME_DISPLAY_NAME
+} from '@/pages/tasks/components/PreprocessWindowFields';
+import {
+  combineScheduledRunAt,
+  formatDailyTime,
+  formatEffectiveFrom,
+  type PreprocessExecutionMode
+} from '@/pages/tasks/components/PreprocessSchedulePanel';
 import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
 
@@ -33,8 +41,7 @@ export function PreprocessTasksPage() {
       }
     >
       <Paragraph type="secondary">
-        调用 <code>POST /api/v1/tasks/preprocess</code>：Mongo 拉取、筛选、离群打标与 ClickHouse 入仓，不执行算法 DAG。
-        从任务列表「详情」进入时可查看完整任务信息并自动刷新进度。
+        支持三种处理类型：立即执行、指定时间执行一次、每天定时（数据窗为前一日同刻至当日设定时刻）。
       </Paragraph>
 
       {viewRunId && <TaskDetailCard detail={detail} loading={loading} />}
@@ -49,8 +56,10 @@ export function PreprocessTasksPage() {
               <Form
                 form={form}
                 layout="vertical"
+                initialValues={{ executionMode: 'IMMEDIATE', intervalDays: 1 }}
                 onFinish={async (v) => {
                   try {
+                    const executionMode = (v.executionMode ?? 'IMMEDIATE') as PreprocessExecutionMode;
                     const { filterTemplateId, filterTemplateVersion } = parseFilterTemplateKey(
                       v.filterTemplateKey
                     );
@@ -58,29 +67,57 @@ export function PreprocessTasksPage() {
                       message.warning('请选择筛选模板');
                       return;
                     }
-                    const { windowStart, windowEnd } = timeRangeToWindowIso(v.timeRange);
-                    if (!windowStart || !windowEnd) {
-                      message.warning('请选择开始与结束日期');
-                      return;
+
+                    let windowStart: string | null = null;
+                    let windowEnd: string | null = null;
+                    let testBatchName: string | null = null;
+
+                    if (executionMode === 'IMMEDIATE' || executionMode === 'ONCE_SCHEDULED') {
+                      const win = timeRangeToWindowIso(v.timeRange);
+                      windowStart = win.windowStart;
+                      windowEnd = win.windowEnd;
+                      if (!windowStart || !windowEnd) {
+                        message.warning('请选择开始与结束日期');
+                        return;
+                      }
+                      const phasePick = v.phasePick as string;
+                      testBatchName =
+                        phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
                     }
-                    const phasePick = v.phasePick as string;
-                    const testBatchName =
-                      phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
+
                     const res = await tasksApi.createPreprocess({
+                      executionMode,
                       tasookNo: v.tasookNo,
                       satelliteNo: v.satelliteNo,
                       testBatchName,
                       windowStart,
                       windowEnd,
+                      scheduledAt:
+                        executionMode === 'ONCE_SCHEDULED'
+                          ? combineScheduledRunAt(v.scheduledRunAt)
+                          : null,
+                      dailyTime:
+                        executionMode === 'DAILY_RECURRING' ? formatDailyTime(v.dailyTime) : null,
+                      intervalDays:
+                        executionMode === 'DAILY_RECURRING' ? Number(v.intervalDays) : null,
+                      effectiveFrom:
+                        executionMode === 'DAILY_RECURRING'
+                          ? formatEffectiveFrom(v.scheduleEffectiveFrom)
+                          : null,
                       filterTemplateId,
                       filterTemplateVersion
                     });
-                    message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
-                    setPolling(true);
-                    setSearchParams({ runId: res.runId });
-                    navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, {
-                      replace: true
-                    });
+
+                    if (res.scheduleId) {
+                      message.success(`已创建每天定时计划 ${res.scheduleId}`);
+                    } else if (res.runId) {
+                      message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
+                      setPolling(true);
+                      setSearchParams({ runId: res.runId });
+                      navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, {
+                        replace: true
+                      });
+                    }
                   } catch {
                     /* axios 已提示 */
                   }

@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, DatePicker, Form, FormInstance, message, Select, Space, Typography } from 'antd';
-import type { Dayjs } from 'dayjs';
-import dayjs from 'dayjs';
+import { Divider, Form, FormInstance, message, Select } from 'antd';
 import { assetsApi } from '@/api/assets';
 import { filterTemplatesApi } from '@/api/templates';
-import type { FilterTemplateView, SatelliteListItem, TestPhase } from '@/api/types';
-
-const { RangePicker } = DatePicker;
-
-export const CUSTOM_PHASE = '__CUSTOM_TIME__';
-
-/** 写入 task_run.test_batch_name，表示用户选择了自定义时间窗（非 test_batch_cache 外键）。 */
-export const CUSTOM_TIME_DISPLAY_NAME = '自定义时间段';
+import type { FilterTemplateView, SatelliteListItem } from '@/api/types';
+import type { Dayjs } from 'dayjs';
+import {
+  PreprocessSchedulePanel,
+  type PreprocessExecutionMode
+} from '@/pages/tasks/components/PreprocessSchedulePanel';
+import { PreprocessWindowFields } from '@/pages/tasks/components/PreprocessWindowFields';
 
 type Props = {
   form: FormInstance;
@@ -74,15 +71,15 @@ function formatSatelliteLabel(s: SatelliteListItem) {
 export function PreprocessFormFields({ form }: Props) {
   const tasookNo = Form.useWatch('tasookNo', form);
   const satelliteNo = Form.useWatch('satelliteNo', form);
-  const phasePick = Form.useWatch('phasePick', form);
+  const executionMode = (Form.useWatch('executionMode', form) ?? 'IMMEDIATE') as PreprocessExecutionMode;
 
   const [satellites, setSatellites] = useState<SatelliteListItem[]>([]);
   const [satellitesLoading, setSatellitesLoading] = useState(false);
-  const [phases, setPhases] = useState<TestPhase[]>([]);
-  const [phasesLoading, setPhasesLoading] = useState(false);
   const [filterTemplates, setFilterTemplates] = useState<FilterTemplateView[]>([]);
   const [filterTemplatesLoading, setFilterTemplatesLoading] = useState(false);
-  const [timeRangeEditable, setTimeRangeEditable] = useState(true);
+
+  const showWindowFields =
+    executionMode === 'IMMEDIATE' || executionMode === 'ONCE_SCHEDULED';
 
   useEffect(() => {
     let cancelled = false;
@@ -90,17 +87,11 @@ export function PreprocessFormFields({ form }: Props) {
       setSatellitesLoading(true);
       try {
         const result = await assetsApi.listSatellites({ enabledOnly: true, pageSize: 500 });
-        if (!cancelled) {
-          setSatellites(result.items);
-        }
+        if (!cancelled) setSatellites(result.items);
       } catch {
-        if (!cancelled) {
-          message.error('加载卫星缓存列表失败');
-        }
+        if (!cancelled) message.error('加载卫星缓存列表失败');
       } finally {
-        if (!cancelled) {
-          setSatellitesLoading(false);
-        }
+        if (!cancelled) setSatellitesLoading(false);
       }
     })();
     return () => {
@@ -124,18 +115,14 @@ export function PreprocessFormFields({ form }: Props) {
       setFilterTemplatesLoading(true);
       try {
         const list = await filterTemplatesApi.applicable(tasookNo, satelliteNo);
-        if (!cancelled) {
-          setFilterTemplates(list);
-        }
+        if (!cancelled) setFilterTemplates(list);
       } catch {
         if (!cancelled) {
-          message.error('加载可用筛选模板失败');
+          message.error('加载适用筛选模板失败');
           setFilterTemplates([]);
         }
       } finally {
-        if (!cancelled) {
-          setFilterTemplatesLoading(false);
-        }
+        if (!cancelled) setFilterTemplatesLoading(false);
       }
     })();
     return () => {
@@ -144,93 +131,30 @@ export function PreprocessFormFields({ form }: Props) {
   }, [tasookNo, satelliteNo]);
 
   useEffect(() => {
-    if (!phasePick || phasePick === CUSTOM_PHASE) {
-      setTimeRangeEditable(true);
-    } else {
-      setTimeRangeEditable(false);
+    if (!showWindowFields) {
+      form.setFieldsValue({ phasePick: undefined, timeRange: undefined });
     }
-  }, [phasePick]);
-
-  const resetPhaseAndTime = () => {
-    setPhases([]);
-    setTimeRangeEditable(true);
-    form.setFieldsValue({ timeRange: undefined, phasePick: undefined });
-  };
+  }, [showWindowFields, form]);
 
   const onTasookChange = () => {
     form.setFieldsValue({
       satelliteNo: undefined,
       filterTemplateKey: undefined,
-      timeRange: undefined,
-      phasePick: undefined
+      phasePick: undefined,
+      timeRange: undefined
     });
-    resetPhaseAndTime();
   };
 
   const onSatelliteChange = () => {
     form.setFieldsValue({
       filterTemplateKey: undefined,
-      timeRange: undefined,
-      phasePick: undefined
-    });
-    resetPhaseAndTime();
-  };
-
-  const loadPhases = async () => {
-    const t = String(form.getFieldValue('tasookNo') ?? '').trim();
-    const s = String(form.getFieldValue('satelliteNo') ?? '').trim();
-    if (!t || !s) {
-      message.warning('请先选择型号与卫星');
-      return;
-    }
-    setPhasesLoading(true);
-    try {
-      const list = await assetsApi.listTestPhases(t, s);
-      setPhases(list);
-      form.setFieldsValue({ phasePick: undefined, timeRange: undefined });
-      setTimeRangeEditable(true);
-      if (list.length === 0) {
-        message.info('暂无测试阶段缓存，请在「卫星资产缓存」中执行同步后再试');
-      }
-    } catch {
-      message.error('加载测试阶段失败');
-    } finally {
-      setPhasesLoading(false);
-    }
-  };
-
-  const onPhaseSelect = (value: string | undefined) => {
-    form.setFieldsValue({ phasePick: value });
-    if (!value) {
-      setTimeRangeEditable(true);
-      form.setFieldsValue({ timeRange: undefined });
-      return;
-    }
-    if (value === CUSTOM_PHASE) {
-      setTimeRangeEditable(true);
-      form.setFieldsValue({ timeRange: undefined });
-      return;
-    }
-    const p = phases.find((x) => x.testBatchName === value);
-    if (!p) {
-      return;
-    }
-    setTimeRangeEditable(false);
-    form.setFieldsValue({
-      timeRange: [dayjs(p.startTs).startOf('day'), dayjs(p.endTs).startOf('day')] as [Dayjs, Dayjs]
+      phasePick: undefined,
+      timeRange: undefined
     });
   };
-
-  const phaseSelectOptions = [
-    ...phases.map((p) => ({
-      value: p.testBatchName,
-      label: p.testBatchName
-    })),
-    { value: CUSTOM_PHASE, label: CUSTOM_TIME_DISPLAY_NAME }
-  ];
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+    <>
       <Form.Item name="tasookNo" label="型号" rules={[{ required: true, message: '请选择型号' }]}>
         <Select
           showSearch
@@ -261,62 +185,6 @@ export function PreprocessFormFields({ form }: Props) {
         />
       </Form.Item>
 
-      <Typography.Text type="secondary">
-        测试阶段来自 test_batch_cache（卫星测试流程规划同步）；选择阶段后自动填入时间范围，或选择「自定义时间」手动指定。
-      </Typography.Text>
-
-      <Space wrap>
-        <Button type="default" onClick={loadPhases} loading={phasesLoading} disabled={!tasookNo || !satelliteNo}>
-          加载测试阶段
-        </Button>
-        <Button
-          onClick={() => {
-            resetPhaseAndTime();
-          }}
-          disabled={!phasePick && phases.length === 0}
-        >
-          清空时间窗
-        </Button>
-      </Space>
-
-      <Form.Item
-        name="phasePick"
-        label="测试阶段（快捷选择）"
-        rules={[{ required: true, message: '请选择测试阶段或自定义时间段' }]}
-        help="选缓存中的阶段名称，或「自定义时间段」后手动填写下方日期"
-      >
-        <Select
-          allowClear
-          placeholder={phases.length ? '选择测试阶段' : '请先点击「加载测试阶段」'}
-          style={{ width: '100%' }}
-          disabled={phases.length === 0}
-          options={phaseSelectOptions}
-          onChange={onPhaseSelect}
-        />
-      </Form.Item>
-
-      <Form.Item
-        name="timeRange"
-        label="数据时间范围"
-        extra={timeRangeEditable ? '请选择开始与结束日期' : '已按所选测试阶段锁定'}
-        rules={[
-          { required: true, message: '请选择开始与结束日期' },
-          {
-            validator(_, value: [Dayjs, Dayjs] | null | undefined) {
-              if (!value?.[0] || !value[1]) {
-                return Promise.reject(new Error('请选择开始与结束日期'));
-              }
-              if (!value[0].isBefore(value[1]) && !value[0].isSame(value[1], 'day')) {
-                return Promise.reject(new Error('开始日期不能晚于结束日期'));
-              }
-              return Promise.resolve();
-            }
-          }
-        ]}
-      >
-        <RangePicker style={{ width: '100%' }} disabled={!timeRangeEditable} />
-      </Form.Item>
-
       <Form.Item
         name="filterTemplateKey"
         label="筛选模板"
@@ -335,6 +203,23 @@ export function PreprocessFormFields({ form }: Props) {
           }))}
         />
       </Form.Item>
-    </Space>
+
+      <Divider />
+
+      <PreprocessSchedulePanel executionMode={executionMode} />
+
+      {showWindowFields && (
+        <>
+          <Divider />
+          <PreprocessWindowFields form={form} tasookNo={tasookNo} satelliteNo={satelliteNo} />
+        </>
+      )}
+    </>
   );
 }
+
+// Re-export for submit page
+export {
+  CUSTOM_PHASE,
+  CUSTOM_TIME_DISPLAY_NAME
+} from '@/pages/tasks/components/PreprocessWindowFields';

@@ -37,8 +37,9 @@ public sealed record CreatePreprocessJobRequest(
     [property: JsonPropertyName("trigger")] string? Trigger);
 
 public sealed record AcceptedJobResponse(
-    [property: JsonPropertyName("jobId")] string JobId,
-    [property: JsonPropertyName("runId")] Guid RunId,
+    [property: JsonPropertyName("jobId")] string? JobId,
+    [property: JsonPropertyName("runId")] Guid? RunId,
+    [property: JsonPropertyName("scheduleId")] Guid? ScheduleId,
     [property: JsonPropertyName("status")] string Status);
 
 public sealed record JobStatusResponse(
@@ -74,4 +75,10 @@ public sealed record TaskRunDetailResponse(
     [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime,
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("error_code")] string? ErrorCode,
-    [property: JsonPropertyName("error_msg")] string? ErrorMsg);
+    [property: JsonPropertyName("error_msg")] string? ErrorMsg,
+    [property: JsonPropertyName("execution_mode")] string? ExecutionMode,
+    [property: JsonPropertyName("scheduled_at")] DateTimeOffset? ScheduledAt,
+    [property: JsonPropertyName("schedule_id")] Guid? ScheduleId,
+    [property: JsonPropertyName("schedule_daily_time")] string? ScheduleDailyTime,
+    [property: JsonPropertyName("schedule_interval_days")] int? ScheduleIntervalDays,
+    [property: JsonPropertyName("schedule_effective_from")] DateOnly? ScheduleEffectiveFrom);

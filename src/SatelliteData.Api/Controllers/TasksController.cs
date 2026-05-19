@@ -10,7 +10,9 @@ namespace SatelliteData.Api.Controllers;
 [Route("api/v1/tasks")]
 public sealed class TasksController(
     TaskOrchestrator orchestrator,
+    PreprocessScheduleService scheduleService,
     ITaskRunRepository taskRuns,
+    IPreprocessScheduleRepository scheduleRepository,
     IFilterTemplateRepository filterTemplates,
     IAlgorithmTemplateRepository algorithmTemplates) : ControllerBase
 {
@@ -19,12 +21,14 @@ public sealed class TasksController(
         [property: JsonPropertyName("job_id")] string JobId,
         [property: JsonPropertyName("job_type")] string JobType,
         [property: JsonPropertyName("trigger_type")] string TriggerType,
+        [property: JsonPropertyName("execution_mode")] string? ExecutionMode,
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("tasook_no")] string TasookNo,
         [property: JsonPropertyName("satellite_no")] string SatelliteNo,
         [property: JsonPropertyName("test_batch_name")] string? TestBatchName,
         [property: JsonPropertyName("progress_percent")] decimal ProgressPercent,
         [property: JsonPropertyName("current_step")] string? CurrentStep,
+        [property: JsonPropertyName("scheduled_at")] DateTimeOffset? ScheduledAt,
         [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
         [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime);
 
@@ -70,16 +74,21 @@ public sealed class TasksController(
         }
 
         return Ok(ApiResponse<AcceptedJobResponse>.Ok(
-            new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString()),
+            new AcceptedJobResponse(result.JobId, result.RunId, null, result.Status.ToString()),
             HttpContext));
     }
 
     public sealed record CreatePreprocessBody(
         string TasookNo,
         string SatelliteNo,
+        string? ExecutionMode,
         string? TestBatchName,
         DateTimeOffset? WindowStart,
         DateTimeOffset? WindowEnd,
+        DateTimeOffset? ScheduledAt,
+        string? DailyTime,
+        int? IntervalDays,
+        DateOnly? EffectiveFrom,
         Guid? FilterTemplateId,
         int? FilterTemplateVersion,
         string? IdempotencyKey);
@@ -99,6 +108,30 @@ public sealed class TasksController(
                     HttpContext));
         }
 
+        if (!PreprocessCreateModeParser.TryParse(body.ExecutionMode, out var createMode))
+        {
+            return BadRequest(
+                ApiResponse<object>.Fail(
+                    TaskErrorCodes.ExecutionModeInvalid,
+                    "executionMode 须为 IMMEDIATE、ONCE_SCHEDULED 或 DAILY_RECURRING",
+                    HttpContext));
+        }
+
+        TimeOnly? dailyTime = null;
+        if (!string.IsNullOrWhiteSpace(body.DailyTime))
+        {
+            if (!TimeOnly.TryParse(body.DailyTime, out var parsedTime))
+            {
+                return BadRequest(
+                    ApiResponse<object>.Fail(
+                        TaskErrorCodes.DailyTimeRequired,
+                        "dailyTime 格式无效，应为 HH:mm:ss",
+                        HttpContext));
+            }
+
+            dailyTime = parsedTime;
+        }
+
         var cmd = new PreprocessCreateCommand(
             body.TasookNo.Trim(),
             body.SatelliteNo.Trim(),
@@ -108,13 +141,18 @@ public sealed class TasksController(
             body.FilterTemplateId.Value,
             body.FilterTemplateVersion.Value,
             body.IdempotencyKey,
-            TaskTriggerType.Api);
+            TaskTriggerType.Api,
+            createMode,
+            body.ScheduledAt,
+            dailyTime,
+            body.IntervalDays,
+            body.EffectiveFrom);
 
         try
         {
             var result = await orchestrator.CreatePreprocessAsync(cmd, createdBy: null, cancellationToken);
             return Ok(ApiResponse<AcceptedJobResponse>.Ok(
-                new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString()),
+                new AcceptedJobResponse(result.JobId, result.RunId, result.ScheduleId, result.Status.ToString()),
                 HttpContext));
         }
         catch (InvalidTaskWindowException)
@@ -135,9 +173,30 @@ public sealed class TasksController(
                 TaskErrorCodes.SatelliteRequired => StatusCodes.Status422UnprocessableEntity,
                 TaskErrorCodes.WindowRequired => StatusCodes.Status422UnprocessableEntity,
                 TaskErrorCodes.FilterTemplateRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.ScheduleTimeRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.ScheduleTimeInvalid => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.DailyTimeRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.EffectiveFromRequired => StatusCodes.Status422UnprocessableEntity,
+                TaskErrorCodes.IntervalDaysInvalid => StatusCodes.Status422UnprocessableEntity,
                 _ => StatusCodes.Status400BadRequest
             };
             return StatusCode(status, ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpPost("schedules/{scheduleId:guid}/disable")]
+    public async Task<ActionResult<ApiResponse<object>>> DisableSchedule(
+        Guid scheduleId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await scheduleService.DisableScheduleAsync(scheduleId, cancellationToken);
+            return Ok(ApiResponse<object>.Ok(new { scheduleId, enabled = false }, HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
         }
     }
 
@@ -180,7 +239,7 @@ public sealed class TasksController(
         {
             var result = await orchestrator.CancelAsync(runId, cancellationToken);
             return Ok(ApiResponse<AcceptedJobResponse>.Ok(
-                new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString()),
+                new AcceptedJobResponse(result.JobId, result.RunId, null, result.Status.ToString()),
                 HttpContext));
         }
         catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
@@ -213,6 +272,12 @@ public sealed class TasksController(
             algorithmTemplateName = algo?.TemplateName;
         }
 
+        PreprocessSchedule? schedule = null;
+        if (r.ScheduleId is Guid sid)
+        {
+            schedule = await scheduleRepository.GetByIdAsync(sid, cancellationToken).ConfigureAwait(false);
+        }
+
         return new TaskRunDetailResponse(
             r.RunId,
             r.JobId,
@@ -236,8 +301,23 @@ public sealed class TasksController(
             r.EndTime,
             r.CreatedAt,
             r.ErrorCode,
-            r.ErrorMsg);
+            r.ErrorMsg,
+            ExecutionModeToApi(r.ExecutionMode),
+            r.ScheduledAt,
+            r.ScheduleId,
+            schedule?.DailyTime.ToString("HH:mm:ss"),
+            schedule?.IntervalDays,
+            schedule?.EffectiveFrom);
     }
+
+    private static string? ExecutionModeToApi(PreprocessExecutionMode? mode) =>
+        mode switch
+        {
+            PreprocessExecutionMode.OnceScheduled => "ONCE_SCHEDULED",
+            PreprocessExecutionMode.DailyInstance => "DAILY_INSTANCE",
+            PreprocessExecutionMode.Immediate => "IMMEDIATE",
+            _ => null
+        };
 
     private static TaskRunListItemResponse ToListItem(TaskRun r) =>
         new(
@@ -245,12 +325,14 @@ public sealed class TasksController(
             r.JobId,
             JobTypeToApi(r.JobType),
             TriggerTypeToApi(r.TriggerType),
+            ExecutionModeToApi(r.ExecutionMode),
             r.Status.ToString(),
             r.TasookNo,
             r.SatelliteNo,
             r.TestBatchName,
             r.ProgressPercent,
             r.CurrentStep,
+            r.ScheduledAt,
             r.CreatedAt,
             r.EndTime);
 

@@ -56,7 +56,11 @@ public sealed record TaskRun(
     string? ErrorCode,
     string? ErrorMsg,
     Guid? CreatedBy,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    PreprocessExecutionMode? ExecutionMode = null,
+    DateTimeOffset? ScheduledAt = null,
+    Guid? ScheduleId = null,
+    string? HangfireJobId = null);
 
 public sealed record TaskEvent(
     Guid EventId,

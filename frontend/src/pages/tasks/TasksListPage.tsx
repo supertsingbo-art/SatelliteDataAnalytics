@@ -15,6 +15,12 @@ function taskDetailPath(jobType: string, runId: string): string {
   return `/tasks/pipeline?${q}`;
 }
 
+const executionModeLabel: Record<string, string> = {
+  IMMEDIATE: '立即',
+  ONCE_SCHEDULED: '一次定时',
+  DAILY_INSTANCE: '每日实例'
+};
+
 const statusColor: Record<string, string> = {
   Queued: 'default',
   Running: 'processing',
@@ -118,6 +124,12 @@ export function TasksListPage() {
           { title: 'run_id', dataIndex: 'run_id', width: 280, ellipsis: true },
           { title: 'job_id', dataIndex: 'job_id', width: 200, ellipsis: true },
           { title: '类型', dataIndex: 'job_type', width: 100 },
+          {
+            title: '处理类型',
+            dataIndex: 'execution_mode',
+            width: 100,
+            render: (m: string | null) => (m ? executionModeLabel[m] ?? m : '—')
+          },
           { title: '触发', dataIndex: 'trigger_type', width: 88 },
           {
             title: '状态',
@@ -135,6 +147,7 @@ export function TasksListPage() {
             render: (p: number) => `${Number(p).toFixed(1)}%`
           },
           { title: '当前步骤', dataIndex: 'current_step', width: 140, ellipsis: true },
+          { title: '计划执行', dataIndex: 'scheduled_at', width: 180 },
           { title: '创建时间', dataIndex: 'created_at', width: 180 },
           { title: '结束时间', dataIndex: 'end_time', width: 180 }
         ]}

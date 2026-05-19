@@ -6,6 +6,9 @@ public static class PreprocessTaskLabels
     /// <summary>用户选择「自定义时间」时写入 task_run，实际处理以 window_start / window_end 为准。</summary>
     public const string CustomTimeWindowDisplayName = "自定义时间段";
 
+    /// <summary>每天定时任务实例写入 task_run.test_batch_name。</summary>
+    public const string DailyScheduledDisplayName = "每日定时";
+
     public static bool IsCustomTimeWindowLabel(string? testBatchName) =>
         string.Equals(testBatchName?.Trim(), CustomTimeWindowDisplayName, StringComparison.Ordinal);
 }

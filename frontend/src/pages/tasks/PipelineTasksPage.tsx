@@ -56,6 +56,7 @@ export function PipelineTasksPage() {
                       windowStart: v.timeRange?.[0] ? dayjs(v.timeRange[0]).toISOString() : null,
                       windowEnd: v.timeRange?.[1] ? dayjs(v.timeRange[1]).toISOString() : null
                     });
+                    if (!res.runId) return;
                     message.success(`已创建任务 ${res.runId}`);
                     setPolling(true);
                     setSearchParams({ runId: res.runId });

@@ -9,6 +9,13 @@ function formatTime(iso: string | null | undefined) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+const EXECUTION_MODE_LABEL: Record<string, string> = {
+  IMMEDIATE: '一次性立即执行',
+  ONCE_SCHEDULED: '一次性指定时间执行',
+  DAILY_INSTANCE: '每天定时（实例）',
+  DAILY_RECURRING: '每天定时（计划）'
+};
+
 function formatTemplateDisplay(
   name: string | null | undefined,
   version: number | null | undefined,
@@ -62,6 +69,14 @@ export function TaskDetailCard({ detail, loading, title = '任务详情' }: Prop
         <Descriptions.Item label="类型">{detail.job_type}</Descriptions.Item>
         <Descriptions.Item label="触发">{detail.trigger_type}</Descriptions.Item>
         <Descriptions.Item label="状态">{detail.status}</Descriptions.Item>
+        <Descriptions.Item label="处理类型">
+          {detail.execution_mode
+            ? (EXECUTION_MODE_LABEL[detail.execution_mode] ?? detail.execution_mode)
+            : '—'}
+        </Descriptions.Item>
+        <Descriptions.Item label="计划执行时间" span={2}>
+          {formatTime(detail.scheduled_at)}
+        </Descriptions.Item>
         <Descriptions.Item label="当前步骤">{detail.current_step ?? '—'}</Descriptions.Item>
         <Descriptions.Item label="型号">{detail.tasook_no}</Descriptions.Item>
         <Descriptions.Item label="卫星">{detail.satellite_no}</Descriptions.Item>
@@ -91,6 +106,22 @@ export function TaskDetailCard({ detail, loading, title = '任务详情' }: Prop
         <Descriptions.Item label="创建时间" span={2}>
           {formatTime(detail.created_at)}
         </Descriptions.Item>
+        {detail.schedule_id && (
+          <>
+            <Descriptions.Item label="定时计划 ID" span={2}>
+              {detail.schedule_id}
+            </Descriptions.Item>
+            <Descriptions.Item label="每日时刻">
+              {detail.schedule_daily_time ?? '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="间隔天数">
+              {detail.schedule_interval_days ?? '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="计划生效日" span={2}>
+              {detail.schedule_effective_from ?? '—'}
+            </Descriptions.Item>
+          </>
+        )}
       </Descriptions>
       <div style={{ marginTop: 16 }}>
         <Typography.Text type="secondary">进度 </Typography.Text>

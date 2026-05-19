@@ -118,7 +118,7 @@ public static class OAuthEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var body = new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString());
+            var body = new AcceptedJobResponse(result.JobId, result.RunId, null, result.Status.ToString());
             return Results.Accepted($"/openapi/v1/jobs/{result.RunId}", body);
         })
         .RequireAuthorization();
@@ -160,9 +160,10 @@ public static class OAuthEndpoints
                 request.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
                 request.FilterTemplateVersion ?? 1,
                 request.IdempotencyKey,
-                trigger);
+                trigger,
+                PreprocessCreateMode.Immediate);
 
-            PipelineCreateResult result;
+            PreprocessCreateResult result;
             try
             {
                 result = await orchestrator.CreatePreprocessAsync(cmd, clientId, cancellationToken);
@@ -174,7 +175,14 @@ public static class OAuthEndpoints
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var body = new AcceptedJobResponse(result.JobId, result.RunId, result.Status.ToString());
+            if (result.RunId is null)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("invalid_request", "OpenAPI 预处理仅支持立即执行模式"),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var body = new AcceptedJobResponse(result.JobId, result.RunId, result.ScheduleId, result.Status.ToString());
             return Results.Accepted($"/openapi/v1/jobs/{result.RunId}", body);
         })
         .RequireAuthorization();

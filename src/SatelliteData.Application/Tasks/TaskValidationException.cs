@@ -18,4 +18,10 @@ public static class TaskErrorCodes
     public const string FilterTemplateRequired = "TASK_FILTER_TEMPLATE_REQUIRED";
     public const string NotFound = "TASK_001";
     public const string NotCancellable = "TASK_NOT_CANCELLABLE";
+    public const string ExecutionModeInvalid = "TASK_EXECUTION_MODE_INVALID";
+    public const string ScheduleTimeRequired = "TASK_SCHEDULE_TIME_REQUIRED";
+    public const string ScheduleTimeInvalid = "TASK_SCHEDULE_TIME_INVALID";
+    public const string DailyTimeRequired = "TASK_DAILY_TIME_REQUIRED";
+    public const string EffectiveFromRequired = "TASK_EFFECTIVE_FROM_REQUIRED";
+    public const string IntervalDaysInvalid = "TASK_INTERVAL_DAYS_INVALID";
 }

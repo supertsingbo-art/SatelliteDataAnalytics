@@ -25,16 +25,57 @@ public sealed class PreprocessTaskValidator(
             throw new TaskValidationException(TaskErrorCodes.SatelliteRequired, "请选择卫星");
         }
 
-        if (command.WindowStart is null || command.WindowEnd is null)
-        {
-            throw new TaskValidationException(
-                TaskErrorCodes.WindowRequired,
-                "请填写数据时间范围（开始日期与结束日期）");
-        }
-
         if (command.FilterTemplateId == Guid.Empty || command.FilterTemplateVersion <= 0)
         {
             throw new TaskValidationException(TaskErrorCodes.FilterTemplateRequired, "请选择筛选模板");
+        }
+
+        if (command.CreateMode is PreprocessCreateMode.Immediate or PreprocessCreateMode.OnceScheduled)
+        {
+            if (command.WindowStart is null || command.WindowEnd is null)
+            {
+                throw new TaskValidationException(
+                    TaskErrorCodes.WindowRequired,
+                    "请填写数据时间范围（开始日期与结束日期）");
+            }
+
+            if (command.WindowStart.Value >= command.WindowEnd.Value)
+            {
+                throw new InvalidTaskWindowException();
+            }
+        }
+
+        if (command.CreateMode == PreprocessCreateMode.OnceScheduled)
+        {
+            if (command.ScheduledAt is null)
+            {
+                throw new TaskValidationException(TaskErrorCodes.ScheduleTimeRequired, "请指定计划执行时间");
+            }
+
+            if (command.ScheduledAt.Value <= DateTimeOffset.UtcNow)
+            {
+                throw new TaskValidationException(
+                    TaskErrorCodes.ScheduleTimeInvalid,
+                    "计划执行时间须晚于当前时间");
+            }
+        }
+
+        if (command.CreateMode == PreprocessCreateMode.DailyRecurring)
+        {
+            if (command.DailyTime is null)
+            {
+                throw new TaskValidationException(TaskErrorCodes.DailyTimeRequired, "请指定每日执行时刻");
+            }
+
+            if (command.EffectiveFrom is null)
+            {
+                throw new TaskValidationException(TaskErrorCodes.EffectiveFromRequired, "请指定计划生效日期");
+            }
+
+            if (command.IntervalDays is null or < 1)
+            {
+                throw new TaskValidationException(TaskErrorCodes.IntervalDaysInvalid, "间隔天数须至少为 1");
+            }
         }
 
         var satellite = await assetCache.GetSatelliteAsync(command.TasookNo, command.SatelliteNo, cancellationToken);

@@ -1,5 +1,5 @@
 import { request } from './client';
-import type { JobAccepted, TaskRunDetail, TaskRunListItem } from './types';
+import type { JobAccepted, PreprocessExecutionMode, TaskRunDetail, TaskRunListItem } from './types';
 
 const TASKS_BASE = '/api/v1/tasks';
 
@@ -17,11 +17,16 @@ export interface CreatePipelineBody {
 }
 
 export interface CreatePreprocessBody {
+  executionMode: PreprocessExecutionMode;
   tasookNo: string;
   satelliteNo: string;
   testBatchName?: string | null;
   windowStart?: string | null;
   windowEnd?: string | null;
+  scheduledAt?: string | null;
+  dailyTime?: string | null;
+  intervalDays?: number | null;
+  effectiveFrom?: string | null;
   filterTemplateId?: string | null;
   filterTemplateVersion?: number | null;
   idempotencyKey?: string | null;
@@ -48,15 +53,22 @@ export const tasksApi = {
     }),
   createPreprocess: (body: CreatePreprocessBody) =>
     request<JobAccepted>('post', `${TASKS_BASE}/preprocess`, {
+      executionMode: body.executionMode,
       tasookNo: body.tasookNo,
       satelliteNo: body.satelliteNo,
       testBatchName: body.testBatchName,
       windowStart: body.windowStart,
       windowEnd: body.windowEnd,
+      scheduledAt: body.scheduledAt,
+      dailyTime: body.dailyTime,
+      intervalDays: body.intervalDays,
+      effectiveFrom: body.effectiveFrom,
       filterTemplateId: body.filterTemplateId,
       filterTemplateVersion: body.filterTemplateVersion,
       idempotencyKey: body.idempotencyKey
     }),
+  disableSchedule: (scheduleId: string) =>
+    request<{ scheduleId: string; enabled: boolean }>('post', `${TASKS_BASE}/schedules/${scheduleId}/disable`),
   get: (runId: string) => request<TaskRunDetail>('get', `${TASKS_BASE}/${runId}`),
   cancel: (runId: string) =>
     request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`)

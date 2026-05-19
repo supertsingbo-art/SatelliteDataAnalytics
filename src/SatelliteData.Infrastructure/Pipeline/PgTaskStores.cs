@@ -47,6 +47,25 @@ internal static class TaskRunDbMapper
         "SCHEDULED" => TaskTriggerType.Scheduled,
         _ => TaskTriggerType.Api
     };
+
+    public static string ExecutionModeToDb(PreprocessExecutionMode m) => m switch
+    {
+        PreprocessExecutionMode.OnceScheduled => "ONCE_SCHEDULED",
+        PreprocessExecutionMode.DailyInstance => "DAILY_INSTANCE",
+        _ => "IMMEDIATE"
+    };
+
+    public static PreprocessExecutionMode? ExecutionModeFromDb(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        return s.ToUpperInvariant() switch
+        {
+            "ONCE_SCHEDULED" => PreprocessExecutionMode.OnceScheduled,
+            "DAILY_INSTANCE" => PreprocessExecutionMode.DailyInstance,
+            "IMMEDIATE" => PreprocessExecutionMode.Immediate,
+            _ => null
+        };
+    }
 }
 
 public sealed class PgTaskRunRepository : ITaskRunRepository
@@ -109,6 +128,27 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
                 ALTER TABLE task_run DROP COLUMN IF EXISTS test_phase_scenario;
             END IF;
         END $migrate_task_run_batch$;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS execution_mode varchar(32);
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS scheduled_at timestamptz;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS schedule_id uuid;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS hangfire_job_id varchar(128);
+        CREATE INDEX IF NOT EXISTS idx_task_run_schedule_id ON task_run(schedule_id);
+        CREATE INDEX IF NOT EXISTS idx_task_run_scheduled_at ON task_run(scheduled_at);
+        CREATE TABLE IF NOT EXISTS preprocess_schedule (
+            schedule_id uuid PRIMARY KEY,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            filter_template_id uuid NOT NULL,
+            filter_template_version int NOT NULL,
+            daily_time time NOT NULL,
+            interval_days int NOT NULL DEFAULT 1,
+            effective_from date NOT NULL,
+            enabled boolean NOT NULL DEFAULT true,
+            hangfire_recurring_id varchar(128) NOT NULL,
+            created_at timestamptz NOT NULL DEFAULT now(),
+            updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_preprocess_schedule_satellite ON preprocess_schedule(tasook_no, satellite_no);
         """;
 
     private readonly string _cs;
@@ -153,13 +193,15 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
               tasook_no, satellite_no, test_batch_name, window_start, window_end,
               filter_template_id, filter_template_version, algorithm_template_id, algorithm_template_version,
               report_template_id, report_template_version, progress_percent, current_step, start_time, end_time,
-              timeout_flag, error_code, error_msg, created_by, created_at
+              timeout_flag, error_code, error_msg, created_by, created_at,
+              execution_mode, scheduled_at, schedule_id, hangfire_job_id
             ) VALUES (
               @run_id, @parent_run_id, @job_id, @job_type, @trigger_type, @status, @idempotency_key,
               @tasook_no, @satellite_no, @test_batch_name, @window_start, @window_end,
               @filter_template_id, @filter_template_version, @algorithm_template_id, @algorithm_template_version,
               @report_template_id, @report_template_version, @progress_percent, @current_step, @start_time, @end_time,
-              @timeout_flag, @error_code, @error_msg, @created_by, @created_at
+              @timeout_flag, @error_code, @error_msg, @created_by, @created_at,
+              @execution_mode, @scheduled_at, @schedule_id, @hangfire_job_id
             )
             """,
             conn);
@@ -190,7 +232,8 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
               algorithm_template_id=@algorithm_template_id, algorithm_template_version=@algorithm_template_version,
               report_template_id=@report_template_id, report_template_version=@report_template_version,
               progress_percent=@progress_percent, current_step=@current_step, start_time=@start_time, end_time=@end_time,
-              timeout_flag=@timeout_flag, error_code=@error_code, error_msg=@error_msg
+              timeout_flag=@timeout_flag, error_code=@error_code, error_msg=@error_msg,
+              execution_mode=@execution_mode, scheduled_at=@scheduled_at, schedule_id=@schedule_id, hangfire_job_id=@hangfire_job_id
             WHERE run_id=@run_id
             """,
             conn);
@@ -271,6 +314,12 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         cmd.Parameters.AddWithValue("error_msg", (object?)run.ErrorMsg ?? DBNull.Value);
         cmd.Parameters.AddWithValue("created_by", (object?)run.CreatedBy ?? DBNull.Value);
         cmd.Parameters.AddWithValue("created_at", run.CreatedAt);
+        cmd.Parameters.AddWithValue(
+            "execution_mode",
+            run.ExecutionMode is { } em ? TaskRunDbMapper.ExecutionModeToDb(em) : DBNull.Value);
+        cmd.Parameters.AddWithValue("scheduled_at", (object?)run.ScheduledAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("schedule_id", (object?)run.ScheduleId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("hangfire_job_id", (object?)run.HangfireJobId ?? DBNull.Value);
     }
 
     private static TaskRun Read(NpgsqlDataReader r)
@@ -314,8 +363,145 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             Str(r, "error_code"),
             Str(r, "error_msg"),
             GuidN(r, "created_by"),
-            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("created_at")));
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("created_at")),
+            ExecutionModeFromReader(r),
+            Ts(r, "scheduled_at"),
+            GuidN(r, "schedule_id"),
+            Str(r, "hangfire_job_id"));
     }
+
+    private static PreprocessExecutionMode? ExecutionModeFromReader(NpgsqlDataReader r)
+    {
+        var ord = r.GetOrdinal("execution_mode");
+        if (r.IsDBNull(ord)) return null;
+        return TaskRunDbMapper.ExecutionModeFromDb(r.GetString(ord));
+    }
+}
+
+public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleRepository
+{
+    private const string SchemaSql = """
+        CREATE TABLE IF NOT EXISTS preprocess_schedule (
+            schedule_id uuid PRIMARY KEY,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            filter_template_id uuid NOT NULL,
+            filter_template_version int NOT NULL,
+            daily_time time NOT NULL,
+            interval_days int NOT NULL DEFAULT 1,
+            effective_from date NOT NULL,
+            enabled boolean NOT NULL DEFAULT true,
+            hangfire_recurring_id varchar(128) NOT NULL,
+            created_at timestamptz NOT NULL DEFAULT now(),
+            updated_at timestamptz NOT NULL DEFAULT now()
+        );
+        """;
+
+    private readonly string _cs;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private bool _ready;
+
+    public PgPreprocessScheduleRepository(IOptions<DatabaseConnectionOptions> options) =>
+        _cs = options.Value.Postgres;
+
+    private async Task EnsureAsync(CancellationToken cancellationToken)
+    {
+        if (_ready) return;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_ready) return;
+            await using var conn = new NpgsqlConnection(_cs);
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var cmd = new NpgsqlCommand(SchemaSql, conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            _ready = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task InsertAsync(PreprocessSchedule schedule, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO preprocess_schedule (
+              schedule_id, tasook_no, satellite_no, filter_template_id, filter_template_version,
+              daily_time, interval_days, effective_from, enabled, hangfire_recurring_id, created_at, updated_at
+            ) VALUES (
+              @id, @t, @s, @ft, @fv, @dt, @iv, @ef, @en, @hf, @ca, @ua
+            )
+            """,
+            conn);
+        AddParams(cmd, schedule);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task UpdateAsync(PreprocessSchedule schedule, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE preprocess_schedule SET
+              tasook_no=@t, satellite_no=@s, filter_template_id=@ft, filter_template_version=@fv,
+              daily_time=@dt, interval_days=@iv, effective_from=@ef, enabled=@en,
+              hangfire_recurring_id=@hf, updated_at=@ua
+            WHERE schedule_id=@id
+            """,
+            conn);
+        AddParams(cmd, schedule);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PreprocessSchedule?> GetByIdAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("SELECT * FROM preprocess_schedule WHERE schedule_id=@id", conn);
+        cmd.Parameters.AddWithValue("id", scheduleId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) return null;
+        return Read(reader);
+    }
+
+    private static void AddParams(NpgsqlCommand cmd, PreprocessSchedule s)
+    {
+        cmd.Parameters.AddWithValue("id", s.ScheduleId);
+        cmd.Parameters.AddWithValue("t", s.TasookNo);
+        cmd.Parameters.AddWithValue("s", s.SatelliteNo);
+        cmd.Parameters.AddWithValue("ft", s.FilterTemplateId);
+        cmd.Parameters.AddWithValue("fv", s.FilterTemplateVersion);
+        cmd.Parameters.AddWithValue("dt", s.DailyTime.ToTimeSpan());
+        cmd.Parameters.AddWithValue("iv", s.IntervalDays);
+        cmd.Parameters.AddWithValue("ef", s.EffectiveFrom);
+        cmd.Parameters.AddWithValue("en", s.Enabled);
+        cmd.Parameters.AddWithValue("hf", s.HangfireRecurringId);
+        cmd.Parameters.AddWithValue("ca", s.CreatedAt);
+        cmd.Parameters.AddWithValue("ua", s.UpdatedAt);
+    }
+
+    private static PreprocessSchedule Read(NpgsqlDataReader r) =>
+        new(
+            r.GetGuid(r.GetOrdinal("schedule_id")),
+            r.GetString(r.GetOrdinal("tasook_no")),
+            r.GetString(r.GetOrdinal("satellite_no")),
+            r.GetGuid(r.GetOrdinal("filter_template_id")),
+            r.GetInt32(r.GetOrdinal("filter_template_version")),
+            TimeOnly.FromTimeSpan(r.GetTimeSpan(r.GetOrdinal("daily_time"))),
+            r.GetInt32(r.GetOrdinal("interval_days")),
+            DateOnly.FromDateTime(r.GetDateTime(r.GetOrdinal("effective_from"))),
+            r.GetBoolean(r.GetOrdinal("enabled")),
+            r.GetString(r.GetOrdinal("hangfire_recurring_id")),
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("created_at")),
+            r.GetFieldValue<DateTimeOffset>(r.GetOrdinal("updated_at")));
 }
 
 public sealed class PgTaskEventRepository : ITaskEventRepository

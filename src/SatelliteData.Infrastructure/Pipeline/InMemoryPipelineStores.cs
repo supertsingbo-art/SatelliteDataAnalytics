@@ -87,6 +87,39 @@ public sealed class InMemoryHqParamMetadataRepository : IHqParamMetadataReposito
     public Task InsertAsync(HqParamMetadataRow row, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
+public sealed class InMemoryPreprocessScheduleRepository : IPreprocessScheduleRepository
+{
+    private readonly Dictionary<Guid, PreprocessSchedule> _byId = [];
+    private readonly object _gate = new();
+
+    public Task<PreprocessSchedule?> GetByIdAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            _byId.TryGetValue(scheduleId, out var s);
+            return Task.FromResult(s);
+        }
+    }
+
+    public Task InsertAsync(PreprocessSchedule schedule, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            _byId[schedule.ScheduleId] = schedule;
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task UpdateAsync(PreprocessSchedule schedule, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            _byId[schedule.ScheduleId] = schedule;
+            return Task.CompletedTask;
+        }
+    }
+}
+
 public sealed class InMemoryClientCallbackRepository : IClientCallbackRepository
 {
     public Task<IReadOnlyList<ClientCallbackRow>> GetEnabledCallbacksAsync(CancellationToken cancellationToken) =>
