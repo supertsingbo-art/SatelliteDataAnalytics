@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SatelliteData.Application\SatelliteData.Application.csproj" />
+    <ProjectReference Include="..\..\src\SatelliteData.Domain\SatelliteData.Domain.csproj" />
   </ItemGroup>
 
 </Project>

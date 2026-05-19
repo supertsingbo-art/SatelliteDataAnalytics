@@ -9,10 +9,17 @@ internal static class JsonElementExtensions
         foreach (var name in names)
         {
             if (element.ValueKind == JsonValueKind.Object &&
-                element.TryGetProperty(name, out var value) &&
-                value.ValueKind is JsonValueKind.String or JsonValueKind.Number)
+                element.TryGetProperty(name, out var value))
             {
-                return value.ToString();
+                if (value.ValueKind == JsonValueKind.String)
+                {
+                    return value.GetString();
+                }
+
+                if (value.ValueKind == JsonValueKind.Number)
+                {
+                    return value.GetRawText();
+                }
             }
         }
 

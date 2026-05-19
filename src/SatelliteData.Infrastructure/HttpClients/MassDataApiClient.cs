@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
@@ -96,7 +97,7 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         using var response = await httpClient.PostAsJsonAsync($"{_options.MassDataApiBaseUrl}/api/mass-data/satellite/config", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
-        var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
+        var root = await ReadJsonRootAsync(response, cancellationToken);
         var rawUri = root.GetStringOrNull("mongoUri", "mongoQueryConn", "mongoqueryconn", "cfgConn");
         if (string.IsNullOrWhiteSpace(rawUri))
         {
@@ -104,9 +105,12 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         }
 
         var sanitizedUri = MongoUriSanitizer.StripCredentials(rawUri);
-        var dbName = root.GetStringOrNull("dbName", "mongoDbName")
+        // 库名优先取接口显式字段；否则从连接串路径解析（会 URL 解码，避免 %E6%B5%8B... 写入 mongo_db_name）
+        var dbName = root.GetStringOrNull("dbName", "mongoDbName", "database", "mongoDatabase")
                      ?? MongoUriSanitizer.ExtractDatabaseName(sanitizedUri)
+                     ?? MongoUriSanitizer.ExtractDatabaseName(rawUri)
                      ?? $"{tasookNo}_{satelliteNo}";
+        dbName = MongoUriSanitizer.NormalizeDbName(dbName);
 
         return new MongoConnectionInfo(
             sanitizedUri,
@@ -122,5 +126,14 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
             satNo = satelliteNo,
             dbStage = string.IsNullOrWhiteSpace(dbStage) ? _options.DefaultDbStage : dbStage
         };
+    }
+
+    /// <summary>按 UTF-8 读取海量接口 JSON，与接口文档「字符编码 UTF-8」一致。</summary>
+    private static async Task<JsonElement> ReadJsonRootAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var json = Encoding.UTF8.GetString(bytes);
+        using var doc = JsonDocument.Parse(json);
+        return doc.RootElement.Clone();
     }
 }
