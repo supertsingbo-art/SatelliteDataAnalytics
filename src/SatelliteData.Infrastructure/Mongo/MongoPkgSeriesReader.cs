@@ -43,6 +43,7 @@ public sealed class MongoPkgSeriesReader : IMongoPkgSeriesReader
                         if (pv.IsDouble) v = pv.AsDouble;
                         else if (pv.IsInt32) v = pv.AsInt32;
                         else if (pv.IsInt64) v = pv.AsInt64;
+                        else if (pv.IsString) v = Convert.ToDouble(pv);
                     }
 
                     list.Add(new RawSeriesPoint(ts, v));
