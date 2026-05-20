@@ -32,6 +32,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<IClientCallbackRepository, PgClientCallbackRepository>();
             services.AddSingleton<IPreprocessScheduleRepository, PgPreprocessScheduleRepository>();
             services.AddSingleton<IPreprocessOutlierSegmentRepository, PgPreprocessOutlierSegmentRepository>();
+            services.AddSingleton<IPreprocessOutlierPointReviewRepository, PgPreprocessOutlierPointReviewRepository>();
         }
         else
         {
@@ -41,6 +42,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<IClientCallbackRepository, InMemoryClientCallbackRepository>();
             services.AddSingleton<IPreprocessScheduleRepository, InMemoryPreprocessScheduleRepository>();
             services.AddSingleton<IPreprocessOutlierSegmentRepository, InMemoryPreprocessOutlierSegmentRepository>();
+            services.AddSingleton<IPreprocessOutlierPointReviewRepository, InMemoryPreprocessOutlierPointReviewRepository>();
         }
 
         services.AddScoped<PreprocessScheduleService>();

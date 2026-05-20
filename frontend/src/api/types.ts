@@ -448,6 +448,8 @@ export interface TaskListItemV2 {
   can_delete?: boolean;
   can_re_execute?: boolean;
   can_view_data?: boolean;
+  outlier_pending_count?: number;
+  outlier_review_status?: string | null;
   /** 合并后的状态文案（取消为 cancelled） */
   status_summary?: string;
   display_status: string;
@@ -486,6 +488,7 @@ export interface TaskProcessedDataColumn {
 export interface TaskProcessedDataCell {
   value: number | null;
   is_outlier: boolean;
+  is_confirmed_outlier?: boolean;
 }
 
 export interface TaskProcessedDataRow {
@@ -501,4 +504,75 @@ export interface TaskProcessedData {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface TaskOutlierPointItem {
+  review_id: string;
+  param_id: string;
+  param_label: string;
+  ts: string;
+  value: number;
+  outlier_method: string;
+  review_status: string;
+  remark?: string | null;
+}
+
+export interface OutlierReviewSummary {
+  run_id: string;
+  outlier_review_status: string | null;
+  auto_count: number;
+  pending_count: number;
+  confirmed_count: number;
+  jitter_count: number;
+}
+
+export interface OutlierReviewItem {
+  review_id: string;
+  param_id: string;
+  param_label: string;
+  ts: string;
+  value: number | null;
+  outlier_method: string;
+  review_status: string;
+  remark?: string | null;
+}
+
+export interface OutlierReviewList {
+  run_id: string;
+  items: OutlierReviewItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface CompleteOutlierReviewResult {
+  run_id: string;
+  outlier_review_status: string;
+  confirmed_segment_count: number;
+}
+
+export interface TaskOutlierPoints {
+  run_id: string;
+  items: TaskOutlierPointItem[];
+  /** 离群点条数 */
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface TaskOutlierSegmentItem {
+  param_id: string;
+  param_label: string;
+  segment_start: string;
+  segment_end: string;
+  outlier_method: string;
+  duration_seconds: number;
+}
+
+export interface TaskOutlierSegments {
+  run_id: string;
+  items: TaskOutlierSegmentItem[];
+  total: number;
+  segment_kind: string;
+  review_completed: boolean;
 }

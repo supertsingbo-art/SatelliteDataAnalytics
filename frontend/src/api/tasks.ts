@@ -4,6 +4,11 @@ import type {
   PreprocessExecutionMode,
   TaskExecutionRecord,
   TaskListItemV2,
+  TaskOutlierPoints,
+  TaskOutlierSegments,
+  OutlierReviewSummary,
+  OutlierReviewList,
+  CompleteOutlierReviewResult,
   TaskProcessedData,
   TaskRunDetail
 } from './types';
@@ -102,5 +107,30 @@ export const tasksApi = {
     request<TaskProcessedData>('get', `${TASKS_BASE}/${runId}/processed-data`, undefined, {
       page: params?.page ?? 1,
       pageSize: params?.pageSize ?? 50
-    } as Record<string, unknown>)
+    } as Record<string, unknown>),
+  getOutlierPoints: (runId: string, params?: { page?: number; pageSize?: number; paramId?: string; status?: string }) =>
+    request<TaskOutlierPoints>('get', `${TASKS_BASE}/${runId}/outlier-points`, undefined, {
+      page: params?.page ?? 1,
+      pageSize: params?.pageSize ?? 50,
+      ...(params?.paramId ? { paramId: params.paramId } : {}),
+      ...(params?.status ? { status: params.status } : {})
+    } as Record<string, unknown>),
+  getOutlierSegments: (runId: string) =>
+    request<TaskOutlierSegments>('get', `${TASKS_BASE}/${runId}/outlier-segments`),
+  getOutlierReviewSummary: (runId: string) =>
+    request<OutlierReviewSummary>('get', `${TASKS_BASE}/${runId}/outlier-reviews/summary`),
+  getOutlierReviews: (runId: string, params?: { page?: number; pageSize?: number; status?: string; paramId?: string }) =>
+    request<OutlierReviewList>('get', `${TASKS_BASE}/${runId}/outlier-reviews`, undefined, {
+      page: params?.page ?? 1,
+      pageSize: params?.pageSize ?? 50,
+      ...(params?.status ? { status: params.status } : {}),
+      ...(params?.paramId ? { paramId: params.paramId } : {})
+    } as Record<string, unknown>),
+  submitOutlierReviews: (
+    runId: string,
+    items: { paramId: string; ts: string; status: 'CONFIRMED' | 'JITTER'; remark?: string }[]
+  ) =>
+    request<OutlierReviewSummary>('patch', `${TASKS_BASE}/${runId}/outlier-reviews`, { items }),
+  completeOutlierReview: (runId: string) =>
+    request<CompleteOutlierReviewResult>('post', `${TASKS_BASE}/${runId}/outlier-reviews/complete`)
 };

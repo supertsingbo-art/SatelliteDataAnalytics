@@ -8,5 +8,12 @@ public interface IPreprocessOutlierSegmentRepository
 
     Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(Guid runId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAndKindAsync(
+        Guid runId,
+        string segmentKind,
+        CancellationToken cancellationToken);
+
     Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken);
+
+    Task DeleteByRunIdAndKindAsync(Guid runId, string segmentKind, CancellationToken cancellationToken);
 }

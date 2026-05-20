@@ -8,6 +8,20 @@ public interface IClickHouseGateway
 
     Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken);
 
+    /// <summary>查询单点最新版本（ReplacingMergeTree 按 version 降序）。</summary>
+    Task<HqParamPointInsertRow?> QueryLatestPointAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset ts,
+        CancellationToken cancellationToken);
+
+    /// <summary>复核后写入新版本（更新 <c>is_confirmed_outlier</c>）。</summary>
+    Task InsertReviewedPointVersionsAsync(
+        IReadOnlyList<HqParamPointInsertRow> rows,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<(DateTimeOffset Ts, double Value)>> QueryProcessedSeriesAsync(
         string tasookNo,
         string satelliteNo,
@@ -48,10 +62,47 @@ public interface IClickHouseGateway
         int page,
         int pageSize,
         CancellationToken cancellationToken);
+
+    /// <summary>离群点总数（<c>is_outlier=1</c>）。</summary>
+    Task<long> CountOutlierPointsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string? paramIdFilter,
+        CancellationToken cancellationToken);
+
+    /// <summary>离群点分页清单（按 ts、param_id 排序）。</summary>
+    Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsPageAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string? paramIdFilter,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken);
 }
 
 public sealed record HqParamPointRow(
     string ParamId,
     DateTimeOffset Ts,
     double Value,
-    bool IsOutlier);
+    bool IsOutlier,
+    bool IsConfirmedOutlier = false);
+
+public sealed record HqParamPointInsertRow(
+    string TasookNo,
+    string SatelliteNo,
+    string TestBatchId,
+    string ParamId,
+    DateTimeOffset Ts,
+    double? RawValue,
+    double? ProcessedValue,
+    byte IsOutlier,
+    byte IsConfirmedOutlier,
+    ulong Version);

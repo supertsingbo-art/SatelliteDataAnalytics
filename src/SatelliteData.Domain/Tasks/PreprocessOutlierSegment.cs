@@ -10,4 +10,5 @@ public sealed record PreprocessOutlierSegment(
     DateTimeOffset SegmentStart,
     DateTimeOffset SegmentEnd,
     string OutlierMethod,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string SegmentKind = OutlierSegmentKind.Auto);

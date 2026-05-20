@@ -60,7 +60,12 @@ public sealed record TaskRun(
     PreprocessExecutionMode? ExecutionMode = null,
     DateTimeOffset? ScheduledAt = null,
     Guid? ScheduleId = null,
-    string? HangfireJobId = null);
+    string? HangfireJobId = null,
+    string? OutlierReviewStatus = null,
+    int OutlierAutoCount = 0,
+    int OutlierPendingCount = 0,
+    int OutlierConfirmedCount = 0,
+    int OutlierJitterCount = 0);
 
 public sealed record TaskEvent(
     Guid EventId,

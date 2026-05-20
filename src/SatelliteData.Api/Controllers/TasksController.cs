@@ -15,6 +15,7 @@ public sealed class TasksController(
     TaskExecutionService taskExecutionService,
     TaskRunLifecycleService taskLifecycleService,
     TaskRunProcessedDataService taskProcessedDataService,
+    OutlierReviewService outlierReviewService,
     ITaskRunRepository taskRuns,
     IPreprocessScheduleRepository scheduleRepository,
     IFilterTemplateRepository filterTemplates,
@@ -32,6 +33,8 @@ public sealed class TasksController(
         [property: JsonPropertyName("can_delete")] bool CanDelete,
         [property: JsonPropertyName("can_re_execute")] bool CanReExecute,
         [property: JsonPropertyName("can_view_data")] bool CanViewData,
+        [property: JsonPropertyName("outlier_pending_count")] int OutlierPendingCount,
+        [property: JsonPropertyName("outlier_review_status")] string? OutlierReviewStatus,
         [property: JsonPropertyName("status_summary")] string StatusSummary,
         [property: JsonPropertyName("display_status")] string DisplayStatus,
         [property: JsonPropertyName("status")] string Status,
@@ -82,6 +85,78 @@ public sealed class TasksController(
         [property: JsonPropertyName("total")] long Total,
         [property: JsonPropertyName("page")] int Page,
         [property: JsonPropertyName("page_size")] int PageSize);
+
+    public sealed record TaskOutlierPointItemResponse(
+        [property: JsonPropertyName("review_id")] Guid ReviewId,
+        [property: JsonPropertyName("param_id")] string ParamId,
+        [property: JsonPropertyName("param_label")] string ParamLabel,
+        [property: JsonPropertyName("ts")] string Ts,
+        [property: JsonPropertyName("value")] double Value,
+        [property: JsonPropertyName("outlier_method")] string OutlierMethod,
+        [property: JsonPropertyName("review_status")] string ReviewStatus,
+        [property: JsonPropertyName("remark")] string? Remark);
+
+    public sealed record TaskOutlierPointsResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("items")] IReadOnlyList<TaskOutlierPointItemResponse> Items,
+        [property: JsonPropertyName("total")] long Total,
+        [property: JsonPropertyName("page")] int Page,
+        [property: JsonPropertyName("page_size")] int PageSize);
+
+    public sealed record TaskOutlierSegmentItemResponse(
+        [property: JsonPropertyName("param_id")] string ParamId,
+        [property: JsonPropertyName("param_label")] string ParamLabel,
+        [property: JsonPropertyName("segment_start")] string SegmentStart,
+        [property: JsonPropertyName("segment_end")] string SegmentEnd,
+        [property: JsonPropertyName("outlier_method")] string OutlierMethod,
+        [property: JsonPropertyName("duration_seconds")] double DurationSeconds,
+        [property: JsonPropertyName("segment_kind")] string SegmentKind);
+
+    public sealed record TaskOutlierSegmentsResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("items")] IReadOnlyList<TaskOutlierSegmentItemResponse> Items,
+        [property: JsonPropertyName("total")] int Total,
+        [property: JsonPropertyName("segment_kind")] string SegmentKind,
+        [property: JsonPropertyName("review_completed")] bool ReviewCompleted);
+
+    public sealed record OutlierReviewSummaryResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("outlier_review_status")] string? OutlierReviewStatus,
+        [property: JsonPropertyName("auto_count")] int AutoCount,
+        [property: JsonPropertyName("pending_count")] int PendingCount,
+        [property: JsonPropertyName("confirmed_count")] int ConfirmedCount,
+        [property: JsonPropertyName("jitter_count")] int JitterCount);
+
+    public sealed record OutlierReviewItemResponse(
+        [property: JsonPropertyName("review_id")] Guid ReviewId,
+        [property: JsonPropertyName("param_id")] string ParamId,
+        [property: JsonPropertyName("param_label")] string ParamLabel,
+        [property: JsonPropertyName("ts")] string Ts,
+        [property: JsonPropertyName("value")] double? Value,
+        [property: JsonPropertyName("outlier_method")] string OutlierMethod,
+        [property: JsonPropertyName("review_status")] string ReviewStatus,
+        [property: JsonPropertyName("remark")] string? Remark);
+
+    public sealed record OutlierReviewListResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("items")] IReadOnlyList<OutlierReviewItemResponse> Items,
+        [property: JsonPropertyName("total")] long Total,
+        [property: JsonPropertyName("page")] int Page,
+        [property: JsonPropertyName("page_size")] int PageSize);
+
+    public sealed record SubmitOutlierReviewItemBody(
+        [property: JsonPropertyName("paramId")] string ParamId,
+        [property: JsonPropertyName("ts")] string Ts,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("remark")] string? Remark);
+
+    public sealed record SubmitOutlierReviewsBody(
+        [property: JsonPropertyName("items")] IReadOnlyList<SubmitOutlierReviewItemBody> Items);
+
+    public sealed record CompleteOutlierReviewResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("outlier_review_status")] string OutlierReviewStatus,
+        [property: JsonPropertyName("confirmed_segment_count")] int ConfirmedSegmentCount);
 
     public sealed record CreatePipelineBody(
         string TasookNo,
@@ -360,6 +435,160 @@ public sealed class TasksController(
         }
     }
 
+    [HttpGet("{runId:guid}/outlier-reviews/summary")]
+    public async Task<ActionResult<ApiResponse<OutlierReviewSummaryResponse>>> GetOutlierReviewSummary(
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await outlierReviewService.GetSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<OutlierReviewSummaryResponse>.Ok(ToOutlierReviewSummaryResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpGet("{runId:guid}/outlier-reviews")]
+    public async Task<ActionResult<ApiResponse<OutlierReviewListResponse>>> ListOutlierReviews(
+        Guid runId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = TaskRunProcessedDataService.DefaultPageSize,
+        [FromQuery] string? status = null,
+        [FromQuery] string? paramId = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await outlierReviewService
+                .ListReviewsAsync(runId, status, paramId, page, pageSize, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<OutlierReviewListResponse>.Ok(ToOutlierReviewListResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpPatch("{runId:guid}/outlier-reviews")]
+    public async Task<ActionResult<ApiResponse<OutlierReviewSummaryResponse>>> SubmitOutlierReviews(
+        Guid runId,
+        [FromBody] SubmitOutlierReviewsBody body,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var items = body.Items
+                .Select(i => new SubmitOutlierReviewItemDto(i.ParamId, i.Ts, i.Status, i.Remark))
+                .ToArray();
+            var data = await outlierReviewService
+                .SubmitReviewsAsync(runId, items, null, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<OutlierReviewSummaryResponse>.Ok(ToOutlierReviewSummaryResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpPost("{runId:guid}/outlier-reviews/complete")]
+    public async Task<ActionResult<ApiResponse<CompleteOutlierReviewResponse>>> CompleteOutlierReview(
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await outlierReviewService.CompleteReviewAsync(runId, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<CompleteOutlierReviewResponse>.Ok(
+                new CompleteOutlierReviewResponse(data.RunId, data.OutlierReviewStatus, data.ConfirmedSegmentCount),
+                HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpGet("{runId:guid}/outlier-points")]
+    public async Task<ActionResult<ApiResponse<TaskOutlierPointsResponse>>> GetOutlierPoints(
+        Guid runId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = TaskRunProcessedDataService.DefaultPageSize,
+        [FromQuery] string? paramId = null,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await taskProcessedDataService
+                .GetOutlierPointsAsync(runId, page, pageSize, paramId, status, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<TaskOutlierPointsResponse>.Ok(ToOutlierPointsResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
+    [HttpGet("{runId:guid}/outlier-segments")]
+    public async Task<ActionResult<ApiResponse<TaskOutlierSegmentsResponse>>> GetOutlierSegments(
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await taskProcessedDataService
+                .GetOutlierSegmentsAsync(runId, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<TaskOutlierSegmentsResponse>.Ok(ToOutlierSegmentsResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
     [HttpPost("schedules/{scheduleId:guid}/execute")]
     public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteSchedule(
         Guid scheduleId,
@@ -530,6 +759,8 @@ public sealed class TasksController(
             i.CanDelete,
             i.CanReExecute,
             i.CanViewData,
+            i.OutlierPendingCount,
+            i.OutlierReviewStatus,
             i.StatusSummary,
             i.DisplayStatus,
             i.Status,
@@ -568,6 +799,56 @@ public sealed class TasksController(
                     kv => kv.Key,
                     kv => new TaskProcessedDataCellResponse(kv.Value.Value, kv.Value.IsOutlier),
                     StringComparer.Ordinal))).ToArray(),
+            d.Total,
+            d.Page,
+            d.PageSize);
+
+    private static TaskOutlierPointsResponse ToOutlierPointsResponse(TaskOutlierPointsDto d) =>
+        new(
+            d.RunId,
+            d.Items.Select(i => new TaskOutlierPointItemResponse(
+                i.ReviewId,
+                i.ParamId,
+                i.ParamLabel,
+                i.Ts,
+                i.Value,
+                i.OutlierMethod,
+                i.ReviewStatus,
+                i.Remark)).ToArray(),
+            d.Total,
+            d.Page,
+            d.PageSize);
+
+    private static TaskOutlierSegmentsResponse ToOutlierSegmentsResponse(TaskOutlierSegmentsDto d) =>
+        new(
+            d.RunId,
+            d.Items.Select(i => new TaskOutlierSegmentItemResponse(
+                i.ParamId,
+                i.ParamLabel,
+                i.SegmentStart,
+                i.SegmentEnd,
+                i.OutlierMethod,
+                i.DurationSeconds,
+                i.SegmentKind)).ToArray(),
+            d.Total,
+            d.SegmentKind,
+            d.ReviewCompleted);
+
+    private static OutlierReviewSummaryResponse ToOutlierReviewSummaryResponse(OutlierReviewSummaryDto d) =>
+        new(d.RunId, d.OutlierReviewStatus, d.AutoCount, d.PendingCount, d.ConfirmedCount, d.JitterCount);
+
+    private static OutlierReviewListResponse ToOutlierReviewListResponse(OutlierReviewListDto d) =>
+        new(
+            d.RunId,
+            d.Items.Select(i => new OutlierReviewItemResponse(
+                i.ReviewId,
+                i.ParamId,
+                i.ParamLabel,
+                i.Ts,
+                i.Value,
+                i.OutlierMethod,
+                i.ReviewStatus,
+                i.Remark)).ToArray(),
             d.Total,
             d.Page,
             d.PageSize);

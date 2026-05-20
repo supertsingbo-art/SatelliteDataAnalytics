@@ -458,7 +458,8 @@ public sealed class RuleTreeSegmentEvaluator(ILogger<RuleTreeSegmentEvaluator> l
         IReadOnlyList<RawSeriesPoint> points,
         IReadOnlyList<byte> flags,
         string outlierMethod,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        string segmentKind = OutlierSegmentKind.Auto)
     {
         var segments = new List<PreprocessOutlierSegment>();
         DateTimeOffset? start = null;
@@ -479,7 +480,8 @@ public sealed class RuleTreeSegmentEvaluator(ILogger<RuleTreeSegmentEvaluator> l
                     start.Value,
                     points[i - 1].Ts,
                     outlierMethod,
-                    createdAt));
+                    createdAt,
+                    segmentKind));
                 start = null;
             }
         }
@@ -495,7 +497,8 @@ public sealed class RuleTreeSegmentEvaluator(ILogger<RuleTreeSegmentEvaluator> l
                 start.Value,
                 points[^1].Ts,
                 outlierMethod,
-                createdAt));
+                createdAt,
+                segmentKind));
         }
 
         return segments;

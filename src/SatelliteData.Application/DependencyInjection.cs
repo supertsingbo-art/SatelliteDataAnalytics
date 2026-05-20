@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<TaskExecutionService>();
         services.AddScoped<TaskRunLifecycleService>();
         services.AddScoped<TaskRunProcessedDataService>();
+        services.AddScoped<OutlierReviewService>();
 
         return services;
     }

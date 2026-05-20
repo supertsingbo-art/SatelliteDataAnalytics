@@ -83,16 +83,10 @@ public sealed class FilterRuleEvaluator(ILogger<FilterRuleEvaluator> logger) : I
             if (!item.TryGetProperty("paramId", out var pid) || pid.ValueKind != JsonValueKind.String) continue;
             var id = pid.GetString();
             if (string.IsNullOrWhiteSpace(id)) continue;
-            var outlierMethod = "SIGMA";
-            if (item.TryGetProperty("outlier", out var outlier) && outlier.ValueKind == JsonValueKind.Object
-                && outlier.TryGetProperty("method", out var om) && om.ValueKind == JsonValueKind.String)
-            {
-                outlierMethod = om.GetString() ?? "SIGMA";
-            }
-
+            var outlier = OutlierDetectionOptions.Parse(item);
             var bufBefore = ReadOptionalInt(item, "boundaryBufferBeforeSec");
             var bufAfter = ReadOptionalInt(item, "boundaryBufferAfterSec");
-            targets.Add(new TargetParamSpec(id.Trim(), outlierMethod, bufBefore, bufAfter));
+            targets.Add(new TargetParamSpec(id.Trim(), outlier, bufBefore, bufAfter));
         }
 
         if (targets.Count == 0)

@@ -1,5 +1,6 @@
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Pipeline;
+using SatelliteData.Domain.Assets;
 using SatelliteData.Domain.Tasks;
 
 namespace SatelliteData.Application.Tasks;
@@ -8,7 +9,9 @@ public sealed class TaskRunProcessedDataService(
     ITaskRunRepository taskRuns,
     IHqParamMetadataRepository hqMetadata,
     IAssetCacheRepository assetCache,
-    IClickHouseGateway clickHouse)
+    IClickHouseGateway clickHouse,
+    IPreprocessOutlierSegmentRepository outlierSegments,
+    IPreprocessOutlierPointReviewRepository outlierReviews)
 {
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 200;
@@ -17,6 +20,146 @@ public sealed class TaskRunProcessedDataService(
         Guid runId,
         int page,
         int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var ctx = await LoadQueryContextAsync(runId, cancellationToken).ConfigureAwait(false);
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+
+        if (ctx.ParamIds.Count == 0)
+        {
+            return new TaskProcessedDataDto(runId, [], [], 0, safePage, safePageSize);
+        }
+
+        var total = await clickHouse.CountDistinctTimestampsAsync(
+            ctx.Run.TasookNo,
+            ctx.Run.SatelliteNo,
+            ctx.TestBatchId,
+            ctx.ParamIds,
+            ctx.WindowStart,
+            ctx.WindowEnd,
+            cancellationToken).ConfigureAwait(false);
+
+        var points = total == 0
+            ? []
+            : await clickHouse.QueryHqParamPointsByTimestampPageAsync(
+                ctx.Run.TasookNo,
+                ctx.Run.SatelliteNo,
+                ctx.TestBatchId,
+                ctx.ParamIds,
+                ctx.WindowStart,
+                ctx.WindowEnd,
+                safePage,
+                safePageSize,
+                cancellationToken).ConfigureAwait(false);
+
+        var columns = BuildColumns(ctx.ParamIds, ctx.Parameters);
+        var rows = BuildMatrixRows(points);
+
+        return new TaskProcessedDataDto(runId, columns, rows, total, safePage, safePageSize);
+    }
+
+    public async Task<TaskOutlierPointsDto> GetOutlierPointsAsync(
+        Guid runId,
+        int page,
+        int pageSize,
+        string? paramId,
+        string? status,
+        CancellationToken cancellationToken)
+    {
+        var ctx = await LoadQueryContextAsync(runId, cancellationToken).ConfigureAwait(false);
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+        var paramFilter = string.IsNullOrWhiteSpace(paramId) ? null : paramId.Trim();
+        var statusFilter = NormalizeReviewStatusFilter(status);
+
+        if (paramFilter is not null
+            && !ctx.ParamIds.Contains(paramFilter, StringComparer.Ordinal))
+        {
+            throw new TaskValidationException(TaskErrorCodes.NoProcessedData, $"参数不在本任务目标列表中：{paramFilter}");
+        }
+
+        var (reviews, total) = await outlierReviews
+            .ListPageAsync(runId, statusFilter, paramFilter, safePage, safePageSize, cancellationToken)
+            .ConfigureAwait(false);
+
+        var items = reviews
+            .Select(r =>
+            {
+                ctx.Parameters.TryGetValue(r.ParamId, out var p);
+                return new TaskOutlierPointItemDto(
+                    r.ReviewId,
+                    r.ParamId,
+                    p?.DisplayLabel ?? r.ParamId,
+                    r.Ts.ToString("O"),
+                    r.AutoValue ?? 0,
+                    r.AutoOutlierMethod ?? "SIGMA",
+                    r.ReviewStatus,
+                    r.Remark);
+            })
+            .ToList();
+
+        return new TaskOutlierPointsDto(runId, items, total, safePage, safePageSize);
+    }
+
+    public async Task<TaskOutlierSegmentsDto> GetOutlierSegmentsAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var ctx = await LoadQueryContextAsync(runId, cancellationToken).ConfigureAwait(false);
+        var reviewCompleted = string.Equals(
+            ctx.Run.OutlierReviewStatus,
+            OutlierReviewRunStatus.Completed,
+            StringComparison.Ordinal);
+        var segmentKind = reviewCompleted ? OutlierSegmentKind.Confirmed : OutlierSegmentKind.Auto;
+        var segments = await outlierSegments
+            .ListByRunIdAndKindAsync(runId, segmentKind, cancellationToken)
+            .ConfigureAwait(false);
+
+        var items = segments
+            .OrderBy(s => s.ParamId, StringComparer.Ordinal)
+            .ThenBy(s => s.SegmentStart)
+            .Select(s =>
+            {
+                ctx.Parameters.TryGetValue(s.ParamId, out var p);
+                var duration = (s.SegmentEnd - s.SegmentStart).TotalSeconds;
+                if (duration < 0)
+                {
+                    duration = 0;
+                }
+
+                return new TaskOutlierSegmentItemDto(
+                    s.ParamId,
+                    p?.DisplayLabel ?? s.ParamId,
+                    s.SegmentStart.ToString("O"),
+                    s.SegmentEnd.ToString("O"),
+                    string.IsNullOrWhiteSpace(s.OutlierMethod) ? "SIGMA" : s.OutlierMethod,
+                    duration,
+                    s.SegmentKind);
+            })
+            .ToList();
+
+        return new TaskOutlierSegmentsDto(runId, items, items.Count, segmentKind, reviewCompleted);
+    }
+
+    private static string? NormalizeReviewStatusFilter(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status) || string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return status.Trim().ToUpperInvariant() switch
+        {
+            "PENDING" => OutlierReviewPointStatus.Pending,
+            "CONFIRMED" => OutlierReviewPointStatus.Confirmed,
+            "JITTER" => OutlierReviewPointStatus.Jitter,
+            _ => throw new TaskValidationException(TaskErrorCodes.ValidationFailed, $"无效状态筛选：{status}")
+        };
+    }
+
+    private async Task<ProcessedDataQueryContext> LoadQueryContextAsync(
+        Guid runId,
         CancellationToken cancellationToken)
     {
         var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false)
@@ -34,54 +177,45 @@ public sealed class TaskRunProcessedDataService(
             throw new TaskValidationException(TaskErrorCodes.NoProcessedData, "任务缺少数据时间窗");
         }
 
-        var safePage = Math.Max(1, page);
-        var safePageSize = Math.Clamp(pageSize, 1, MaxPageSize);
-
         var metaRows = await hqMetadata.ListByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         var paramIds = metaRows.Select(m => m.ParamId).Distinct(StringComparer.Ordinal).ToList();
-        if (paramIds.Count == 0)
-        {
-            return new TaskProcessedDataDto(runId, [], [], 0, safePage, safePageSize);
-        }
-
-        var testBatchId = metaRows[0].TestBatchId;
-        var windowStart = metaRows.Min(m => m.WindowStart);
-        var windowEnd = metaRows.Max(m => m.WindowEnd);
+        var testBatchId = metaRows.Count > 0 ? metaRows[0].TestBatchId : run.TestBatchName ?? "";
+        var windowStart = metaRows.Count > 0 ? metaRows.Min(m => m.WindowStart) : run.WindowStart.Value;
+        var windowEnd = metaRows.Count > 0 ? metaRows.Max(m => m.WindowEnd) : run.WindowEnd.Value;
+        var outlierMethodByParam = metaRows
+            .GroupBy(m => m.ParamId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.First().OutlierMethod ?? "SIGMA",
+                StringComparer.Ordinal);
 
         var parameters = (await assetCache.GetParametersAsync(run.TasookNo, run.SatelliteNo, cancellationToken)
             .ConfigureAwait(false)).ToDictionary(p => p.ParamId, StringComparer.Ordinal);
 
-        var total = await clickHouse.CountDistinctTimestampsAsync(
-            run.TasookNo,
-            run.SatelliteNo,
+        return new ProcessedDataQueryContext(
+            run,
             testBatchId,
-            paramIds,
             windowStart,
             windowEnd,
-            cancellationToken).ConfigureAwait(false);
+            paramIds,
+            parameters,
+            outlierMethodByParam);
+    }
 
-        var points = total == 0
-            ? []
-            : await clickHouse.QueryHqParamPointsByTimestampPageAsync(
-                run.TasookNo,
-                run.SatelliteNo,
-                testBatchId,
-                paramIds,
-                windowStart,
-                windowEnd,
-                safePage,
-                safePageSize,
-                cancellationToken).ConfigureAwait(false);
-
-        var columns = paramIds
+    private static IReadOnlyList<TaskProcessedDataColumnDto> BuildColumns(
+        IReadOnlyList<string> paramIds,
+        IReadOnlyDictionary<string, ParamCache> parameters) =>
+        paramIds
             .Select(pid =>
             {
                 parameters.TryGetValue(pid, out var p);
-                var label = p?.DisplayLabel ?? pid;
-                return new TaskProcessedDataColumnDto(pid, label);
+                return new TaskProcessedDataColumnDto(pid, p?.DisplayLabel ?? pid);
             })
             .ToList();
 
+    private static IReadOnlyList<TaskProcessedDataRowDto> BuildMatrixRows(
+        IReadOnlyList<HqParamPointRow> points)
+    {
         var byTs = new SortedDictionary<DateTimeOffset, Dictionary<string, TaskProcessedDataCellDto>>();
         foreach (var pt in points)
         {
@@ -91,15 +225,20 @@ public sealed class TaskRunProcessedDataService(
                 byTs[pt.Ts] = cells;
             }
 
-            cells[pt.ParamId] = new TaskProcessedDataCellDto(pt.Value, pt.IsOutlier);
+            cells[pt.ParamId] = new TaskProcessedDataCellDto(pt.Value, pt.IsOutlier, pt.IsConfirmedOutlier);
         }
 
-        var rows = byTs
-            .Select(kv => new TaskProcessedDataRowDto(
-                kv.Key.ToString("O"),
-                kv.Value))
+        return byTs
+            .Select(kv => new TaskProcessedDataRowDto(kv.Key.ToString("O"), kv.Value))
             .ToList();
-
-        return new TaskProcessedDataDto(runId, columns, rows, total, safePage, safePageSize);
     }
+
+    private sealed record ProcessedDataQueryContext(
+        TaskRun Run,
+        string TestBatchId,
+        DateTimeOffset WindowStart,
+        DateTimeOffset WindowEnd,
+        IReadOnlyList<string> ParamIds,
+        IReadOnlyDictionary<string, ParamCache> Parameters,
+        IReadOnlyDictionary<string, string> OutlierMethodByParam);
 }

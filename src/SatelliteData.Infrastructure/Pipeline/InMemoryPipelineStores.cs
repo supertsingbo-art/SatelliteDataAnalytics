@@ -241,12 +241,159 @@ public sealed class InMemoryPreprocessOutlierSegmentRepository : IPreprocessOutl
         }
     }
 
+    public Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAndKindAsync(
+        Guid runId,
+        string segmentKind,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _segments
+                .Where(s => s.RunId == runId && string.Equals(s.SegmentKind, segmentKind, StringComparison.Ordinal))
+                .OrderBy(s => s.SegmentStart)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<PreprocessOutlierSegment>>(arr);
+        }
+    }
+
     public Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
         lock (_gate)
         {
             _segments.RemoveAll(s => s.RunId == runId);
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task DeleteByRunIdAndKindAsync(Guid runId, string segmentKind, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _segments.RemoveAll(s => s.RunId == runId && string.Equals(s.SegmentKind, segmentKind, StringComparison.Ordinal));
+            return Task.CompletedTask;
+        }
+    }
+}
+
+public sealed class InMemoryPreprocessOutlierPointReviewRepository : IPreprocessOutlierPointReviewRepository
+{
+    private readonly List<PreprocessOutlierPointReview> _reviews = [];
+    private readonly object _gate = new();
+
+    public Task InsertBatchAsync(IReadOnlyList<PreprocessOutlierPointReview> reviews, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _reviews.AddRange(reviews);
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task<(IReadOnlyList<PreprocessOutlierPointReview> Items, long Total)> ListPageAsync(
+        Guid runId,
+        string? statusFilter,
+        string? paramIdFilter,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var q = _reviews.Where(r => r.RunId == runId).AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(statusFilter))
+            {
+                q = q.Where(r => string.Equals(r.ReviewStatus, statusFilter.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(paramIdFilter))
+            {
+                q = q.Where(r => string.Equals(r.ParamId, paramIdFilter.Trim(), StringComparison.Ordinal));
+            }
+
+            var ordered = q.OrderBy(r => r.Ts).ThenBy(r => r.ParamId, StringComparer.Ordinal).ToArray();
+            var total = ordered.LongLength;
+            var safePage = Math.Max(1, page);
+            var safePageSize = Math.Clamp(pageSize, 1, 200);
+            var items = ordered.Skip((safePage - 1) * safePageSize).Take(safePageSize).ToArray();
+            return Task.FromResult<(IReadOnlyList<PreprocessOutlierPointReview> Items, long Total)>((items, total));
+        }
+    }
+
+    public Task<IReadOnlyList<PreprocessOutlierPointReview>> ListByRunIdAndStatusAsync(
+        Guid runId,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _reviews
+                .Where(r => r.RunId == runId && string.Equals(r.ReviewStatus, status, StringComparison.Ordinal))
+                .OrderBy(r => r.ParamId, StringComparer.Ordinal)
+                .ThenBy(r => r.Ts)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<PreprocessOutlierPointReview>>(arr);
+        }
+    }
+
+    public Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var dict = _reviews
+                .Where(r => r.RunId == runId)
+                .GroupBy(r => r.ReviewStatus, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+            return Task.FromResult<IReadOnlyDictionary<string, int>>(dict);
+        }
+    }
+
+    public Task<bool> UpdateStatusBatchAsync(
+        Guid runId,
+        IReadOnlyList<OutlierReviewUpdate> updates,
+        DateTimeOffset reviewedAt,
+        string? reviewedBy,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var changed = false;
+            foreach (var u in updates)
+            {
+                var idx = _reviews.FindIndex(r =>
+                    r.RunId == runId
+                    && string.Equals(r.ParamId, u.ParamId, StringComparison.Ordinal)
+                    && r.Ts == u.Ts
+                    && string.Equals(r.ReviewStatus, OutlierReviewPointStatus.Pending, StringComparison.Ordinal));
+                if (idx < 0) continue;
+                var old = _reviews[idx];
+                _reviews[idx] = old with
+                {
+                    ReviewStatus = u.Status,
+                    ReviewedAt = reviewedAt,
+                    ReviewedBy = reviewedBy,
+                    Remark = u.Remark
+                };
+                changed = true;
+            }
+
+            return Task.FromResult(changed);
+        }
+    }
+
+    public Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _reviews.RemoveAll(r => r.RunId == runId);
             return Task.CompletedTask;
         }
     }

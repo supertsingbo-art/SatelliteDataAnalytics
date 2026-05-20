@@ -14,6 +14,8 @@ public sealed record TaskListItemDto(
     bool CanDelete,
     bool CanReExecute,
     bool CanViewData,
+    int OutlierPendingCount,
+    string? OutlierReviewStatus,
     string StatusSummary,
     string DisplayStatus,
     string Status,

@@ -7,9 +7,12 @@ public sealed record EffectiveWindow(DateTimeOffset Start, DateTimeOffset End);
 
 public sealed record TargetParamSpec(
     string ParamId,
-    string OutlierMethod,
+    OutlierDetectionOptions Outlier,
     int BoundaryBufferBeforeSec = 0,
-    int BoundaryBufferAfterSec = 0);
+    int BoundaryBufferAfterSec = 0)
+{
+    public string OutlierMethod => Outlier.Method;
+}
 
 public interface IFilterRuleEvaluator
 {

@@ -8,6 +8,7 @@ public sealed class TaskRunLifecycleService(
     ITaskEventRepository taskEvents,
     IHqParamMetadataRepository hqMetadata,
     IPreprocessOutlierSegmentRepository outlierSegments,
+    IPreprocessOutlierPointReviewRepository outlierReviews,
     IBackgroundJobScheduler scheduler,
     ILogger<TaskRunLifecycleService> logger)
 {
@@ -21,6 +22,7 @@ public sealed class TaskRunLifecycleService(
             throw new TaskValidationException(TaskErrorCodes.NotDeletable, "仅已结束的预处理任务可删除");
         }
 
+        await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await hqMetadata.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await taskEvents.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);

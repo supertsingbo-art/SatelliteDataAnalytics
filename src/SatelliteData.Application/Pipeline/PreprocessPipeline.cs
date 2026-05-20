@@ -25,6 +25,7 @@ public sealed class PreprocessPipeline(
     IClickHouseGateway clickHouse,
     IHqParamMetadataRepository hqMetadata,
     IPreprocessOutlierSegmentRepository outlierSegments,
+    IPreprocessOutlierPointReviewRepository outlierReviews,
     PreprocessScheduleService scheduleService,
     IBackgroundJobScheduler scheduler,
     IOptions<PipelineOptions> pipelineOptions,
@@ -203,9 +204,13 @@ public sealed class PreprocessPipeline(
             return;
         }
 
+        await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+
         ulong versionCounter = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var buffer = new List<string>();
         var allOutlierSegments = new List<PreprocessOutlierSegment>();
+        var allOutlierReviews = new List<PreprocessOutlierPointReview>();
         var now = DateTimeOffset.UtcNow;
 
         foreach (var spec in targets)
@@ -252,15 +257,8 @@ public sealed class PreprocessPipeline(
                 return;
             }
 
-            parameters.TryGetValue(spec.ParamId, out var pcache);
             var values = points.Select(p => p.Value).ToList();
-            var sigmaK = 3d;
-            var flags = outlierDetector.MarkOutliers(
-                values,
-                spec.OutlierMethod,
-                pcache?.ValueMin,
-                pcache?.ValueMax,
-                sigmaK);
+            var flags = outlierDetector.MarkOutliers(values, spec.Outlier);
 
             for (var i = 0; i < points.Count; i++)
             {
@@ -275,9 +273,27 @@ public sealed class PreprocessPipeline(
                     ["raw_value"] = points[i].Value,
                     ["processed_value"] = points[i].Value,
                     ["is_outlier"] = flags[i],
+                    ["is_confirmed_outlier"] = 0,
                     ["version"] = versionCounter
                 };
                 buffer.Add(JsonSerializer.Serialize(row));
+                if (flags[i] != 0)
+                {
+                    allOutlierReviews.Add(new PreprocessOutlierPointReview(
+                        Guid.NewGuid(),
+                        runId,
+                        run.TasookNo,
+                        run.SatelliteNo,
+                        spec.ParamId,
+                        points[i].Ts,
+                        points[i].Value,
+                        spec.OutlierMethod,
+                        OutlierReviewPointStatus.Pending,
+                        null,
+                        null,
+                        null,
+                        now));
+                }
                 if (buffer.Count >= opt.ClickHouseBatchSize)
                 {
                     await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
@@ -318,6 +334,11 @@ public sealed class PreprocessPipeline(
             await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
         }
 
+        if (allOutlierReviews.Count > 0)
+        {
+            await outlierReviews.InsertBatchAsync(allOutlierReviews, cancellationToken).ConfigureAwait(false);
+        }
+
         if (allOutlierSegments.Count > 0)
         {
             await outlierSegments.InsertBatchAsync(allOutlierSegments, cancellationToken);
@@ -338,12 +359,20 @@ public sealed class PreprocessPipeline(
 
         if (run.JobType == TaskJobType.Preprocess)
         {
+            var autoCount = allOutlierReviews.Count;
             run = run with
             {
                 Status = TaskRunStatus.Succeeded,
                 ProgressPercent = 95m,
                 CurrentStep = "preprocess_done",
-                EndTime = end
+                EndTime = end,
+                OutlierReviewStatus = autoCount == 0
+                    ? OutlierReviewRunStatus.NotRequired
+                    : OutlierReviewRunStatus.Pending,
+                OutlierAutoCount = autoCount,
+                OutlierPendingCount = autoCount,
+                OutlierConfirmedCount = 0,
+                OutlierJitterCount = 0
             };
             await taskRuns.UpdateAsync(run, cancellationToken);
             await scheduleService.UpdateScheduleFromRunAsync(run, cancellationToken);

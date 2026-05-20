@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
+  Badge,
   Button,
   Card,
   Drawer,
+  Modal,
   Popconfirm,
+  Progress,
+  Segmented,
   Space,
   Table,
   Tag,
@@ -15,8 +20,13 @@ import { Link } from 'react-router-dom';
 import { ReloadOutlined } from '@ant-design/icons';
 import { tasksApi } from '@/api/tasks';
 import type {
+  OutlierReviewItem,
+  OutlierReviewList,
+  OutlierReviewSummary,
   TaskExecutionRecord,
   TaskListItemV2,
+  TaskOutlierSegmentItem,
+  TaskOutlierSegments,
   TaskProcessedData,
   TaskProcessedDataColumn
 } from '@/api/types';
@@ -79,6 +89,8 @@ function statusSummaryText(row: TaskListItemV2): string {
   return parts.join(' · ');
 }
 
+type DataViewMode = 'all' | 'outlier-points' | 'outlier-segments';
+
 export function TasksListPage() {
   const [rows, setRows] = useState<TaskListItemV2[]>([]);
   const [loading, setLoading] = useState(false);
@@ -96,6 +108,13 @@ export function TasksListPage() {
   const [dataRunId, setDataRunId] = useState<string | null>(null);
   const [dataPage, setDataPage] = useState(1);
   const [dataPageSize, setDataPageSize] = useState(50);
+  const [dataViewMode, setDataViewMode] = useState<DataViewMode>('all');
+  const [reviewSummary, setReviewSummary] = useState<OutlierReviewSummary | null>(null);
+  const [reviewList, setReviewList] = useState<OutlierReviewList | null>(null);
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('PENDING');
+  const [selectedReviewKeys, setSelectedReviewKeys] = useState<string[]>([]);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [outlierSegments, setOutlierSegments] = useState<TaskOutlierSegments | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -225,22 +244,91 @@ export function TasksListPage() {
     }
   }, []);
 
+  const loadReviewSummary = useCallback(async (runId: string) => {
+    try {
+      const summary = await tasksApi.getOutlierReviewSummary(runId);
+      setReviewSummary(summary);
+    } catch {
+      setReviewSummary(null);
+    }
+  }, []);
+
+  const loadOutlierReviews = useCallback(
+    async (runId: string, page: number, pageSize: number, status: string) => {
+      setDataLoading(true);
+      try {
+        const data = await tasksApi.getOutlierReviews(runId, {
+          page,
+          pageSize,
+          status: status === 'ALL' ? undefined : status
+        });
+        setReviewList(data);
+        setDataPage(data.page);
+        setDataPageSize(data.page_size);
+        setSelectedReviewKeys([]);
+      } finally {
+        setDataLoading(false);
+      }
+    },
+    []
+  );
+
+  const loadOutlierSegments = useCallback(async (runId: string) => {
+    setDataLoading(true);
+    try {
+      const data = await tasksApi.getOutlierSegments(runId);
+      setOutlierSegments(data);
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+
   const openProcessedData = async (row: TaskListItemV2) => {
     if (!row.run_id) return;
     setDataTitle(row.job_id ?? row.run_id);
     setDataRunId(row.run_id);
     setDataPage(1);
     setDataPageSize(50);
+    setDataViewMode('all');
     setDataOpen(true);
     setProcessedData(null);
+    setReviewList(null);
+    setReviewSummary(null);
+    setReviewStatusFilter('PENDING');
+    setOutlierSegments(null);
+    void loadReviewSummary(row.run_id);
     await loadProcessedData(row.run_id, 1, 50);
+  };
+
+  const handleDataViewModeChange = (mode: DataViewMode) => {
+    if (!dataRunId) return;
+    setDataViewMode(mode);
+    setDataPage(1);
+    if (mode === 'all') {
+      setReviewList(null);
+      setOutlierSegments(null);
+      void loadProcessedData(dataRunId, 1, dataPageSize);
+    } else if (mode === 'outlier-points') {
+      setProcessedData(null);
+      setOutlierSegments(null);
+      void loadReviewSummary(dataRunId);
+      void loadOutlierReviews(dataRunId, 1, dataPageSize, reviewStatusFilter);
+    } else {
+      setProcessedData(null);
+      setReviewList(null);
+      void loadOutlierSegments(dataRunId);
+    }
   };
 
   const handleDataPageChange = (page: number, pageSize: number) => {
     if (!dataRunId) return;
     setDataPage(page);
     setDataPageSize(pageSize);
-    void loadProcessedData(dataRunId, page, pageSize);
+    if (dataViewMode === 'outlier-points') {
+      void loadOutlierReviews(dataRunId, page, pageSize, reviewStatusFilter);
+    } else if (dataViewMode === 'all') {
+      void loadProcessedData(dataRunId, page, pageSize);
+    }
   };
 
   const dataColumns = useMemo((): ColumnsType<Record<string, unknown>> => {
@@ -252,17 +340,28 @@ export function TasksListPage() {
         width: 120,
         ellipsis: true,
         render: (_: unknown, record: Record<string, unknown>) => {
-          const cells = record.cells as Record<string, { value: number | null; is_outlier: boolean }>;
+          const cells = record.cells as Record<
+            string,
+            { value: number | null; is_outlier: boolean; is_confirmed_outlier?: boolean }
+          >;
           const cell = cells[col.param_id];
           if (!cell || cell.value == null) return '—';
           const text = Number(cell.value).toFixed(4);
-          return cell.is_outlier ? (
-            <Text type="danger" strong title="野值">
-              {text}
-            </Text>
-          ) : (
-            text
-          );
+          if (cell.is_confirmed_outlier) {
+            return (
+              <Text type="danger" strong title="已确认离群">
+                {text}
+              </Text>
+            );
+          }
+          if (cell.is_outlier) {
+            return (
+              <Text style={{ color: '#d46b08' }} strong title="待复核离群候选">
+                {text}
+              </Text>
+            );
+          }
+          return text;
         }
       })
     );
@@ -286,6 +385,200 @@ export function TasksListPage() {
       cells: r.cells
     }));
   }, [processedData]);
+
+  const reviewStatusTag = (status: string) => {
+    switch (status) {
+      case 'CONFIRMED':
+        return <Tag color="success">已确认离群</Tag>;
+      case 'JITTER':
+        return <Tag>抖动</Tag>;
+      default:
+        return <Tag color="warning">待复核</Tag>;
+    }
+  };
+
+  const submitReviews = async (items: { paramId: string; ts: string; status: 'CONFIRMED' | 'JITTER' }[]) => {
+    if (!dataRunId || items.length === 0) return;
+    setReviewSubmitting(true);
+    try {
+      const summary = await tasksApi.submitOutlierReviews(dataRunId, items);
+      setReviewSummary(summary);
+      message.success(`已更新 ${items.length} 条复核记录`);
+      await loadOutlierReviews(dataRunId, dataPage, dataPageSize, reviewStatusFilter);
+      await load();
+    } catch {
+      /* axios 已提示 */
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const handleCompleteReview = () => {
+    if (!dataRunId || !reviewSummary) return;
+    Modal.confirm({
+      title: '完成离群复核',
+      content: '将全部已复核结果固化为「已确认离群时间段」，并结束本任务的离群复核流程。是否继续？',
+      okText: '完成复核',
+      cancelText: '取消',
+      onOk: async () => {
+        setReviewSubmitting(true);
+        try {
+          await tasksApi.completeOutlierReview(dataRunId);
+          message.success('离群复核已完成');
+          await loadReviewSummary(dataRunId);
+          if (dataViewMode === 'outlier-segments') {
+            await loadOutlierSegments(dataRunId);
+          }
+          await load();
+        } catch {
+          /* axios 已提示 */
+        } finally {
+          setReviewSubmitting(false);
+        }
+      }
+    });
+  };
+
+  const reviewTableRows = useMemo(() => {
+    if (!reviewList) return [];
+    return reviewList.items.map((item) => ({
+      key: item.review_id,
+      ...item
+    }));
+  }, [reviewList]);
+
+  const reviewColumns: ColumnsType<OutlierReviewItem & { key: string }> = useMemo(
+    () => [
+      {
+        title: '时间',
+        dataIndex: 'ts',
+        key: 'ts',
+        width: 200,
+        fixed: 'left'
+      },
+      {
+        title: '参数',
+        dataIndex: 'param_label',
+        key: 'param_label',
+        width: 200,
+        ellipsis: true,
+        render: (_: unknown, record) => (
+          <span title={record.param_id}>
+            {record.param_label}
+            <Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
+              ({record.param_id})
+            </Text>
+          </span>
+        )
+      },
+      {
+        title: '离群值',
+        dataIndex: 'value',
+        key: 'value',
+        width: 120,
+        render: (v: number) => (
+          <Text type="danger" strong>
+            {Number(v).toFixed(4)}
+          </Text>
+        )
+      },
+      {
+        title: '判定方法',
+        dataIndex: 'outlier_method',
+        key: 'outlier_method',
+        width: 110
+      },
+      {
+        title: '复核状态',
+        dataIndex: 'review_status',
+        key: 'review_status',
+        width: 110,
+        render: (s: string) => reviewStatusTag(s)
+      },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 180,
+        fixed: 'right',
+        render: (_: unknown, record) =>
+          record.review_status === 'PENDING' ? (
+            <Space size="small">
+              <Button
+                type="link"
+                size="small"
+                loading={reviewSubmitting}
+                onClick={() =>
+                  void submitReviews([{ paramId: record.param_id, ts: record.ts, status: 'CONFIRMED' }])
+                }
+              >
+                确认离群
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                loading={reviewSubmitting}
+                onClick={() =>
+                  void submitReviews([{ paramId: record.param_id, ts: record.ts, status: 'JITTER' }])
+                }
+              >
+                标为抖动
+              </Button>
+            </Space>
+          ) : (
+            '—'
+          )
+      }
+    ],
+    [reviewSubmitting]
+  );
+
+  const reviewProgressPercent = useMemo(() => {
+    if (!reviewSummary || reviewSummary.auto_count === 0) return 100;
+    const done = reviewSummary.confirmed_count + reviewSummary.jitter_count;
+    return Math.round((done / reviewSummary.auto_count) * 100);
+  }, [reviewSummary]);
+
+  const segmentTableRows = useMemo(() => {
+    if (!outlierSegments) return [];
+    return outlierSegments.items.map((item, idx) => ({
+      key: `${item.param_id}-${item.segment_start}-${idx}`,
+      ...item
+    }));
+  }, [outlierSegments]);
+
+  const segmentColumns: ColumnsType<TaskOutlierSegmentItem & { key: string }> = useMemo(
+    () => [
+      {
+        title: '参数',
+        dataIndex: 'param_label',
+        key: 'param_label',
+        width: 200,
+        ellipsis: true,
+        render: (_: unknown, record) => (
+          <span title={record.param_id}>
+            {record.param_label}
+            <Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
+              ({record.param_id})
+            </Text>
+          </span>
+        )
+      },
+      { title: '段开始', dataIndex: 'segment_start', key: 'segment_start', width: 200 },
+      { title: '段结束', dataIndex: 'segment_end', key: 'segment_end', width: 200 },
+      {
+        title: '持续(秒)',
+        dataIndex: 'duration_seconds',
+        key: 'duration_seconds',
+        width: 100,
+        render: (v: number) => Number(v).toFixed(1)
+      },
+      { title: '判定方法', dataIndex: 'outlier_method', key: 'outlier_method', width: 110 }
+    ],
+    []
+  );
+
+  const dataTotal =
+    dataViewMode === 'outlier-points' ? (reviewList?.total ?? 0) : (processedData?.total ?? 0);
 
   return (
     <Card
@@ -351,9 +644,11 @@ export function TasksListPage() {
                   </Button>
                 )}
                 {r.can_view_data && r.run_id && (
-                  <Button size="small" onClick={() => void openProcessedData(r)}>
-                    数据明细
-                  </Button>
+                  <Badge count={r.outlier_pending_count ?? 0} size="small" offset={[6, 0]}>
+                    <Button size="small" onClick={() => void openProcessedData(r)}>
+                      数据明细
+                    </Button>
+                  </Badge>
                 )}
                 {r.run_id && <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>}
                 <Button
@@ -477,32 +772,174 @@ export function TasksListPage() {
         onClose={() => {
           setDataOpen(false);
           setDataRunId(null);
+          setDataViewMode('all');
+          setProcessedData(null);
+          setReviewList(null);
+          setReviewSummary(null);
+          setOutlierSegments(null);
         }}
         width="90%"
       >
-        {processedData && processedData.total > 0 && (
-          <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            共 {processedData.total} 个时间点，当前第 {processedData.page} 页（每页 {processedData.page_size}{' '}
-            行）。野值以红色标出。
-          </Paragraph>
+        <Space direction="vertical" style={{ width: '100%', marginBottom: 12 }} size="small">
+          <Segmented
+            value={dataViewMode}
+            onChange={(v) => handleDataViewModeChange(v as DataViewMode)}
+            options={[
+              { label: '全部数据（矩阵）', value: 'all' },
+              { label: '离群点清单', value: 'outlier-points' },
+              { label: '离群时间段', value: 'outlier-segments' }
+            ]}
+          />
+          {dataViewMode === 'all' && processedData && processedData.total > 0 && (
+            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              共 {processedData.total} 个时间点，当前第 {processedData.page} 页（每页 {processedData.page_size}{' '}
+              行）。橙色为待复核候选，红色为已确认离群。
+            </Paragraph>
+          )}
+          {dataViewMode === 'outlier-points' && reviewSummary && (
+            <>
+              <Progress
+                percent={reviewProgressPercent}
+                status={reviewSummary.pending_count > 0 ? 'active' : 'success'}
+                format={() =>
+                  `已复核 ${reviewSummary.confirmed_count + reviewSummary.jitter_count} / ${reviewSummary.auto_count}`
+                }
+              />
+              <Space wrap>
+                <Text type="secondary">待复核 {reviewSummary.pending_count}</Text>
+                <Text type="secondary">已确认 {reviewSummary.confirmed_count}</Text>
+                <Text type="secondary">抖动 {reviewSummary.jitter_count}</Text>
+                <Segmented
+                  size="small"
+                  value={reviewStatusFilter}
+                  onChange={(v) => {
+                    const st = v as string;
+                    setReviewStatusFilter(st);
+                    if (dataRunId) {
+                      setDataPage(1);
+                      void loadOutlierReviews(dataRunId, 1, dataPageSize, st);
+                    }
+                  }}
+                  options={[
+                    { label: '待复核', value: 'PENDING' },
+                    { label: '已确认', value: 'CONFIRMED' },
+                    { label: '抖动', value: 'JITTER' },
+                    { label: '全部', value: 'ALL' }
+                  ]}
+                />
+                <Button
+                  size="small"
+                  disabled={selectedReviewKeys.length === 0}
+                  loading={reviewSubmitting}
+                  onClick={() => {
+                    const items = (reviewList?.items ?? [])
+                      .filter((i) => selectedReviewKeys.includes(i.review_id) && i.review_status === 'PENDING')
+                      .map((i) => ({ paramId: i.param_id, ts: i.ts, status: 'CONFIRMED' as const }));
+                    void submitReviews(items);
+                  }}
+                >
+                  批量确认
+                </Button>
+                <Button
+                  size="small"
+                  disabled={selectedReviewKeys.length === 0}
+                  loading={reviewSubmitting}
+                  onClick={() => {
+                    const items = (reviewList?.items ?? [])
+                      .filter((i) => selectedReviewKeys.includes(i.review_id) && i.review_status === 'PENDING')
+                      .map((i) => ({ paramId: i.param_id, ts: i.ts, status: 'JITTER' as const }));
+                    void submitReviews(items);
+                  }}
+                >
+                  批量标为抖动
+                </Button>
+                <Button
+                  type="primary"
+                  size="small"
+                  disabled={(reviewSummary.pending_count ?? 0) > 0 || reviewSummary.auto_count === 0}
+                  loading={reviewSubmitting}
+                  onClick={handleCompleteReview}
+                >
+                  完成复核
+                </Button>
+              </Space>
+            </>
+          )}
+          {dataViewMode === 'outlier-segments' && outlierSegments && (
+            <>
+              {!outlierSegments.review_completed && (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="当前展示算法自动离群时间段；完成全部点复核后，将切换为已确认离群段。"
+                />
+              )}
+              <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                共 {outlierSegments.total} 段（{outlierSegments.segment_kind === 'CONFIRMED' ? '已确认' : '算法自动'}）。
+              </Paragraph>
+            </>
+          )}
+        </Space>
+        {dataViewMode === 'all' && (
+          <Table
+            loading={dataLoading}
+            rowKey="key"
+            dataSource={dataTableRows}
+            columns={dataColumns}
+            scroll={{ x: 'max-content', y: 480 }}
+            pagination={{
+              current: dataPage,
+              pageSize: dataPageSize,
+              total: dataTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [20, 50, 100, 200],
+              showTotal: (total) => `共 ${total} 个时间点`,
+              onChange: (page, pageSize) => handleDataPageChange(page, pageSize)
+            }}
+            size="small"
+          />
         )}
-        <Table
-          loading={dataLoading}
-          rowKey="key"
-          dataSource={dataTableRows}
-          columns={dataColumns}
-          scroll={{ x: 'max-content', y: 480 }}
-          pagination={{
-            current: dataPage,
-            pageSize: dataPageSize,
-            total: processedData?.total ?? 0,
-            showSizeChanger: true,
-            pageSizeOptions: [20, 50, 100, 200],
-            showTotal: (total) => `共 ${total} 个时间点`,
-            onChange: (page, pageSize) => handleDataPageChange(page, pageSize)
-          }}
-          size="small"
-        />
+        {dataViewMode === 'outlier-points' && (
+          <Table
+            loading={dataLoading}
+            rowKey="key"
+            dataSource={reviewTableRows}
+            columns={reviewColumns}
+            scroll={{ x: 'max-content', y: 480 }}
+            rowSelection={{
+              selectedRowKeys: selectedReviewKeys,
+              onChange: (keys) => setSelectedReviewKeys(keys as string[]),
+              getCheckboxProps: (record) => ({ disabled: record.review_status !== 'PENDING' })
+            }}
+            pagination={{
+              current: dataPage,
+              pageSize: dataPageSize,
+              total: dataTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [20, 50, 100, 200],
+              showTotal: (total) => `共 ${total} 条复核记录`,
+              onChange: (page, pageSize) => handleDataPageChange(page, pageSize)
+            }}
+            size="small"
+          />
+        )}
+        {dataViewMode === 'outlier-segments' && (
+          <Table
+            loading={dataLoading}
+            rowKey="key"
+            dataSource={segmentTableRows}
+            columns={segmentColumns}
+            scroll={{ x: 'max-content', y: 480 }}
+            pagination={{
+              pageSize: 50,
+              showSizeChanger: true,
+              pageSizeOptions: [20, 50, 100, 200],
+              showTotal: (total) => `共 ${total} 段`,
+              hideOnSinglePage: true
+            }}
+            size="small"
+          />
+        )}
       </Drawer>
     </Card>
   );

@@ -161,12 +161,37 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
             segment_start timestamptz NOT NULL,
             segment_end timestamptz NOT NULL,
             outlier_method varchar(32),
+            segment_kind varchar(16) NOT NULL DEFAULT 'AUTO',
             created_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS idx_outlier_segment_run ON preprocess_outlier_segment(run_id);
         ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_id uuid;
         ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_status varchar(32);
         ALTER TABLE preprocess_schedule ADD COLUMN IF NOT EXISTS last_run_end_at timestamptz;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS outlier_review_status varchar(32);
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS outlier_auto_count int NOT NULL DEFAULT 0;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS outlier_pending_count int NOT NULL DEFAULT 0;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS outlier_confirmed_count int NOT NULL DEFAULT 0;
+        ALTER TABLE task_run ADD COLUMN IF NOT EXISTS outlier_jitter_count int NOT NULL DEFAULT 0;
+        ALTER TABLE preprocess_outlier_segment ADD COLUMN IF NOT EXISTS segment_kind varchar(16) NOT NULL DEFAULT 'AUTO';
+        CREATE TABLE IF NOT EXISTS preprocess_outlier_point_review (
+            review_id uuid PRIMARY KEY,
+            run_id uuid NOT NULL,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            param_id varchar(64) NOT NULL,
+            ts timestamptz NOT NULL,
+            auto_value float8,
+            auto_outlier_method varchar(32),
+            review_status varchar(32) NOT NULL DEFAULT 'PENDING',
+            reviewed_at timestamptz,
+            reviewed_by varchar(128),
+            remark varchar(512),
+            created_at timestamptz NOT NULL DEFAULT now(),
+            UNIQUE (run_id, param_id, ts)
+        );
+        CREATE INDEX IF NOT EXISTS idx_outlier_review_run_status ON preprocess_outlier_point_review(run_id, review_status);
+        CREATE INDEX IF NOT EXISTS idx_outlier_segment_run_kind ON preprocess_outlier_segment(run_id, segment_kind);
         """;
 
     private readonly string _cs;
@@ -212,14 +237,18 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
               filter_template_id, filter_template_version, algorithm_template_id, algorithm_template_version,
               report_template_id, report_template_version, progress_percent, current_step, start_time, end_time,
               timeout_flag, error_code, error_msg, created_by, created_at,
-              execution_mode, scheduled_at, schedule_id, hangfire_job_id
+              execution_mode, scheduled_at, schedule_id, hangfire_job_id,
+              outlier_review_status, outlier_auto_count, outlier_pending_count,
+              outlier_confirmed_count, outlier_jitter_count
             ) VALUES (
               @run_id, @parent_run_id, @job_id, @job_type, @trigger_type, @status, @idempotency_key,
               @tasook_no, @satellite_no, @test_batch_name, @window_start, @window_end,
               @filter_template_id, @filter_template_version, @algorithm_template_id, @algorithm_template_version,
               @report_template_id, @report_template_version, @progress_percent, @current_step, @start_time, @end_time,
               @timeout_flag, @error_code, @error_msg, @created_by, @created_at,
-              @execution_mode, @scheduled_at, @schedule_id, @hangfire_job_id
+              @execution_mode, @scheduled_at, @schedule_id, @hangfire_job_id,
+              @outlier_review_status, @outlier_auto_count, @outlier_pending_count,
+              @outlier_confirmed_count, @outlier_jitter_count
             )
             """,
             conn);
@@ -251,7 +280,10 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
               report_template_id=@report_template_id, report_template_version=@report_template_version,
               progress_percent=@progress_percent, current_step=@current_step, start_time=@start_time, end_time=@end_time,
               timeout_flag=@timeout_flag, error_code=@error_code, error_msg=@error_msg,
-              execution_mode=@execution_mode, scheduled_at=@scheduled_at, schedule_id=@schedule_id, hangfire_job_id=@hangfire_job_id
+              execution_mode=@execution_mode, scheduled_at=@scheduled_at, schedule_id=@schedule_id, hangfire_job_id=@hangfire_job_id,
+              outlier_review_status=@outlier_review_status, outlier_auto_count=@outlier_auto_count,
+              outlier_pending_count=@outlier_pending_count, outlier_confirmed_count=@outlier_confirmed_count,
+              outlier_jitter_count=@outlier_jitter_count
             WHERE run_id=@run_id
             """,
             conn);
@@ -373,6 +405,11 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         cmd.Parameters.AddWithValue("scheduled_at", (object?)run.ScheduledAt ?? DBNull.Value);
         cmd.Parameters.AddWithValue("schedule_id", (object?)run.ScheduleId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("hangfire_job_id", (object?)run.HangfireJobId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("outlier_review_status", (object?)run.OutlierReviewStatus ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("outlier_auto_count", run.OutlierAutoCount);
+        cmd.Parameters.AddWithValue("outlier_pending_count", run.OutlierPendingCount);
+        cmd.Parameters.AddWithValue("outlier_confirmed_count", run.OutlierConfirmedCount);
+        cmd.Parameters.AddWithValue("outlier_jitter_count", run.OutlierJitterCount);
     }
 
     private static TaskRun Read(NpgsqlDataReader r)
@@ -615,6 +652,8 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
             created_at timestamptz NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS idx_outlier_segment_run ON preprocess_outlier_segment(run_id);
+        ALTER TABLE preprocess_outlier_segment ADD COLUMN IF NOT EXISTS segment_kind varchar(16) NOT NULL DEFAULT 'AUTO';
+        CREATE INDEX IF NOT EXISTS idx_outlier_segment_run_kind ON preprocess_outlier_segment(run_id, segment_kind);
         """;
 
     private readonly string _cs;
@@ -657,9 +696,9 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
                 """
                 INSERT INTO preprocess_outlier_segment (
                   segment_id, run_id, tasook_no, satellite_no, param_id,
-                  segment_start, segment_end, outlier_method, created_at
+                  segment_start, segment_end, outlier_method, segment_kind, created_at
                 ) VALUES (
-                  @id, @run, @t, @sat, @p, @ss, @se, @om, @ca
+                  @id, @run, @t, @sat, @p, @ss, @se, @om, @sk, @ca
                 )
                 """,
                 conn);
@@ -671,41 +710,77 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
             cmd.Parameters.AddWithValue("ss", s.SegmentStart);
             cmd.Parameters.AddWithValue("se", s.SegmentEnd);
             cmd.Parameters.AddWithValue("om", (object?)s.OutlierMethod ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("sk", s.SegmentKind);
             cmd.Parameters.AddWithValue("ca", s.CreatedAt);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    public async Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(
+    public Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(
         Guid runId,
+        CancellationToken cancellationToken) =>
+        ListInternalAsync(runId, null, cancellationToken);
+
+    public Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAndKindAsync(
+        Guid runId,
+        string segmentKind,
+        CancellationToken cancellationToken) =>
+        ListInternalAsync(runId, segmentKind, cancellationToken);
+
+    private async Task<IReadOnlyList<PreprocessOutlierSegment>> ListInternalAsync(
+        Guid runId,
+        string? segmentKind,
         CancellationToken cancellationToken)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
         await using var conn = new NpgsqlConnection(_cs);
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var cmd = new NpgsqlCommand(
-            "SELECT * FROM preprocess_outlier_segment WHERE run_id=@run ORDER BY segment_start",
-            conn);
+        var sql = segmentKind is null
+            ? "SELECT * FROM preprocess_outlier_segment WHERE run_id=@run ORDER BY segment_start"
+            : "SELECT * FROM preprocess_outlier_segment WHERE run_id=@run AND segment_kind=@kind ORDER BY segment_start";
+        await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("run", runId);
+        if (segmentKind is not null)
+        {
+            cmd.Parameters.AddWithValue("kind", segmentKind);
+        }
+
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         var list = new List<PreprocessOutlierSegment>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            list.Add(new PreprocessOutlierSegment(
-                reader.GetGuid(reader.GetOrdinal("segment_id")),
-                reader.GetGuid(reader.GetOrdinal("run_id")),
-                reader.GetString(reader.GetOrdinal("tasook_no")),
-                reader.GetString(reader.GetOrdinal("satellite_no")),
-                reader.GetString(reader.GetOrdinal("param_id")),
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("segment_start")),
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("segment_end")),
-                reader.IsDBNull(reader.GetOrdinal("outlier_method"))
-                    ? ""
-                    : reader.GetString(reader.GetOrdinal("outlier_method")),
-                reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at"))));
+            list.Add(ReadSegment(reader));
         }
 
         return list;
+    }
+
+    private static PreprocessOutlierSegment ReadSegment(NpgsqlDataReader reader) =>
+        new(
+            reader.GetGuid(reader.GetOrdinal("segment_id")),
+            reader.GetGuid(reader.GetOrdinal("run_id")),
+            reader.GetString(reader.GetOrdinal("tasook_no")),
+            reader.GetString(reader.GetOrdinal("satellite_no")),
+            reader.GetString(reader.GetOrdinal("param_id")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("segment_start")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("segment_end")),
+            reader.IsDBNull(reader.GetOrdinal("outlier_method"))
+                ? ""
+                : reader.GetString(reader.GetOrdinal("outlier_method")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")),
+            ReadSegmentKind(reader));
+
+    private static string ReadSegmentKind(NpgsqlDataReader reader)
+    {
+        try
+        {
+            var ord = reader.GetOrdinal("segment_kind");
+            return reader.IsDBNull(ord) ? OutlierSegmentKind.Auto : reader.GetString(ord);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return OutlierSegmentKind.Auto;
+        }
     }
 
     public async Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
@@ -717,6 +792,282 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
         cmd.Parameters.AddWithValue("run", runId);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task DeleteByRunIdAndKindAsync(Guid runId, string segmentKind, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM preprocess_outlier_segment WHERE run_id=@run AND segment_kind=@kind",
+            conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        cmd.Parameters.AddWithValue("kind", segmentKind);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+}
+
+public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlierPointReviewRepository
+{
+    private const string SchemaSql = """
+        CREATE TABLE IF NOT EXISTS preprocess_outlier_point_review (
+            review_id uuid PRIMARY KEY,
+            run_id uuid NOT NULL,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            param_id varchar(64) NOT NULL,
+            ts timestamptz NOT NULL,
+            auto_value float8,
+            auto_outlier_method varchar(32),
+            review_status varchar(32) NOT NULL DEFAULT 'PENDING',
+            reviewed_at timestamptz,
+            reviewed_by varchar(128),
+            remark varchar(512),
+            created_at timestamptz NOT NULL DEFAULT now(),
+            UNIQUE (run_id, param_id, ts)
+        );
+        CREATE INDEX IF NOT EXISTS idx_outlier_review_run_status ON preprocess_outlier_point_review(run_id, review_status);
+        """;
+
+    private readonly string _cs;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private bool _ready;
+
+    public PgPreprocessOutlierPointReviewRepository(IOptions<DatabaseConnectionOptions> options) =>
+        _cs = options.Value.Postgres;
+
+    private async Task EnsureAsync(CancellationToken cancellationToken)
+    {
+        if (_ready) return;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_ready) return;
+            await using var conn = new NpgsqlConnection(_cs);
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var cmd = new NpgsqlCommand(SchemaSql, conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            _ready = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task InsertBatchAsync(
+        IReadOnlyList<PreprocessOutlierPointReview> reviews,
+        CancellationToken cancellationToken)
+    {
+        if (reviews.Count == 0) return;
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var r in reviews)
+        {
+            await using var cmd = new NpgsqlCommand(
+                """
+                INSERT INTO preprocess_outlier_point_review (
+                  review_id, run_id, tasook_no, satellite_no, param_id, ts,
+                  auto_value, auto_outlier_method, review_status, reviewed_at, reviewed_by, remark, created_at
+                ) VALUES (
+                  @id, @run, @t, @sat, @p, @ts, @av, @om, @st, @ra, @rb, @rm, @ca
+                )
+                """,
+                conn);
+            cmd.Parameters.AddWithValue("id", r.ReviewId);
+            cmd.Parameters.AddWithValue("run", r.RunId);
+            cmd.Parameters.AddWithValue("t", r.TasookNo);
+            cmd.Parameters.AddWithValue("sat", r.SatelliteNo);
+            cmd.Parameters.AddWithValue("p", r.ParamId);
+            cmd.Parameters.AddWithValue("ts", r.Ts);
+            cmd.Parameters.AddWithValue("av", (object?)r.AutoValue ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("om", (object?)r.AutoOutlierMethod ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("st", r.ReviewStatus);
+            cmd.Parameters.AddWithValue("ra", (object?)r.ReviewedAt ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("rb", (object?)r.ReviewedBy ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("rm", (object?)r.Remark ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("ca", r.CreatedAt);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<(IReadOnlyList<PreprocessOutlierPointReview> Items, long Total)> ListPageAsync(
+        Guid runId,
+        string? statusFilter,
+        string? paramIdFilter,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 1, 200);
+        var offset = (safePage - 1) * safePageSize;
+        var where = "run_id=@run";
+        if (!string.IsNullOrWhiteSpace(statusFilter))
+        {
+            where += " AND review_status=@st";
+        }
+
+        if (!string.IsNullOrWhiteSpace(paramIdFilter))
+        {
+            where += " AND param_id=@p";
+        }
+
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var countCmd = new NpgsqlCommand($"SELECT count(*) FROM preprocess_outlier_point_review WHERE {where}", conn);
+        AddListParams(countCmd, runId, statusFilter, paramIdFilter);
+        var total = Convert.ToInt64(await countCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+
+        await using var cmd = new NpgsqlCommand(
+            $"""
+             SELECT * FROM preprocess_outlier_point_review WHERE {where}
+             ORDER BY ts ASC, param_id ASC
+             LIMIT @lim OFFSET @off
+             """,
+            conn);
+        AddListParams(cmd, runId, statusFilter, paramIdFilter);
+        cmd.Parameters.AddWithValue("lim", safePageSize);
+        cmd.Parameters.AddWithValue("off", offset);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<PreprocessOutlierPointReview>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(ReadReview(reader));
+        }
+
+        return (list, total);
+    }
+
+    public async Task<IReadOnlyList<PreprocessOutlierPointReview>> ListByRunIdAndStatusAsync(
+        Guid runId,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM preprocess_outlier_point_review WHERE run_id=@run AND review_status=@st ORDER BY param_id, ts",
+            conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        cmd.Parameters.AddWithValue("st", status);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<PreprocessOutlierPointReview>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(ReadReview(reader));
+        }
+
+        return list;
+    }
+
+    public async Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT review_status, count(*) FROM preprocess_outlier_point_review WHERE run_id=@run GROUP BY review_status",
+            conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var dict = new Dictionary<string, int>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            dict[reader.GetString(0)] = (int)reader.GetInt64(1);
+        }
+
+        return dict;
+    }
+
+    public async Task<bool> UpdateStatusBatchAsync(
+        Guid runId,
+        IReadOnlyList<OutlierReviewUpdate> updates,
+        DateTimeOffset reviewedAt,
+        string? reviewedBy,
+        CancellationToken cancellationToken)
+    {
+        if (updates.Count == 0) return true;
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        var updated = 0;
+        foreach (var u in updates)
+        {
+            await using var cmd = new NpgsqlCommand(
+                """
+                UPDATE preprocess_outlier_point_review SET
+                  review_status=@st, reviewed_at=@ra, reviewed_by=@rb, remark=@rm
+                WHERE run_id=@run AND param_id=@p AND ts=@ts AND review_status='PENDING'
+                """,
+                conn);
+            cmd.Parameters.AddWithValue("st", u.Status);
+            cmd.Parameters.AddWithValue("ra", reviewedAt);
+            cmd.Parameters.AddWithValue("rb", (object?)reviewedBy ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("rm", (object?)u.Remark ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("run", runId);
+            cmd.Parameters.AddWithValue("p", u.ParamId);
+            cmd.Parameters.AddWithValue("ts", u.Ts);
+            updated += await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return updated > 0;
+    }
+
+    public async Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("DELETE FROM preprocess_outlier_point_review WHERE run_id=@run", conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void AddListParams(
+        NpgsqlCommand cmd,
+        Guid runId,
+        string? statusFilter,
+        string? paramIdFilter)
+    {
+        cmd.Parameters.AddWithValue("run", runId);
+        if (!string.IsNullOrWhiteSpace(statusFilter))
+        {
+            cmd.Parameters.AddWithValue("st", statusFilter.Trim().ToUpperInvariant());
+        }
+
+        if (!string.IsNullOrWhiteSpace(paramIdFilter))
+        {
+            cmd.Parameters.AddWithValue("p", paramIdFilter.Trim());
+        }
+    }
+
+    private static PreprocessOutlierPointReview ReadReview(NpgsqlDataReader reader) =>
+        new(
+            reader.GetGuid(reader.GetOrdinal("review_id")),
+            reader.GetGuid(reader.GetOrdinal("run_id")),
+            reader.GetString(reader.GetOrdinal("tasook_no")),
+            reader.GetString(reader.GetOrdinal("satellite_no")),
+            reader.GetString(reader.GetOrdinal("param_id")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("ts")),
+            reader.IsDBNull(reader.GetOrdinal("auto_value")) ? null : reader.GetDouble(reader.GetOrdinal("auto_value")),
+            reader.IsDBNull(reader.GetOrdinal("auto_outlier_method"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("auto_outlier_method")),
+            reader.GetString(reader.GetOrdinal("review_status")),
+            reader.IsDBNull(reader.GetOrdinal("reviewed_at"))
+                ? null
+                : reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("reviewed_at")),
+            reader.IsDBNull(reader.GetOrdinal("reviewed_by"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("reviewed_by")),
+            reader.IsDBNull(reader.GetOrdinal("remark")) ? null : reader.GetString(reader.GetOrdinal("remark")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")));
 }
 
 public sealed class PgTaskEventRepository : ITaskEventRepository

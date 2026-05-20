@@ -69,6 +69,8 @@ public sealed class TaskListService(
             CanDelete: TaskRunStateHelper.CanDeleteRun(run),
             CanReExecute: TaskRunStateHelper.CanReExecuteRun(run),
             CanViewData: TaskRunStateHelper.CanViewProcessedData(run),
+            OutlierPendingCount: run.OutlierPendingCount,
+            OutlierReviewStatus: run.OutlierReviewStatus,
             StatusSummary: TaskRunStateHelper.BuildStatusSummary(run, TaskDisplayStatus.ForRun(run, now)),
             DisplayStatus: TaskDisplayStatus.ForRun(run, now),
             Status: run.Status.ToString(),
@@ -97,6 +99,8 @@ public sealed class TaskListService(
             CanDelete: false,
             CanReExecute: false,
             CanViewData: latest is not null && TaskRunStateHelper.CanViewProcessedData(latest),
+            OutlierPendingCount: latest?.OutlierPendingCount ?? 0,
+            OutlierReviewStatus: latest?.OutlierReviewStatus,
             StatusSummary: latest is not null
                 ? TaskRunStateHelper.BuildStatusSummary(latest, TaskDisplayStatus.ForSchedule(schedule, latest, now))
                 : TaskDisplayStatus.ForSchedule(schedule, latest, now),

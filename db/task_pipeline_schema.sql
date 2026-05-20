@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS task_run (
     scheduled_at timestamptz,
     schedule_id uuid,
     hangfire_job_id varchar(128),
+    outlier_review_status varchar(32),
+    outlier_auto_count int NOT NULL DEFAULT 0,
+    outlier_pending_count int NOT NULL DEFAULT 0,
+    outlier_confirmed_count int NOT NULL DEFAULT 0,
+    outlier_jitter_count int NOT NULL DEFAULT 0,
     UNIQUE (idempotency_key)
 );
 
@@ -84,10 +89,31 @@ CREATE TABLE IF NOT EXISTS preprocess_outlier_segment (
     segment_start timestamptz NOT NULL,
     segment_end timestamptz NOT NULL,
     outlier_method varchar(32),
+    segment_kind varchar(16) NOT NULL DEFAULT 'AUTO',
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_outlier_segment_run ON preprocess_outlier_segment(run_id);
+CREATE INDEX IF NOT EXISTS idx_outlier_segment_run_kind ON preprocess_outlier_segment(run_id, segment_kind);
+
+CREATE TABLE IF NOT EXISTS preprocess_outlier_point_review (
+    review_id uuid PRIMARY KEY,
+    run_id uuid NOT NULL,
+    tasook_no varchar(64) NOT NULL,
+    satellite_no varchar(64) NOT NULL,
+    param_id varchar(64) NOT NULL,
+    ts timestamptz NOT NULL,
+    auto_value float8,
+    auto_outlier_method varchar(32),
+    review_status varchar(32) NOT NULL DEFAULT 'PENDING',
+    reviewed_at timestamptz,
+    reviewed_by varchar(128),
+    remark varchar(512),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (run_id, param_id, ts)
+);
+
+CREATE INDEX IF NOT EXISTS idx_outlier_review_run_status ON preprocess_outlier_point_review(run_id, review_status);
 
 CREATE TABLE IF NOT EXISTS task_event (
     event_id uuid PRIMARY KEY,

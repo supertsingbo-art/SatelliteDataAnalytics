@@ -41,8 +41,9 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         }
     }
 
-    public Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken) =>
-        ExecuteNonQueryAsync(
+    public async Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteNonQueryAsync(
             """
             CREATE TABLE IF NOT EXISTS hq_param_point
             (
@@ -54,6 +55,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
                 raw_value Nullable(Float64),
                 processed_value Nullable(Float64),
                 is_outlier UInt8,
+                is_confirmed_outlier UInt8 DEFAULT 0,
                 version UInt64,
                 ingested_at DateTime64(3, 'UTC') DEFAULT now64(3)
             )
@@ -61,7 +63,11 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
             PARTITION BY (toYYYYMM(ts), tasook_no, satellite_no)
             ORDER BY (tasook_no, satellite_no, test_batch_id, param_id, ts)
             """,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        await ExecuteNonQueryAsync(
+            "ALTER TABLE hq_param_point ADD COLUMN IF NOT EXISTS is_confirmed_outlier UInt8 DEFAULT 0",
+            cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken)
     {
@@ -246,7 +252,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         var offset = (safePage - 1) * safePageSize;
         var filter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
         var sql = $"""
-            SELECT param_id, ts, processed_value, is_outlier
+            SELECT param_id, ts, processed_value, is_outlier, is_confirmed_outlier
             FROM hq_param_point
             WHERE {filter}
               AND ts IN (
@@ -264,6 +270,166 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
             """;
 
         return QueryHqParamPointsFromSqlAsync(sql, cancellationToken);
+    }
+
+    public Task<long> CountOutlierPointsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string? paramIdFilter,
+        CancellationToken cancellationToken) =>
+        ExecuteScalarLongAsync(
+            BuildOutlierFilterSql(
+                tasookNo,
+                satelliteNo,
+                testBatchId,
+                paramIds,
+                windowStart,
+                windowEnd,
+                paramIdFilter,
+                "SELECT count() AS cnt FROM hq_param_point WHERE {filter}"),
+            cancellationToken);
+
+    public Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsPageAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string? paramIdFilter,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        if (paramIds.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyList<HqParamPointRow>>([]);
+        }
+
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 1, 200);
+        var offset = (safePage - 1) * safePageSize;
+        var filter = BuildOutlierWhereClause(
+            tasookNo,
+            satelliteNo,
+            testBatchId,
+            paramIds,
+            windowStart,
+            windowEnd,
+            paramIdFilter);
+        var sql = $"""
+            SELECT param_id, ts, processed_value, is_outlier, is_confirmed_outlier
+            FROM hq_param_point
+            WHERE {filter}
+            ORDER BY ts ASC, param_id ASC
+            LIMIT {safePageSize} OFFSET {offset}
+            FORMAT JSONEachRow
+            """;
+
+        return QueryHqParamPointsFromSqlAsync(sql, cancellationToken);
+    }
+
+    public async Task<HqParamPointInsertRow?> QueryLatestPointAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset ts,
+        CancellationToken cancellationToken)
+    {
+        var tsStr = ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var sql = $"""
+            SELECT tasook_no, satellite_no, test_batch_id, param_id, ts, raw_value, processed_value,
+                   is_outlier, is_confirmed_outlier, version
+            FROM hq_param_point
+            WHERE tasook_no = '{Escape(tasookNo)}'
+              AND satellite_no = '{Escape(satelliteNo)}'
+              AND test_batch_id = '{Escape(testBatchId)}'
+              AND param_id = '{Escape(paramId)}'
+              AND ts = parseDateTime64BestEffort('{tsStr}')
+            ORDER BY version DESC
+            LIMIT 1
+            FORMAT JSONEachRow
+            """;
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, _baseUri);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authValue);
+        req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+        var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode || string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var line = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+        if (string.IsNullOrEmpty(line))
+        {
+            return null;
+        }
+
+        using var doc = JsonDocument.Parse(line);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("version", out var verEl) || !verEl.TryGetUInt64(out var version))
+        {
+            return null;
+        }
+
+        double? raw = null;
+        if (root.TryGetProperty("raw_value", out var rawEl) && rawEl.ValueKind != JsonValueKind.Null
+            && rawEl.TryGetDouble(out var rv))
+        {
+            raw = rv;
+        }
+
+        double? proc = null;
+        if (root.TryGetProperty("processed_value", out var procEl) && procEl.ValueKind != JsonValueKind.Null
+            && procEl.TryGetDouble(out var pv))
+        {
+            proc = pv;
+        }
+
+        var isOutlier = root.TryGetProperty("is_outlier", out var oEl) && oEl.TryGetUInt32(out var o) ? (byte)o : (byte)0;
+        var isConfirmed = root.TryGetProperty("is_confirmed_outlier", out var cEl) && cEl.TryGetUInt32(out var c)
+            ? (byte)c
+            : (byte)0;
+
+        return new HqParamPointInsertRow(
+            tasookNo,
+            satelliteNo,
+            testBatchId,
+            paramId,
+            ts,
+            raw,
+            proc,
+            isOutlier,
+            isConfirmed,
+            version);
+    }
+
+    public async Task InsertReviewedPointVersionsAsync(
+        IReadOnlyList<HqParamPointInsertRow> rows,
+        CancellationToken cancellationToken)
+    {
+        if (rows.Count == 0) return;
+        var jsonRows = rows.Select(r => JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["tasook_no"] = r.TasookNo,
+            ["satellite_no"] = r.SatelliteNo,
+            ["test_batch_id"] = r.TestBatchId,
+            ["param_id"] = r.ParamId,
+            ["ts"] = r.Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
+            ["raw_value"] = r.RawValue,
+            ["processed_value"] = r.ProcessedValue,
+            ["is_outlier"] = r.IsOutlier,
+            ["is_confirmed_outlier"] = r.IsConfirmedOutlier,
+            ["version"] = r.Version
+        })).ToList();
+        await InsertJsonEachRowAsync("hq_param_point", jsonRows, cancellationToken).ConfigureAwait(false);
     }
 
     private static string BuildMatrixWhereClause(
@@ -298,6 +464,47 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
     {
         if (paramIds.Count == 0) return "SELECT 0 AS cnt";
         var filter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
+        return sqlTemplate.Replace("{filter}", filter, StringComparison.Ordinal);
+    }
+
+    private static string BuildOutlierWhereClause(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string? paramIdFilter)
+    {
+        var baseFilter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
+        var outlierFilter = $"{baseFilter}\n  AND is_outlier = 1";
+        if (!string.IsNullOrWhiteSpace(paramIdFilter))
+        {
+            outlierFilter += $"\n  AND param_id = '{Escape(paramIdFilter.Trim())}'";
+        }
+
+        return outlierFilter;
+    }
+
+    private static string BuildOutlierFilterSql(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        string? paramIdFilter,
+        string sqlTemplate)
+    {
+        if (paramIds.Count == 0) return "SELECT 0 AS cnt";
+        var filter = BuildOutlierWhereClause(
+            tasookNo,
+            satelliteNo,
+            testBatchId,
+            paramIds,
+            windowStart,
+            windowEnd,
+            paramIdFilter);
         return sqlTemplate.Replace("{filter}", filter, StringComparison.Ordinal);
     }
 
@@ -360,13 +567,25 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
 
             if (!root.TryGetProperty("processed_value", out var vEl) || vEl.ValueKind == JsonValueKind.Null) continue;
             if (!vEl.TryGetDouble(out var v)) continue;
-            var isOutlier = root.TryGetProperty("is_outlier", out var oEl) && oEl.ValueKind == JsonValueKind.Number
-                && oEl.TryGetUInt32(out var o)
-                && o != 0;
-            list.Add(new HqParamPointRow(pid, ts, v, isOutlier));
+            list.Add(ParseHqParamPointRow(root, pid, ts, v));
         }
 
         return list;
+    }
+
+    private static HqParamPointRow ParseHqParamPointRow(
+        JsonElement root,
+        string pid,
+        DateTimeOffset ts,
+        double v)
+    {
+        var isOutlier = root.TryGetProperty("is_outlier", out var oEl) && oEl.ValueKind == JsonValueKind.Number
+            && oEl.TryGetUInt32(out var o)
+            && o != 0;
+        var isConfirmed = root.TryGetProperty("is_confirmed_outlier", out var cEl) && cEl.ValueKind == JsonValueKind.Number
+            && cEl.TryGetUInt32(out var c)
+            && c != 0;
+        return new HqParamPointRow(pid, ts, v, isOutlier, isConfirmed);
     }
 
     private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("'", "\\'");
