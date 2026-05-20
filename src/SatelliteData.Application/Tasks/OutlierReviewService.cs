@@ -118,12 +118,12 @@ public sealed class OutlierReviewService(
                 cancellationToken).ConfigureAwait(false);
             if (latest is null) continue;
 
-            var isConfirmed = string.Equals(u.Status, OutlierReviewPointStatus.Confirmed, StringComparison.Ordinal)
-                ? (byte)1
-                : (byte)0;
+            // 抖动 = 人工认定非离群：清除 is_outlier；确认离群 = 最终离群点
+            var confirmed = string.Equals(u.Status, OutlierReviewPointStatus.Confirmed, StringComparison.Ordinal);
             chRows.Add(latest with
             {
-                IsConfirmedOutlier = isConfirmed,
+                IsOutlier = confirmed ? (byte)1 : (byte)0,
+                IsConfirmedOutlier = confirmed ? (byte)1 : (byte)0,
                 Version = latest.Version + 1
             });
         }

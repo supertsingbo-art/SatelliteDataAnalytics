@@ -489,6 +489,8 @@ export interface TaskProcessedDataCell {
   value: number | null;
   is_outlier: boolean;
   is_confirmed_outlier?: boolean;
+  /** PENDING | CONFIRMED | JITTER；无记录表示普通点 */
+  review_status?: string | null;
 }
 
 export interface TaskProcessedDataRow {

@@ -341,6 +341,22 @@ public sealed class InMemoryPreprocessOutlierPointReviewRepository : IPreprocess
         }
     }
 
+    public Task<IReadOnlyList<PreprocessOutlierPointReview>> ListByRunIdAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _reviews
+                .Where(r => r.RunId == runId)
+                .OrderBy(r => r.ParamId, StringComparer.Ordinal)
+                .ThenBy(r => r.Ts)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<PreprocessOutlierPointReview>>(arr);
+        }
+    }
+
     public Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(Guid runId, CancellationToken cancellationToken)
     {
         _ = cancellationToken;

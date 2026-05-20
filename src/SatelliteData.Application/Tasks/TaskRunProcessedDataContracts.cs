@@ -2,7 +2,11 @@ namespace SatelliteData.Application.Tasks;
 
 public sealed record TaskProcessedDataColumnDto(string ParamId, string Label);
 
-public sealed record TaskProcessedDataCellDto(double? Value, bool IsOutlier, bool IsConfirmedOutlier = false);
+public sealed record TaskProcessedDataCellDto(
+    double? Value,
+    bool IsOutlier,
+    bool IsConfirmedOutlier = false,
+    string? ReviewStatus = null);
 
 public sealed record TaskProcessedDataRowDto(string Ts, IReadOnlyDictionary<string, TaskProcessedDataCellDto> Cells);
 

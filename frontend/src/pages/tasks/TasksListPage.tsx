@@ -28,6 +28,7 @@ import type {
   TaskOutlierSegmentItem,
   TaskOutlierSegments,
   TaskProcessedData,
+  TaskProcessedDataCell,
   TaskProcessedDataColumn
 } from '@/api/types';
 
@@ -340,28 +341,37 @@ export function TasksListPage() {
         width: 120,
         ellipsis: true,
         render: (_: unknown, record: Record<string, unknown>) => {
-          const cells = record.cells as Record<
-            string,
-            { value: number | null; is_outlier: boolean; is_confirmed_outlier?: boolean }
-          >;
+          const cells = record.cells as Record<string, TaskProcessedDataCell>;
           const cell = cells[col.param_id];
           if (!cell || cell.value == null) return '—';
           const text = Number(cell.value).toFixed(4);
-          if (cell.is_confirmed_outlier) {
+          const status = cell.review_status?.toUpperCase();
+          if (status === 'JITTER') {
             return (
-              <Text type="danger" strong title="已确认离群">
+              <Text style={{ color: '#389e0d' }} strong title="已确认非离群（抖动）">
                 {text}
               </Text>
             );
           }
-          if (cell.is_outlier) {
+          if (status === 'CONFIRMED' || cell.is_confirmed_outlier) {
+            return (
+              <Text style={{ color: '#cf1322' }} strong title="已确认离群">
+                {text}
+              </Text>
+            );
+          }
+          if (status === 'PENDING' || cell.is_outlier) {
             return (
               <Text style={{ color: '#d46b08' }} strong title="待复核离群候选">
                 {text}
               </Text>
             );
           }
-          return text;
+          return (
+            <Text style={{ color: 'rgba(0, 0, 0, 0.88)' }} title="正常值">
+              {text}
+            </Text>
+          );
         }
       })
     );
@@ -793,7 +803,7 @@ export function TasksListPage() {
           {dataViewMode === 'all' && processedData && processedData.total > 0 && (
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
               共 {processedData.total} 个时间点，当前第 {processedData.page} 页（每页 {processedData.page_size}{' '}
-              行）。橙色为待复核候选，红色为已确认离群。
+              行）。橙=待复核离群，红=已确认离群，绿=已确认非离群（抖动），黑=正常值。
             </Paragraph>
           )}
           {dataViewMode === 'outlier-points' && reviewSummary && (

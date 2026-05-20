@@ -964,6 +964,27 @@ public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlie
         return list;
     }
 
+    public async Task<IReadOnlyList<PreprocessOutlierPointReview>> ListByRunIdAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM preprocess_outlier_point_review WHERE run_id=@run ORDER BY param_id, ts",
+            conn);
+        cmd.Parameters.AddWithValue("run", runId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<PreprocessOutlierPointReview>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(ReadReview(reader));
+        }
+
+        return list;
+    }
+
     public async Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(
         Guid runId,
         CancellationToken cancellationToken)

@@ -54,7 +54,12 @@ public sealed class TaskRunProcessedDataService(
                 cancellationToken).ConfigureAwait(false);
 
         var columns = BuildColumns(ctx.ParamIds, ctx.Parameters);
-        var rows = BuildMatrixRows(points);
+        var reviews = await outlierReviews.ListByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        var reviewByKey = reviews.ToDictionary(
+            r => ReviewCellKey(r.ParamId, r.Ts),
+            r => r.ReviewStatus,
+            StringComparer.Ordinal);
+        var rows = BuildMatrixRows(points, reviewByKey);
 
         return new TaskProcessedDataDto(runId, columns, rows, total, safePage, safePageSize);
     }
@@ -213,8 +218,11 @@ public sealed class TaskRunProcessedDataService(
             })
             .ToList();
 
+    private static string ReviewCellKey(string paramId, DateTimeOffset ts) => $"{paramId}|{ts:O}";
+
     private static IReadOnlyList<TaskProcessedDataRowDto> BuildMatrixRows(
-        IReadOnlyList<HqParamPointRow> points)
+        IReadOnlyList<HqParamPointRow> points,
+        IReadOnlyDictionary<string, string> reviewByKey)
     {
         var byTs = new SortedDictionary<DateTimeOffset, Dictionary<string, TaskProcessedDataCellDto>>();
         foreach (var pt in points)
@@ -225,7 +233,12 @@ public sealed class TaskRunProcessedDataService(
                 byTs[pt.Ts] = cells;
             }
 
-            cells[pt.ParamId] = new TaskProcessedDataCellDto(pt.Value, pt.IsOutlier, pt.IsConfirmedOutlier);
+            reviewByKey.TryGetValue(ReviewCellKey(pt.ParamId, pt.Ts), out var reviewStatus);
+            cells[pt.ParamId] = new TaskProcessedDataCellDto(
+                pt.Value,
+                pt.IsOutlier,
+                pt.IsConfirmedOutlier,
+                reviewStatus);
         }
 
         return byTs

@@ -19,6 +19,10 @@ public interface IPreprocessOutlierPointReviewRepository
         string status,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<PreprocessOutlierPointReview>> ListByRunIdAsync(
+        Guid runId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyDictionary<string, int>> CountByStatusAsync(Guid runId, CancellationToken cancellationToken);
 
     Task<bool> UpdateStatusBatchAsync(

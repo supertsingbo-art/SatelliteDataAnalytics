@@ -72,7 +72,9 @@ public sealed class TasksController(
 
     public sealed record TaskProcessedDataCellResponse(
         [property: JsonPropertyName("value")] double? Value,
-        [property: JsonPropertyName("is_outlier")] bool IsOutlier);
+        [property: JsonPropertyName("is_outlier")] bool IsOutlier,
+        [property: JsonPropertyName("is_confirmed_outlier")] bool IsConfirmedOutlier,
+        [property: JsonPropertyName("review_status")] string? ReviewStatus);
 
     public sealed record TaskProcessedDataRowResponse(
         [property: JsonPropertyName("ts")] string Ts,
@@ -797,7 +799,11 @@ public sealed class TasksController(
                 r.Ts,
                 r.Cells.ToDictionary(
                     kv => kv.Key,
-                    kv => new TaskProcessedDataCellResponse(kv.Value.Value, kv.Value.IsOutlier),
+                    kv => new TaskProcessedDataCellResponse(
+                        kv.Value.Value,
+                        kv.Value.IsOutlier,
+                        kv.Value.IsConfirmedOutlier,
+                        kv.Value.ReviewStatus),
                     StringComparer.Ordinal))).ToArray(),
             d.Total,
             d.Page,
