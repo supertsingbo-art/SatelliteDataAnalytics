@@ -20,7 +20,9 @@ public sealed class PreprocessPipeline(
     IFilterRuleEvaluator filterEvaluator,
     IMongoPkgSeriesReader mongoPkgReader,
     IMongoRawSeriesReader mongoRawReader,
+    IConditionHistoryProvider conditionHistoryProvider,
     RuleTreeSegmentEvaluator ruleTreeEvaluator,
+    ConditionRangeEvaluator conditionRangeEvaluator,
     IOutlierDetector outlierDetector,
     IClickHouseGateway clickHouse,
     IHqParamMetadataRepository hqMetadata,
@@ -148,6 +150,11 @@ public sealed class PreprocessPipeline(
             .ToDictionary(p => p.ParamId, StringComparer.Ordinal);
 
         var (refTasook, refSatellite) = ResolveReferenceSatellite(filter.ConfigJson, run.TasookNo, run.SatelliteNo);
+        var refSatelliteCache = string.Equals(refTasook, run.TasookNo, StringComparison.Ordinal)
+                                && string.Equals(refSatellite, run.SatelliteNo, StringComparison.Ordinal)
+            ? satellite
+            : await assetCache.GetSatelliteAsync(refTasook, refSatellite, cancellationToken)
+                ?? throw new InvalidOperationException($"参考星缓存不存在：{refTasook}/{refSatellite}");
         var refParameters = string.Equals(refTasook, run.TasookNo, StringComparison.Ordinal)
                             && string.Equals(refSatellite, run.SatelliteNo, StringComparison.Ordinal)
             ? parameters
@@ -162,8 +169,21 @@ public sealed class PreprocessPipeline(
             : 0;
 
         IReadOnlyList<TimeRange> validRanges;
-        if (filter.ConfigJson.TryGetProperty("ruleTree", out var ruleTree)
-            && RuleTreeSegmentEvaluator.HasConditionParameters(ruleTree))
+        if (ConditionConfigParser.TryParse(filter.ConfigJson, out var conditionConfig)
+            && conditionConfig is not null)
+        {
+            validRanges = await EvaluateByConditionConfigAsync(
+                conditionConfig,
+                window,
+                durationSeconds,
+                refTasook,
+                refSatellite,
+                refSatelliteCache.DbStage,
+                refParameters,
+                cancellationToken);
+        }
+        else if (filter.ConfigJson.TryGetProperty("ruleTree", out var ruleTree)
+                 && RuleTreeSegmentEvaluator.HasConditionParameters(ruleTree))
         {
             var conditionParamIds = RuleTreeSegmentEvaluator.CollectConditionParamIds(ruleTree);
             var conditionSeries = new Dictionary<string, IReadOnlyList<RawSeriesPoint>>(StringComparer.Ordinal);
@@ -395,6 +415,112 @@ public sealed class PreprocessPipeline(
         await taskRuns.UpdateAsync(run, cancellationToken);
 
         scheduler.EnqueueAlgorithm(runId);
+    }
+
+    private async Task<IReadOnlyList<TimeRange>> EvaluateByConditionConfigAsync(
+        FilterConditionConfig conditionConfig,
+        EffectiveWindow window,
+        int durationSeconds,
+        string referenceTasookNo,
+        string referenceSatelliteNo,
+        string? referenceDbStage,
+        IReadOnlyDictionary<string, ParamCache> referenceParameters,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<TimeRange> paramRanges = [new TimeRange(window.Start, window.End)];
+        if (conditionConfig.Parameters.Count > 0)
+        {
+            var lookups = new List<ParameterHistoryLookup>();
+            foreach (var parameter in conditionConfig.Parameters)
+            {
+                if (!referenceParameters.TryGetValue(parameter.ParamId, out var meta))
+                {
+                    throw new InvalidOperationException(
+                        $"conditionConfig 引用参数不存在于参考星缓存：{referenceTasookNo}/{referenceSatelliteNo} paramId={parameter.ParamId}");
+                }
+
+                if (meta.PrmSysId is not int prmSysId)
+                {
+                    throw new InvalidOperationException($"参数 {parameter.ParamId} 缺少 prm_sys_id，无法查询历史时序");
+                }
+
+                lookups.Add(new ParameterHistoryLookup(
+                    parameter.ParamId,
+                    meta.ParaId,
+                    prmSysId));
+            }
+
+            var conditionSeries = await conditionHistoryProvider.QueryParameterSeriesAsync(
+                referenceTasookNo,
+                referenceSatelliteNo,
+                referenceDbStage,
+                window.Start,
+                window.End,
+                lookups,
+                cancellationToken);
+
+            paramRanges = conditionRangeEvaluator.EvaluateParameterRanges(
+                conditionConfig,
+                window,
+                conditionSeries);
+        }
+
+        IReadOnlyList<TimeRange> instructionRanges = [new TimeRange(window.Start, window.End)];
+        if (conditionConfig.StartCommands.Count > 0 || conditionConfig.EndCommands.Count > 0)
+        {
+            var commands = (await assetCache.GetCommandsAsync(referenceTasookNo, referenceSatelliteNo, cancellationToken))
+                .ToDictionary(x => x.CommandId, x => x, StringComparer.Ordinal);
+            var commandLookups = new List<InstructionHistoryLookup>();
+            foreach (var instruction in conditionConfig.StartCommands.Concat(conditionConfig.EndCommands))
+            {
+                if (!int.TryParse(instruction.CommandId, out var cmdId))
+                {
+                    continue;
+                }
+
+                var channelId = instruction.ChannelId;
+                if (channelId <= 0
+                    && commands.TryGetValue(instruction.CommandId, out var commandMeta)
+                    && commandMeta.CmdSysId is int cmdSysId)
+                {
+                    channelId = cmdSysId;
+                }
+
+                commandLookups.Add(new InstructionHistoryLookup(
+                    instruction.CommandId,
+                    cmdId,
+                    Math.Max(0, channelId)));
+            }
+
+            commandLookups = commandLookups
+                .GroupBy(x => x.CommandId, StringComparer.Ordinal)
+                .Select(x => x.First())
+                .ToList();
+            var history = await conditionHistoryProvider.QueryInstructionHistoryAsync(
+                referenceTasookNo,
+                referenceSatelliteNo,
+                referenceDbStage,
+                window.Start,
+                window.End,
+                commandLookups,
+                cancellationToken);
+            instructionRanges = conditionRangeEvaluator.EvaluateInstructionRanges(
+                conditionConfig,
+                window,
+                history);
+        }
+
+        var ranges = ConditionRangeEvaluator.IntersectRanges(paramRanges, instructionRanges);
+        ranges = ConditionRangeEvaluator.ClipToWindow(ranges, window);
+        if (durationSeconds > 0)
+        {
+            var minSpan = TimeSpan.FromSeconds(durationSeconds);
+            ranges = ranges
+                .Where(x => x.End - x.Start >= minSpan)
+                .ToArray();
+        }
+
+        return ranges;
     }
 
     private async Task<IReadOnlyList<RawSeriesPoint>> ReadParamSeriesAsync(

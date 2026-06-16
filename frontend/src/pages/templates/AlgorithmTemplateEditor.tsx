@@ -46,7 +46,7 @@ import {
   ParamCache,
   formatParamCacheLabel,
   paramCacheId,
-  SatelliteCache,
+  SatelliteListItem,
   TestPhase
 } from '@/api/types';
 
@@ -117,7 +117,7 @@ function EditorInner() {
 
   const [loading, setLoading] = useState(true);
   const [registry, setRegistry] = useState<AlgorithmRegistryEntry[]>([]);
-  const [satellites, setSatellites] = useState<SatelliteCache[]>([]);
+  const [satellites, setSatellites] = useState<SatelliteListItem[]>([]);
 
   const [templateName, setTemplateName] = useState('');
   const [description, setDescription] = useState<string | undefined>(undefined);
@@ -729,7 +729,7 @@ function PropertiesPanel({
   node: Node<NodeDataPayload> | null;
   editable: boolean;
   registry: AlgorithmRegistryEntry[];
-  satellites: SatelliteCache[];
+  satellites: SatelliteListItem[];
   onChange: (patch: Partial<NodeMeta>) => void;
 }) {
   const [paramOptions, setParamOptions] = useState<ParamCache[]>([]);
@@ -936,7 +936,7 @@ function TrialRunDialog({
   onClose: () => void;
   templateId?: string;
   version?: number;
-  satellites: SatelliteCache[];
+  satellites: SatelliteListItem[];
 }) {
   const [tasookNo, setTasookNo] = useState<string | undefined>();
   const [satelliteNo, setSatelliteNo] = useState<string | undefined>();

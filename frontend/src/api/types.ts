@@ -222,7 +222,7 @@ export interface FilterTemplateResolvedDetail {
   resolutionWarnings: string[];
 }
 
-export type RuleOperator = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'between';
+export type RuleOperator = '>' | '>=' | '<' | '<=' | '=' | '==' | '!=' | 'between';
 
 export interface RuleLeaf {
   paramId: string;
@@ -236,6 +236,32 @@ export interface RuleGroup {
 }
 
 export type RuleNode = RuleLeaf | RuleGroup;
+
+export interface InstructionConditionItem {
+  conditionId: string;
+  commandId: string;
+  commandCode?: string;
+  commandName?: string;
+  channelId?: number;
+}
+
+export interface ParameterConditionItem {
+  conditionId: string;
+  paramId: string;
+  operator: Exclude<RuleOperator, '=='>;
+  value: number | string | (number | string)[];
+}
+
+export interface ConditionConfig {
+  instructions?: {
+    startRelation?: 'AND' | 'OR';
+    endRelation?: 'AND' | 'OR';
+    startCommands?: InstructionConditionItem[];
+    endCommands?: InstructionConditionItem[];
+  };
+  parameters?: ParameterConditionItem[];
+  expression?: string;
+}
 
 export interface FilterTargetParam {
   paramId: string;
@@ -264,7 +290,10 @@ export interface FilterTemplateConfigJson {
     bufferBeforeSeconds?: number;
     bufferAfterSeconds?: number;
   };
-  ruleTree: RuleNode;
+  /** 新版条件配置：指令 + 参数 + 表达式。 */
+  conditionConfig?: ConditionConfig;
+  /** 兼容旧版 ruleTree。 */
+  ruleTree?: RuleNode;
   durationSeconds?: number;
   targetParams: FilterTargetParam[];
 }

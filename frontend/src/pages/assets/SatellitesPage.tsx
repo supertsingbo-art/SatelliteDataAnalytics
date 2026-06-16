@@ -232,7 +232,7 @@ export function SatellitesPage() {
     }
   };
 
-  const triggerSyncSingle = async (record: SatelliteCache) => {
+  const triggerSyncSingle = async (record: SatelliteListItem) => {
     const result = await assetsApi.syncSatellite(record.tasookNo, record.satelliteNo);
     if (result.status === 'Succeeded') {
       message.success(`${record.tasookNo}/${record.satelliteNo} 同步完成`);
@@ -374,7 +374,7 @@ export function SatellitesPage() {
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
         本页展示 satellite_cache、param_cache、command_cache、test_batch_cache 的同步快照（默认由
         AssetCache:UsePostgreSql=true 写入 ConnectionStrings:Postgres 对应库，见 6.1）。流程为：全量卫星 → 每星参数
-        （POST /api/mass-data/basic/parameters）→ 每星指令（POST /api/mass-data/basic/commands）→ 每星测试阶段 → 每星
+        （POST /api/v2/mass-data/basic/parameters）→ 每星指令（POST /api/v2/mass-data/basic/commands）→ 每星测试阶段 → 每星
         Mongo 配置。两列「参数 / 指令同步总量」为最近一次成功写入 PostgreSQL 缓存表的条数。禁用卫星后不可作为筛选模板参考卫星，全量同步不会自动改回启用。
       </Text>
 

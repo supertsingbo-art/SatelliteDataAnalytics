@@ -11,9 +11,14 @@ public static class FilterTemplateValidator
     private static readonly HashSet<string> AllowedTimeWindowModes = new(StringComparer.Ordinal) { "TEST_BATCH", "CUSTOM" };
     private static readonly HashSet<string> AllowedRuleOperators = new(StringComparer.Ordinal)
     {
-        ">", ">=", "<", "<=", "==", "!=", "between"
+        ">", ">=", "<", "<=", "=", "==", "!=", "between"
+    };
+    private static readonly HashSet<string> AllowedConditionOperators = new(StringComparer.Ordinal)
+    {
+        ">", ">=", "<", "<=", "=", "!=", "between"
     };
     private static readonly HashSet<string> AllowedRuleLogics = new(StringComparer.Ordinal) { "AND", "OR", "NOT" };
+    private static readonly HashSet<string> AllowedInstructionRelations = new(StringComparer.Ordinal) { "AND", "OR" };
     private static readonly HashSet<string> AllowedOutlierMethods = new(StringComparer.Ordinal)
     {
         "THRESHOLD", "SIGMA", "IQR", "MAD", "HAMPEL"
@@ -30,9 +35,194 @@ public static class FilterTemplateValidator
 
         ValidateScope(configJson);
         ValidateTimeWindow(configJson);
-        ValidateRuleTree(configJson);
+        var hasConditionConfig = configJson.TryGetProperty("conditionConfig", out var conditionConfig)
+                                 && conditionConfig.ValueKind == JsonValueKind.Object;
+        var hasRuleTree = configJson.TryGetProperty("ruleTree", out _);
+        if (hasConditionConfig)
+        {
+            ValidateConditionConfig(conditionConfig);
+        }
+        else if (hasRuleTree)
+        {
+            ValidateRuleTree(configJson);
+        }
+        else
+        {
+            throw Invalid("conditionConfig / ruleTree 至少需要配置一个");
+        }
+
         ValidateDuration(configJson);
         ValidateTargetParams(configJson);
+    }
+
+    private static void ValidateConditionConfig(JsonElement conditionConfig)
+    {
+        ValidateInstructionConfig(conditionConfig);
+
+        var conditionIds = new HashSet<string>(StringComparer.Ordinal);
+        if (conditionConfig.TryGetProperty("parameters", out var parameters))
+        {
+            if (parameters.ValueKind != JsonValueKind.Array)
+            {
+                throw Invalid("conditionConfig.parameters 必须是数组");
+            }
+
+            foreach (var item in parameters.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    throw Invalid("conditionConfig.parameters[] 必须是对象");
+                }
+
+                if (!item.TryGetProperty("conditionId", out var conditionIdNode)
+                    || conditionIdNode.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(conditionIdNode.GetString()))
+                {
+                    throw Invalid("conditionConfig.parameters[].conditionId 必须是非空字符串");
+                }
+
+                var conditionId = conditionIdNode.GetString()!.Trim();
+                if (!conditionIds.Add(conditionId))
+                {
+                    throw Invalid($"conditionConfig.parameters 存在重复 conditionId: {conditionId}");
+                }
+
+                if (!item.TryGetProperty("paramId", out var paramIdNode)
+                    || paramIdNode.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(paramIdNode.GetString()))
+                {
+                    throw Invalid("conditionConfig.parameters[].paramId 必须是非空字符串");
+                }
+
+                if (!item.TryGetProperty("operator", out var opNode)
+                    || opNode.ValueKind != JsonValueKind.String)
+                {
+                    throw Invalid("conditionConfig.parameters[].operator 必须存在");
+                }
+
+                var op = opNode.GetString() ?? "";
+                if (!AllowedConditionOperators.Contains(op))
+                {
+                    throw Invalid($"conditionConfig.parameters[].operator '{op}' 不在允许列表 [{string.Join(',', AllowedConditionOperators)}]");
+                }
+
+                if (!item.TryGetProperty("value", out var value)
+                    || (value.ValueKind != JsonValueKind.Number && value.ValueKind != JsonValueKind.String && value.ValueKind != JsonValueKind.Array))
+                {
+                    throw Invalid("conditionConfig.parameters[].value 必须是 number/string/array");
+                }
+
+                if (string.Equals(op, "between", StringComparison.Ordinal)
+                    && (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 2))
+                {
+                    throw Invalid("conditionConfig.parameters[].operator='between' 时，value 必须为长度 2 的数组");
+                }
+            }
+        }
+
+        var expression = conditionConfig.TryGetProperty("expression", out var expNode) && expNode.ValueKind == JsonValueKind.String
+            ? (expNode.GetString() ?? "").Trim()
+            : string.Empty;
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return;
+        }
+
+        if (conditionIds.Count == 0)
+        {
+            throw Invalid("conditionConfig.expression 不为空时，conditionConfig.parameters 不能为空");
+        }
+
+        if (!ConditionExpressionParser.TryParseToPostfix(expression, out var postfix, out var parseError))
+        {
+            throw Invalid($"conditionConfig.expression 语法错误: {parseError}");
+        }
+
+        if (!ConditionExpressionParser.ValidateIdentifiers(postfix, conditionIds, out var idError))
+        {
+            throw Invalid($"conditionConfig.expression 校验失败: {idError}");
+        }
+    }
+
+    private static void ValidateInstructionConfig(JsonElement conditionConfig)
+    {
+        if (!conditionConfig.TryGetProperty("instructions", out var ins))
+        {
+            return;
+        }
+
+        if (ins.ValueKind != JsonValueKind.Object)
+        {
+            throw Invalid("conditionConfig.instructions 必须是对象");
+        }
+
+        ValidateInstructionRelation(ins, "startRelation");
+        ValidateInstructionRelation(ins, "endRelation");
+        ValidateInstructionCommandArray(ins, "startCommands");
+        ValidateInstructionCommandArray(ins, "endCommands");
+    }
+
+    private static void ValidateInstructionRelation(JsonElement parent, string property)
+    {
+        if (!parent.TryGetProperty(property, out var value))
+        {
+            return;
+        }
+
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            throw Invalid($"conditionConfig.instructions.{property} 必须是字符串");
+        }
+
+        var relation = value.GetString() ?? "";
+        if (!AllowedInstructionRelations.Contains(relation))
+        {
+            throw Invalid($"conditionConfig.instructions.{property} 仅允许 AND / OR");
+        }
+    }
+
+    private static void ValidateInstructionCommandArray(JsonElement parent, string property)
+    {
+        if (!parent.TryGetProperty(property, out var commands))
+        {
+            return;
+        }
+
+        if (commands.ValueKind != JsonValueKind.Array)
+        {
+            throw Invalid($"conditionConfig.instructions.{property} 必须是数组");
+        }
+
+        foreach (var item in commands.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                throw Invalid($"conditionConfig.instructions.{property}[] 必须是对象");
+            }
+
+            if (!item.TryGetProperty("conditionId", out var conditionIdNode)
+                || conditionIdNode.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(conditionIdNode.GetString()))
+            {
+                throw Invalid($"conditionConfig.instructions.{property}[].conditionId 必须是非空字符串");
+            }
+
+            if (!item.TryGetProperty("commandId", out var commandId))
+            {
+                throw Invalid($"conditionConfig.instructions.{property}[].commandId 必须存在");
+            }
+
+            if (commandId.ValueKind != JsonValueKind.String && commandId.ValueKind != JsonValueKind.Number)
+            {
+                throw Invalid($"conditionConfig.instructions.{property}[].commandId 必须是字符串或数字");
+            }
+
+            if (item.TryGetProperty("channelId", out var channelId)
+                && (channelId.ValueKind != JsonValueKind.Number || channelId.GetInt32() < 0))
+            {
+                throw Invalid($"conditionConfig.instructions.{property}[].channelId 必须是非负整数");
+            }
+        }
     }
 
     private static void ValidateScope(JsonElement root)

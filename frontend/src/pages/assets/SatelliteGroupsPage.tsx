@@ -23,7 +23,7 @@ import { ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant
 import dayjs from 'dayjs';
 import { groupsApi, CreateSatelliteGroupRequest } from '@/api/groups';
 import { assetsApi } from '@/api/assets';
-import { SatelliteCache, SatelliteGroupMemberDto, SatelliteGroupNode } from '@/api/types';
+import { SatelliteGroupMemberDto, SatelliteGroupNode, SatelliteListItem } from '@/api/types';
 
 const { Text } = Typography;
 
@@ -87,7 +87,7 @@ export function SatelliteGroupsPage() {
   const [form] = Form.useForm<CreateSatelliteGroupRequest & { sortOrder: number }>();
 
   const [memberModalOpen, setMemberModalOpen] = useState(false);
-  const [allSatellites, setAllSatellites] = useState<SatelliteCache[]>([]);
+  const [allSatellites, setAllSatellites] = useState<SatelliteListItem[]>([]);
   const [pickedSatellites, setPickedSatellites] = useState<string[]>([]);
 
   const reload = async () => {
@@ -383,7 +383,7 @@ export function SatelliteGroupsPage() {
         destroyOnClose
       >
         <Text type="secondary">每颗卫星只能归属一个分组；选中后会从原分组迁移到当前分组。</Text>
-        <Table<SatelliteCache>
+        <Table<SatelliteListItem>
           rowKey={(record) => `${record.tasookNo}||${record.satelliteNo}`}
           dataSource={allSatellites}
           pagination={{ pageSize: 8 }}

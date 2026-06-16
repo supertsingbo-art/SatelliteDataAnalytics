@@ -4,7 +4,7 @@ using SatelliteData.Domain.Assets;
 namespace SatelliteData.Infrastructure.HttpClients;
 
 /// <summary>
-/// 将海量 <c>POST /api/mass-data/basic/parameters</c> 单条记录映射为 <see cref="ParamCache"/>。
+/// 将海量 <c>POST /api/v2/mass-data/basic/parameters</c> 单条记录映射为 <see cref="ParamCache"/>。
 /// 文档主字段落 <see cref="ParamCache"/> 各列；其余字段保留在 <see cref="ParamCache.RawJson"/>。
 /// </summary>
 internal static class MassDataParameterMapper

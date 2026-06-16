@@ -21,6 +21,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IMongoPkgSeriesReader, MongoPkgSeriesReader>();
         services.AddSingleton<IFilterRuleEvaluator, FilterRuleEvaluator>();
         services.AddSingleton<RuleTreeSegmentEvaluator>();
+        services.AddSingleton<ConditionRangeEvaluator>();
         services.AddSingleton<IOutlierDetector, DefaultOutlierDetector>();
 
         var po = configuration.GetSection(PipelineOptions.SectionName).Get<PipelineOptions>() ?? new PipelineOptions();

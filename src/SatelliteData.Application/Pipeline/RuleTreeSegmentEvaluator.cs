@@ -399,7 +399,7 @@ public sealed class RuleTreeSegmentEvaluator(ILogger<RuleTreeSegmentEvaluator> l
             ">=" => actual >= ReadNumber(threshold),
             "<" => actual < ReadNumber(threshold),
             "<=" => actual <= ReadNumber(threshold),
-            "==" => Math.Abs(actual - ReadNumber(threshold)) < 1e-9,
+            "=" or "==" => Math.Abs(actual - ReadNumber(threshold)) < 1e-9,
             "!=" => Math.Abs(actual - ReadNumber(threshold)) >= 1e-9,
             "between" when threshold.ValueKind == JsonValueKind.Array && threshold.GetArrayLength() >= 2 =>
                 actual >= ReadNumber(threshold[0]) && actual <= ReadNumber(threshold[1]),

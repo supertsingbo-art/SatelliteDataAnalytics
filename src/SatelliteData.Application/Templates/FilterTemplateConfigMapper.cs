@@ -11,6 +11,29 @@ public static class FilterTemplateConfigMapper
 {
     public static void CollectParamIds(JsonElement config, HashSet<string> destination)
     {
+        if (config.TryGetProperty("conditionConfig", out var conditionConfig)
+            && conditionConfig.ValueKind == JsonValueKind.Object
+            && conditionConfig.TryGetProperty("parameters", out var parameters)
+            && parameters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in parameters.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (item.TryGetProperty("paramId", out var pid) && pid.ValueKind == JsonValueKind.String)
+                {
+                    var s = pid.GetString();
+                    if (!string.IsNullOrWhiteSpace(s))
+                    {
+                        destination.Add(s.Trim());
+                    }
+                }
+            }
+        }
+
         if (config.TryGetProperty("ruleTree", out var ruleTree))
         {
             CollectFromRuleNode(ruleTree, destination);

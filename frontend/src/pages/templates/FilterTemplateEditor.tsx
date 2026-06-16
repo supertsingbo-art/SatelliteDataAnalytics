@@ -23,30 +23,46 @@ import { groupsApi } from '@/api/groups';
 import { assetsApi } from '@/api/assets';
 import { ParamCacheSelect } from '@/components/ParamCacheSelect';
 import {
+  CommandCache,
   FilterTargetParam,
   FilterTemplateConfigJson,
   ParamCache,
+  formatCommandCacheLabel,
   formatParamCacheLabel,
   paramCacheId,
   RuleLeaf,
+  RuleNode,
   RuleOperator,
-  SatelliteCache,
+  SatelliteListItem,
   SatelliteGroupMemberDto,
   SatelliteGroupNode
 } from '@/api/types';
 
 const { Text } = Typography;
 
-interface FlatRuleRow extends RuleLeaf {
+type ConditionOperator = Exclude<RuleOperator, '=='>;
+
+interface ParameterConditionRow {
   rowId: string;
+  conditionId: string;
+  paramId: string;
+  operator: ConditionOperator;
+  value: number | string | (number | string)[];
 }
 
-const OPERATOR_OPTIONS: { value: RuleOperator; label: string }[] = [
+interface InstructionConditionRow {
+  rowId: string;
+  conditionId: string;
+  commandId: string;
+  channelId: number;
+}
+
+const OPERATOR_OPTIONS: { value: ConditionOperator; label: string }[] = [
   { value: '>', label: '>' },
   { value: '>=', label: '≥' },
   { value: '<', label: '<' },
   { value: '<=', label: '≤' },
-  { value: '==', label: '=' },
+  { value: '=', label: '=' },
   { value: '!=', label: '≠' },
   { value: 'between', label: 'between' }
 ];
@@ -61,15 +77,118 @@ const OUTLIER_METHODS: { value: OutlierMethod; label: string }[] = [
   { value: 'HAMPEL', label: 'Hampel' }
 ];
 
-function flattenRules(root: FilterTemplateConfigJson['ruleTree']): FlatRuleRow[] {
-  if ('paramId' in root) {
-    return [{ ...root, rowId: cryptoRandomId() }];
+function cryptoRandomId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function normalizeOperator(op: RuleOperator): ConditionOperator {
+  return op === '==' ? '=' : op;
+}
+
+function flattenRules(root?: RuleNode): RuleLeaf[] {
+  if (!root) {
+    return [];
   }
+
+  if ('paramId' in root) {
+    return [root];
+  }
+
   return root.children.flatMap((child) => flattenRules(child));
 }
 
-function cryptoRandomId(): string {
-  return Math.random().toString(36).slice(2, 10);
+function buildDefaultExpression(conditionIds: string[]): string {
+  return conditionIds.join(' && ');
+}
+
+function validateExpression(
+  expression: string,
+  allowedIds: Set<string>
+): { valid: boolean; error?: string } {
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    return { valid: true };
+  }
+
+  const tokens: string[] = [];
+  for (let i = 0; i < trimmed.length; ) {
+    const ch = trimmed[i];
+    if (!ch) {
+      break;
+    }
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (ch === '(' || ch === ')') {
+      tokens.push(ch);
+      i += 1;
+      continue;
+    }
+    if (ch === '&' && trimmed[i + 1] === '&') {
+      tokens.push('&&');
+      i += 2;
+      continue;
+    }
+    if (ch === '|' && trimmed[i + 1] === '|') {
+      tokens.push('||');
+      i += 2;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(ch)) {
+      const start = i;
+      i += 1;
+      while (i < trimmed.length && /[A-Za-z0-9_]/.test(trimmed[i] || '')) {
+        i += 1;
+      }
+      const id = trimmed.slice(start, i);
+      tokens.push(id);
+      continue;
+    }
+    return { valid: false, error: `表达式存在非法字符：${ch}` };
+  }
+
+  let expectOperand = true;
+  let paren = 0;
+  for (const token of tokens) {
+    if (token === '(') {
+      if (!expectOperand) {
+        return { valid: false, error: "表达式中 '(' 前缺少逻辑符" };
+      }
+      paren += 1;
+      continue;
+    }
+    if (token === ')') {
+      if (expectOperand || paren <= 0) {
+        return { valid: false, error: "表达式括号不匹配或 ')' 位置不合法" };
+      }
+      paren -= 1;
+      continue;
+    }
+    if (token === '&&' || token === '||') {
+      if (expectOperand) {
+        return { valid: false, error: `逻辑符 ${token} 前缺少条件项` };
+      }
+      expectOperand = true;
+      continue;
+    }
+
+    if (!expectOperand) {
+      return { valid: false, error: `条件项 ${token} 前缺少逻辑符` };
+    }
+    if (!allowedIds.has(token)) {
+      return { valid: false, error: `表达式引用未定义条件ID：${token}` };
+    }
+    expectOperand = false;
+  }
+
+  if (expectOperand) {
+    return { valid: false, error: '表达式不能以逻辑符结尾' };
+  }
+  if (paren !== 0) {
+    return { valid: false, error: '表达式括号不匹配' };
+  }
+  return { valid: true };
 }
 
 export function FilterTemplateEditor() {
@@ -81,10 +200,11 @@ export function FilterTemplateEditor() {
 
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState<SatelliteGroupNode[]>([]);
-  const [satellites, setSatellites] = useState<SatelliteCache[]>([]);
+  const [satellites, setSatellites] = useState<SatelliteListItem[]>([]);
   const [groupMembers, setGroupMembers] = useState<SatelliteGroupMemberDto[]>([]);
   const [paramOptions, setParamOptions] = useState<ParamCache[]>([]);
-  const [paramOptionsLoading, setParamOptionsLoading] = useState(false);
+  const [commandOptions, setCommandOptions] = useState<CommandCache[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
 
   const [form] = Form.useForm<{
     templateName: string;
@@ -99,8 +219,13 @@ export function FilterTemplateEditor() {
   const watchedGroupId = Form.useWatch('groupId', form);
   const watchedRefKey = Form.useWatch('referenceSatelliteKey', form);
 
-  const [rows, setRows] = useState<FlatRuleRow[]>([]);
-  const [logicOp, setLogicOp] = useState<'AND' | 'OR'>('AND');
+  const [parameterRows, setParameterRows] = useState<ParameterConditionRow[]>([]);
+  const [startCommands, setStartCommands] = useState<InstructionConditionRow[]>([]);
+  const [endCommands, setEndCommands] = useState<InstructionConditionRow[]>([]);
+  const [startRelation, setStartRelation] = useState<'AND' | 'OR'>('OR');
+  const [endRelation, setEndRelation] = useState<'AND' | 'OR'>('OR');
+  const [expression, setExpression] = useState('');
+
   const [targets, setTargets] = useState<FilterTargetParam[]>([]);
   const [editable, setEditable] = useState(true);
   const [status, setStatus] = useState<string>('Draft');
@@ -122,8 +247,7 @@ export function FilterTemplateEditor() {
           setEditable(detail.view.status === 'Draft');
           const refT = detail.configJson.scope.referenceTasookNo;
           const refS = detail.configJson.scope.referenceSatelliteNo;
-          const refKey =
-            refT && refS ? `${refT}||${refS}` : undefined;
+          const refKey = refT && refS ? `${refT}||${refS}` : undefined;
           const mems = await groupsApi.listMembers(detail.view.groupId, true);
           setGroupMembers(mems);
           form.setFieldsValue({
@@ -135,11 +259,51 @@ export function FilterTemplateEditor() {
             bufferAfterSeconds: detail.configJson.timeWindow.bufferAfterSeconds ?? 0,
             durationSeconds: detail.configJson.durationSeconds ?? 10
           });
-          setRows(flattenRules(detail.configJson.ruleTree));
-          setTargets(detail.configJson.targetParams);
-          if ('op' in detail.configJson.ruleTree) {
-            setLogicOp(detail.configJson.ruleTree.op === 'OR' ? 'OR' : 'AND');
+
+          const cc = detail.configJson.conditionConfig;
+          if (cc) {
+            const paramsRows = (cc.parameters ?? []).map((item) => ({
+              rowId: cryptoRandomId(),
+              conditionId: item.conditionId,
+              paramId: item.paramId,
+              operator: item.operator,
+              value: item.value
+            }));
+            setParameterRows(paramsRows);
+            setStartRelation(cc.instructions?.startRelation ?? 'OR');
+            setEndRelation(cc.instructions?.endRelation ?? 'OR');
+            setStartCommands(
+              (cc.instructions?.startCommands ?? []).map((item) => ({
+                rowId: cryptoRandomId(),
+                conditionId: item.conditionId,
+                commandId: item.commandId,
+                channelId: item.channelId ?? 0
+              }))
+            );
+            setEndCommands(
+              (cc.instructions?.endCommands ?? []).map((item) => ({
+                rowId: cryptoRandomId(),
+                conditionId: item.conditionId,
+                commandId: item.commandId,
+                channelId: item.channelId ?? 0
+              }))
+            );
+            setExpression(cc.expression ?? buildDefaultExpression(paramsRows.map((r) => r.conditionId)));
+          } else {
+            const oldRows = flattenRules(detail.configJson.ruleTree).map((leaf, index) => ({
+              rowId: cryptoRandomId(),
+              conditionId: `P${index + 1}`,
+              paramId: leaf.paramId,
+              operator: normalizeOperator(leaf.operator),
+              value: leaf.value
+            }));
+            setParameterRows(oldRows);
+            setExpression(buildDefaultExpression(oldRows.map((r) => r.conditionId)));
+            setStartCommands([]);
+            setEndCommands([]);
           }
+
+          setTargets(detail.configJson.targetParams);
           if (!refKey) {
             message.warning('该版本 config 缺少参考卫星，请补选「适用数据范围」中的具体星后再保存。');
           }
@@ -167,7 +331,7 @@ export function FilterTemplateEditor() {
         setLoading(false);
       }
     })();
-  }, [templateId, version]);
+  }, [templateId, version, isNew, form]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,13 +342,13 @@ export function FilterTemplateEditor() {
         }
         return;
       }
-      const m = await groupsApi.listMembers(watchedGroupId, true);
+      const members = await groupsApi.listMembers(watchedGroupId, true);
       if (cancelled) {
         return;
       }
-      setGroupMembers(m);
+      setGroupMembers(members);
       const currentKey = form.getFieldValue('referenceSatelliteKey') as string | undefined;
-      if (currentKey && !m.some((x) => `${x.tasookNo}||${x.satelliteNo}` === currentKey)) {
+      if (currentKey && !members.some((m) => `${m.tasookNo}||${m.satelliteNo}` === currentKey)) {
         form.setFieldsValue({ referenceSatelliteKey: undefined });
       }
     })();
@@ -198,29 +362,35 @@ export function FilterTemplateEditor() {
     (async () => {
       if (!watchedRefKey) {
         setParamOptions([]);
+        setCommandOptions([]);
         return;
       }
-      const parts = watchedRefKey.split('||');
-      const t = parts[0];
-      const s = parts[1];
-      if (!t || !s) {
+
+      const [taskNo, satNo] = watchedRefKey.split('||');
+      if (!taskNo || !satNo) {
         setParamOptions([]);
+        setCommandOptions([]);
         return;
       }
-      setParamOptionsLoading(true);
+
+      setOptionsLoading(true);
       try {
-        const result = await assetsApi.listAllParams(t, s);
+        const [paramResult, commandResult] = await Promise.all([
+          assetsApi.listAllParams(taskNo, satNo),
+          assetsApi.listCommands(taskNo, satNo, { pageNo: 1, pageSize: 2000 })
+        ]);
         if (!cancelled) {
-          setParamOptions(result.items);
-          if (result.total > result.items.length) {
+          setParamOptions(paramResult.items);
+          setCommandOptions(commandResult.items);
+          if (commandResult.total > commandResult.items.length) {
             message.warning(
-              `参数共 ${result.total} 条，仅加载了 ${result.items.length} 条，请联系管理员提高 unpaged 上限`
+              `指令缓存共 ${commandResult.total} 条，仅加载 ${commandResult.items.length} 条，请扩大分页上限`
             );
           }
         }
       } finally {
         if (!cancelled) {
-          setParamOptionsLoading(false);
+          setOptionsLoading(false);
         }
       }
     })();
@@ -241,6 +411,15 @@ export function FilterTemplateEditor() {
     [groupMembers, satellites]
   );
 
+  const commandSelectOptions = useMemo(
+    () =>
+      commandOptions.map((cmd) => ({
+        value: String(cmd.cmdId),
+        label: formatCommandCacheLabel(cmd)
+      })),
+    [commandOptions]
+  );
+
   const buildPayload = (): FilterTemplateConfigJson => {
     const groupId = form.getFieldValue('groupId');
     const refKey = form.getFieldValue('referenceSatelliteKey') as string | undefined;
@@ -248,20 +427,45 @@ export function FilterTemplateEditor() {
       throw new Error('MISSING_REF_SAT');
     }
     const [refTasook, refSat] = refKey.split('||');
-    const filledRows = rows.filter((r) => r.paramId.trim() !== '');
-    const ruleTree =
-      filledRows.length === 0
-        ? { op: 'AND' as const, children: [] }
-        : filledRows.length === 1
-          ? { paramId: filledRows[0].paramId, operator: filledRows[0].operator, value: filledRows[0].value }
-          : {
-              op: logicOp,
-              children: filledRows.map((row) => ({
-                paramId: row.paramId,
-                operator: row.operator,
-                value: row.value
-              }))
-            };
+    const cleanedParams = parameterRows
+      .map((row) => ({
+        conditionId: row.conditionId.trim(),
+        paramId: row.paramId.trim(),
+        operator: row.operator,
+        value: row.value
+      }))
+      .filter((row) => row.conditionId && row.paramId);
+    const cleanedStart = startCommands
+      .map((row) => ({
+        conditionId: row.conditionId.trim(),
+        commandId: row.commandId.trim(),
+        channelId: row.channelId
+      }))
+      .filter((row) => row.conditionId && row.commandId);
+    const cleanedEnd = endCommands
+      .map((row) => ({
+        conditionId: row.conditionId.trim(),
+        commandId: row.commandId.trim(),
+        channelId: row.channelId
+      }))
+      .filter((row) => row.conditionId && row.commandId);
+
+    const conditionIds = new Set<string>();
+    for (const row of cleanedParams) {
+      if (conditionIds.has(row.conditionId)) {
+        throw new Error(`DUPLICATE_CONDITION_ID:${row.conditionId}`);
+      }
+      conditionIds.add(row.conditionId);
+    }
+
+    const expressionText = expression.trim();
+    if (expressionText) {
+      const validation = validateExpression(expressionText, conditionIds);
+      if (!validation.valid) {
+        throw new Error(validation.error || 'INVALID_EXPRESSION');
+      }
+    }
+
     return {
       scope: {
         groupId,
@@ -273,7 +477,16 @@ export function FilterTemplateEditor() {
         bufferBeforeSeconds: form.getFieldValue('bufferBeforeSeconds') ?? 0,
         bufferAfterSeconds: form.getFieldValue('bufferAfterSeconds') ?? 0
       },
-      ruleTree,
+      conditionConfig: {
+        instructions: {
+          startRelation,
+          endRelation,
+          startCommands: cleanedStart,
+          endCommands: cleanedEnd
+        },
+        parameters: cleanedParams,
+        expression: expressionText || undefined
+      },
       durationSeconds: form.getFieldValue('durationSeconds') ?? 10,
       targetParams: targets
     };
@@ -293,10 +506,16 @@ export function FilterTemplateEditor() {
     let config: FilterTemplateConfigJson;
     try {
       config = buildPayload();
-    } catch {
-      message.error('请选择适用数据范围中的具体参考卫星');
+    } catch (error) {
+      const text = String((error as Error).message ?? '');
+      if (text.startsWith('DUPLICATE_CONDITION_ID:')) {
+        message.error(`参数条件ID重复：${text.replace('DUPLICATE_CONDITION_ID:', '')}`);
+        return;
+      }
+      message.error(text || '规则配置不合法，请检查表达式与条件ID');
       return;
     }
+
     if (isNew) {
       const created = await filterTemplatesApi.create({
         templateName: values.templateName,
@@ -369,14 +588,6 @@ export function FilterTemplateEditor() {
           />
         )}
 
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="分组与参考星"
-          description="卫星分组用于把单星编制的模板提升到组级复用：模板归属某分组后，该分组及子分组下的成员星均可选用。筛选条件与目标参数列表均绑定「参考卫星」在 param_cache 中的元数据。其它成员星在运行前应调用后端 GET /api/v1/templates/filters/{templateId}/versions/{version}/resolved-config?taskNo=…&satNo=…，按参数名称（忽略大小写）及原始 JSON 中的描述类字段做语义匹配，映射到本星参数 ID，避免同名不同码的错配。"
-        />
-
         <Form form={form} layout="vertical" disabled={!editable}>
           <Card type="inner" title="基本信息" style={{ marginBottom: 16 }}>
             <Row gutter={16}>
@@ -408,7 +619,7 @@ export function FilterTemplateEditor() {
                       label="参考卫星（适用数据范围）"
                       name="referenceSatelliteKey"
                       rules={[{ required: true, message: '请选择分组内的一颗具体卫星' }]}
-                      extra="下列筛选条件与目标参数均来自该星；须为当前分组（含子分组）成员"
+                      extra="参数与指令候选均来自该星缓存"
                     >
                       <Select
                         showSearch
@@ -429,111 +640,293 @@ export function FilterTemplateEditor() {
 
           <Card type="inner" title="1. 有效时间段提取规则" style={{ marginBottom: 16 }}>
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              参数条件可选。不添加任何条件时，目标参数的有效时间范围为任务的数据时间窗（立即/一次定时取任务所选时段；每天定时取当日设定时刻至前一日同一时刻）。
-              添加条件后，将先按条件与持续时长筛选有效时间段，再提取目标参数。
+              配置阶段：指令从 command_cache 选择、参数从 param_cache 选择。执行阶段：按海量接口历史数据计算条件成立时间段。
             </Text>
-            <Space style={{ marginBottom: 12 }}>
-              <Text type="secondary">条件之间的逻辑算子：</Text>
-              <Select
-                value={logicOp}
-                onChange={setLogicOp}
-                options={[
-                  { value: 'AND', label: 'AND' },
-                  { value: 'OR', label: 'OR' }
-                ]}
-                style={{ width: 100 }}
-                disabled={!editable}
-              />
-            </Space>
-            <Spin spinning={paramOptionsLoading} tip="正在加载参考星全部参数…">
-            <Table<FlatRuleRow>
-              size="small"
-              rowKey="rowId"
-              dataSource={rows}
-              pagination={false}
-              columns={[
-                {
-                  title: '参数',
-                  width: 320,
-                  render: (_, record) => (
-                    <ParamCacheSelect
-                      value={record.paramId}
-                      parameters={paramOptions}
-                      loading={paramOptionsLoading}
-                      disabled={!editable}
-                      onChange={(value) => updateRow(record.rowId, { paramId: value })}
-                    />
-                  )
-                },
-                {
-                  title: '比较符',
-                  width: 100,
-                  render: (_, record) => (
-                    <Select
-                      value={record.operator}
-                      onChange={(value: RuleOperator) => updateRow(record.rowId, { operator: value })}
-                      options={OPERATOR_OPTIONS}
-                      style={{ width: '100%' }}
-                      disabled={!editable}
-                    />
-                  )
-                },
-                {
-                  title: '阈值',
-                  width: 200,
-                  render: (_, record) => (
-                    <Input
-                      value={Array.isArray(record.value) ? record.value.join(',') : String(record.value)}
-                      onChange={(e) => {
-                        const text = e.target.value;
-                        if (record.operator === 'between') {
-                          const parts = text.split(',').map((s) => Number(s.trim()));
-                          updateRow(record.rowId, { value: parts });
-                        } else {
-                          const num = Number(text);
-                          updateRow(record.rowId, { value: isNaN(num) ? text : num });
+
+            <Spin spinning={optionsLoading} tip="正在加载参考星参数/指令缓存…">
+              <Card type="inner" size="small" title="1.1 起始指令条件" style={{ marginBottom: 12 }}>
+                <Space style={{ marginBottom: 8 }}>
+                  <Text>指令关系：</Text>
+                  <Select
+                    value={startRelation}
+                    onChange={setStartRelation}
+                    options={[
+                      { value: 'OR', label: 'OR' },
+                      { value: 'AND', label: 'AND' }
+                    ]}
+                    style={{ width: 100 }}
+                  />
+                </Space>
+                <Table<InstructionConditionRow>
+                  size="small"
+                  rowKey="rowId"
+                  pagination={false}
+                  dataSource={startCommands}
+                  columns={[
+                    {
+                      title: '条件ID',
+                      width: 120,
+                      render: (_, row) => (
+                        <Input
+                          value={row.conditionId}
+                          onChange={(e) => updateInstructionRow('start', row.rowId, { conditionId: e.target.value })}
+                        />
+                      )
+                    },
+                    {
+                      title: '指令',
+                      render: (_, row) => (
+                        <Select
+                          value={row.commandId || undefined}
+                          options={commandSelectOptions}
+                          showSearch
+                          optionFilterProp="label"
+                          onChange={(value) => updateInstructionRow('start', row.rowId, { commandId: value })}
+                        />
+                      )
+                    },
+                    {
+                      title: 'channelId',
+                      width: 120,
+                      render: (_, row) => (
+                        <InputNumber
+                          min={0}
+                          value={row.channelId}
+                          onChange={(value) => updateInstructionRow('start', row.rowId, { channelId: value ?? 0 })}
+                        />
+                      )
+                    },
+                    {
+                      title: '操作',
+                      width: 80,
+                      render: (_, row) => (
+                        <Button danger type="link" onClick={() => removeInstructionRow('start', row.rowId)}>
+                          删除
+                        </Button>
+                      )
+                    }
+                  ]}
+                />
+                <Button
+                  type="dashed"
+                  style={{ marginTop: 10 }}
+                  onClick={() =>
+                    setStartCommands((curr) => [
+                      ...curr,
+                      {
+                        rowId: cryptoRandomId(),
+                        conditionId: `S${curr.length + 1}`,
+                        commandId: '',
+                        channelId: 0
+                      }
+                    ])
+                  }
+                >
+                  + 添加起始指令
+                </Button>
+              </Card>
+
+              <Card type="inner" size="small" title="1.2 结束指令条件" style={{ marginBottom: 12 }}>
+                <Space style={{ marginBottom: 8 }}>
+                  <Text>指令关系：</Text>
+                  <Select
+                    value={endRelation}
+                    onChange={setEndRelation}
+                    options={[
+                      { value: 'OR', label: 'OR' },
+                      { value: 'AND', label: 'AND' }
+                    ]}
+                    style={{ width: 100 }}
+                  />
+                </Space>
+                <Table<InstructionConditionRow>
+                  size="small"
+                  rowKey="rowId"
+                  pagination={false}
+                  dataSource={endCommands}
+                  columns={[
+                    {
+                      title: '条件ID',
+                      width: 120,
+                      render: (_, row) => (
+                        <Input
+                          value={row.conditionId}
+                          onChange={(e) => updateInstructionRow('end', row.rowId, { conditionId: e.target.value })}
+                        />
+                      )
+                    },
+                    {
+                      title: '指令',
+                      render: (_, row) => (
+                        <Select
+                          value={row.commandId || undefined}
+                          options={commandSelectOptions}
+                          showSearch
+                          optionFilterProp="label"
+                          onChange={(value) => updateInstructionRow('end', row.rowId, { commandId: value })}
+                        />
+                      )
+                    },
+                    {
+                      title: 'channelId',
+                      width: 120,
+                      render: (_, row) => (
+                        <InputNumber
+                          min={0}
+                          value={row.channelId}
+                          onChange={(value) => updateInstructionRow('end', row.rowId, { channelId: value ?? 0 })}
+                        />
+                      )
+                    },
+                    {
+                      title: '操作',
+                      width: 80,
+                      render: (_, row) => (
+                        <Button danger type="link" onClick={() => removeInstructionRow('end', row.rowId)}>
+                          删除
+                        </Button>
+                      )
+                    }
+                  ]}
+                />
+                <Button
+                  type="dashed"
+                  style={{ marginTop: 10 }}
+                  onClick={() =>
+                    setEndCommands((curr) => [
+                      ...curr,
+                      {
+                        rowId: cryptoRandomId(),
+                        conditionId: `E${curr.length + 1}`,
+                        commandId: '',
+                        channelId: 0
+                      }
+                    ])
+                  }
+                >
+                  + 添加结束指令
+                </Button>
+              </Card>
+
+              <Card type="inner" size="small" title="1.3 参数条件 + 表达式">
+                <Table<ParameterConditionRow>
+                  size="small"
+                  rowKey="rowId"
+                  pagination={false}
+                  dataSource={parameterRows}
+                  columns={[
+                    {
+                      title: '条件ID',
+                      width: 120,
+                      render: (_, row) => (
+                        <Input
+                          value={row.conditionId}
+                          onChange={(e) => updateParameterRow(row.rowId, { conditionId: e.target.value })}
+                        />
+                      )
+                    },
+                    {
+                      title: '参数',
+                      width: 320,
+                      render: (_, row) => (
+                        <ParamCacheSelect
+                          value={row.paramId}
+                          parameters={paramOptions}
+                          loading={optionsLoading}
+                          onChange={(value) => updateParameterRow(row.rowId, { paramId: value })}
+                        />
+                      )
+                    },
+                    {
+                      title: '比较符',
+                      width: 100,
+                      render: (_, row) => (
+                        <Select
+                          value={row.operator}
+                          options={OPERATOR_OPTIONS}
+                          onChange={(value: ConditionOperator) => updateParameterRow(row.rowId, { operator: value })}
+                        />
+                      )
+                    },
+                    {
+                      title: '阈值',
+                      width: 220,
+                      render: (_, row) => (
+                        <Input
+                          value={Array.isArray(row.value) ? row.value.join(',') : String(row.value)}
+                          onChange={(e) => {
+                            const text = e.target.value;
+                            if (row.operator === 'between') {
+                              const parts = text.split(',').map((x) => x.trim()).filter(Boolean);
+                              updateParameterRow(row.rowId, { value: parts.map((x) => Number(x)) });
+                            } else {
+                              const num = Number(text);
+                              updateParameterRow(row.rowId, { value: Number.isNaN(num) ? text : num });
+                            }
+                          }}
+                        />
+                      )
+                    },
+                    {
+                      title: '操作',
+                      width: 80,
+                      render: (_, row) => (
+                        <Button danger type="link" onClick={() => removeParameterRow(row.rowId)}>
+                          删除
+                        </Button>
+                      )
+                    }
+                  ]}
+                />
+                <Space style={{ marginTop: 10 }}>
+                  <Button
+                    type="dashed"
+                    onClick={() =>
+                      setParameterRows((curr) => [
+                        ...curr,
+                        {
+                          rowId: cryptoRandomId(),
+                          conditionId: `P${curr.length + 1}`,
+                          paramId: '',
+                          operator: '>',
+                          value: 0
                         }
-                      }}
-                      disabled={!editable}
-                    />
-                  )
-                },
-                {
-                  title: '操作',
-                  width: 80,
-                  render: (_, record) => (
-                    <Button
-                      size="small"
-                      type="link"
-                      danger
-                      disabled={!editable}
-                      onClick={() => setRows(rows.filter((r) => r.rowId !== record.rowId))}
-                    >
-                      删除
-                    </Button>
-                  )
-                }
-              ]}
-            />
+                      ])
+                    }
+                  >
+                    + 添加参数条件
+                  </Button>
+                  <Button
+                    onClick={() => setExpression(buildDefaultExpression(parameterRows.map((r) => r.conditionId.trim()).filter(Boolean)))}
+                  >
+                    自动生成 AND 表达式
+                  </Button>
+                </Space>
+
+                <Form.Item label="表达式（支持 &&、||、()，引用参数条件ID）" style={{ marginTop: 12, marginBottom: 8 }}>
+                  <Input.TextArea value={expression} rows={3} onChange={(e) => setExpression(e.target.value)} />
+                </Form.Item>
+                <Space>
+                  <Button onClick={() => setExpression((s) => `${s} && `)}>插入 &&</Button>
+                  <Button onClick={() => setExpression((s) => `${s} || `)}>插入 ||</Button>
+                  <Button onClick={() => setExpression((s) => `${s}(`)}>插入 (</Button>
+                  <Button onClick={() => setExpression((s) => `${s})`)}>插入 )</Button>
+                  <Button
+                    onClick={() => {
+                      const ids = new Set(parameterRows.map((x) => x.conditionId.trim()).filter(Boolean));
+                      const result = validateExpression(expression, ids);
+                      if (result.valid) {
+                        message.success('表达式语法校验通过');
+                      } else {
+                        message.error(result.error || '表达式不合法');
+                      }
+                    }}
+                  >
+                    语法检查
+                  </Button>
+                </Space>
+              </Card>
             </Spin>
-            <Button
-              type="dashed"
-              style={{ marginTop: 12 }}
-              disabled={!editable || paramOptionsLoading}
-              onClick={() =>
-                setRows([
-                  ...rows,
-                  { rowId: cryptoRandomId(), paramId: '', operator: '>', value: 0 }
-                ])
-              }
-            >
-              + 添加参数条件
-            </Button>
-            {!paramOptionsLoading && paramOptions.length > 0 && (
-              <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-                已加载 {paramOptions.length} 个参数，可在下拉框中输入代号或描述过滤
-              </Text>
-            )}
 
             <Row gutter={16} style={{ marginTop: 16 }}>
               <Col span={8}>
@@ -556,151 +949,137 @@ export function FilterTemplateEditor() {
 
           <Card type="inner" title="2. 目标参数提取与质量规则">
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              在有效时间段内提取目标参数（无参数条件时即为任务数据时间窗）；离群规则仅打标，不剔除、不插值。
+              在有效时间段内提取目标参数（无条件时为任务数据时间窗）；离群规则仅打标，不剔除、不插值。
             </Text>
-            <Spin spinning={paramOptionsLoading} tip="正在加载参考星全部参数…">
-            <Table<FilterTargetParam>
-              size="small"
-              rowKey={(_, idx) => `target_${idx}`}
-              dataSource={targets}
-              pagination={false}
-              columns={[
-                {
-                  title: '提取目标参数',
-                  render: (_, record, idx) => (
-                    <ParamCacheSelect
-                      value={record.paramId}
-                      parameters={paramOptions}
-                      loading={paramOptionsLoading}
-                      disabled={!editable}
-                      onChange={(value) => {
-                        const picked = paramOptions.find((p) => paramCacheId(p) === value);
-                        updateTarget(idx, {
-                          paramId: value,
-                          paramName: picked ? formatParamCacheLabel(picked) : undefined
-                        });
-                      }}
-                    />
-                  )
-                },
-                {
-                  title: '离群判定方法',
-                  width: 220,
-                  render: (_, record, idx) => (
-                    <Select<OutlierMethod>
-                      style={{ width: '100%' }}
-                      value={record.outlier?.method ?? 'SIGMA'}
-                      options={OUTLIER_METHODS}
-                      onChange={(value) =>
-                        updateTarget(idx, {
-                          outlier: { ...(record.outlier ?? { method: value }), method: value }
-                        })
-                      }
-                      disabled={!editable}
-                    />
-                  )
-                },
-                {
-                  title: '离群参数',
-                  render: (_, record, idx) => (
-                    <Space>
-                      {record.outlier?.method === 'THRESHOLD' && (
-                        <>
+            <Spin spinning={optionsLoading} tip="正在加载参考星参数缓存…">
+              <Table<FilterTargetParam>
+                size="small"
+                rowKey={(_, idx) => `target_${idx}`}
+                dataSource={targets}
+                pagination={false}
+                columns={[
+                  {
+                    title: '提取目标参数',
+                    render: (_, record, idx) => (
+                      <ParamCacheSelect
+                        value={record.paramId}
+                        parameters={paramOptions}
+                        loading={optionsLoading}
+                        onChange={(value) => {
+                          const picked = paramOptions.find((p) => paramCacheId(p) === value);
+                          updateTarget(idx, {
+                            paramId: value,
+                            paramName: picked ? formatParamCacheLabel(picked) : undefined
+                          });
+                        }}
+                      />
+                    )
+                  },
+                  {
+                    title: '离群判定方法',
+                    width: 220,
+                    render: (_, record, idx) => (
+                      <Select<OutlierMethod>
+                        style={{ width: '100%' }}
+                        value={record.outlier?.method ?? 'SIGMA'}
+                        options={OUTLIER_METHODS}
+                        onChange={(value) =>
+                          updateTarget(idx, {
+                            outlier: { ...(record.outlier ?? { method: value }), method: value }
+                          })
+                        }
+                      />
+                    )
+                  },
+                  {
+                    title: '离群参数',
+                    render: (_, record, idx) => (
+                      <Space>
+                        {record.outlier?.method === 'THRESHOLD' && (
+                          <>
+                            <InputNumber
+                              placeholder="min"
+                              value={record.outlier?.min}
+                              onChange={(value) =>
+                                updateTarget(idx, {
+                                  outlier: { ...record.outlier!, min: value ?? undefined }
+                                })
+                              }
+                            />
+                            <InputNumber
+                              placeholder="max"
+                              value={record.outlier?.max}
+                              onChange={(value) =>
+                                updateTarget(idx, {
+                                  outlier: { ...record.outlier!, max: value ?? undefined }
+                                })
+                              }
+                            />
+                          </>
+                        )}
+                        {record.outlier?.method === 'SIGMA' && (
                           <InputNumber
-                            placeholder="min"
-                            value={record.outlier?.min}
+                            placeholder="σ 倍数"
+                            value={record.outlier?.sigma ?? 3}
                             onChange={(value) =>
                               updateTarget(idx, {
-                                outlier: { ...record.outlier!, min: value ?? undefined }
+                                outlier: { ...record.outlier!, sigma: value ?? 3 }
                               })
                             }
-                            disabled={!editable}
                           />
+                        )}
+                        {record.outlier && !['THRESHOLD', 'SIGMA'].includes(record.outlier.method) && (
                           <InputNumber
-                            placeholder="max"
-                            value={record.outlier?.max}
+                            placeholder="窗口"
+                            value={record.outlier?.windowSize ?? 30}
                             onChange={(value) =>
                               updateTarget(idx, {
-                                outlier: { ...record.outlier!, max: value ?? undefined }
+                                outlier: { ...record.outlier!, windowSize: value ?? 30 }
                               })
                             }
-                            disabled={!editable}
                           />
-                        </>
-                      )}
-                      {record.outlier?.method === 'SIGMA' && (
-                        <InputNumber
-                          placeholder="σ 倍数"
-                          value={record.outlier?.sigma ?? 3}
-                          onChange={(value) =>
-                            updateTarget(idx, {
-                              outlier: { ...record.outlier!, sigma: value ?? 3 }
-                            })
-                          }
-                          disabled={!editable}
-                        />
-                      )}
-                      {record.outlier && !['THRESHOLD', 'SIGMA'].includes(record.outlier.method) && (
-                        <InputNumber
-                          placeholder="窗口"
-                          value={record.outlier?.windowSize ?? 30}
-                          onChange={(value) =>
-                            updateTarget(idx, {
-                              outlier: { ...record.outlier!, windowSize: value ?? 30 }
-                            })
-                          }
-                          disabled={!editable}
-                        />
-                      )}
-                    </Space>
-                  )
-                },
-                {
-                  title: '前向缓冲 (s)',
-                  width: 120,
-                  render: (_, record, idx) => (
-                    <InputNumber
-                      min={0}
-                      value={record.boundaryBufferBeforeSec ?? 0}
-                      onChange={(v) => updateTarget(idx, { boundaryBufferBeforeSec: v ?? 0 })}
-                      disabled={!editable}
-                    />
-                  )
-                },
-                {
-                  title: '后向缓冲 (s)',
-                  width: 120,
-                  render: (_, record, idx) => (
-                    <InputNumber
-                      min={0}
-                      value={record.boundaryBufferAfterSec ?? 0}
-                      onChange={(v) => updateTarget(idx, { boundaryBufferAfterSec: v ?? 0 })}
-                      disabled={!editable}
-                    />
-                  )
-                },
-                {
-                  title: '操作',
-                  width: 80,
-                  render: (_, _record, idx) => (
-                    <Button
-                      size="small"
-                      type="link"
-                      danger
-                      disabled={!editable}
-                      onClick={() => setTargets(targets.filter((_, i) => i !== idx))}
-                    >
-                      删除
-                    </Button>
-                  )
-                }
-              ]}
-            />
+                        )}
+                      </Space>
+                    )
+                  },
+                  {
+                    title: '前向缓冲 (s)',
+                    width: 120,
+                    render: (_, record, idx) => (
+                      <InputNumber
+                        min={0}
+                        value={record.boundaryBufferBeforeSec ?? 0}
+                        onChange={(v) => updateTarget(idx, { boundaryBufferBeforeSec: v ?? 0 })}
+                      />
+                    )
+                  },
+                  {
+                    title: '后向缓冲 (s)',
+                    width: 120,
+                    render: (_, record, idx) => (
+                      <InputNumber
+                        min={0}
+                        value={record.boundaryBufferAfterSec ?? 0}
+                        onChange={(v) => updateTarget(idx, { boundaryBufferAfterSec: v ?? 0 })}
+                      />
+                    )
+                  },
+                  {
+                    title: '操作',
+                    width: 80,
+                    render: (_, _record, idx) => (
+                      <Button size="small" type="link" danger onClick={() => setTargets(targets.filter((_, i) => i !== idx))}>
+                        删除
+                      </Button>
+                    )
+                  }
+                ]}
+              />
             </Spin>
             <Button
               type="dashed"
               style={{ marginTop: 12 }}
-              disabled={!editable || paramOptionsLoading}
+              disabled={optionsLoading}
               onClick={() =>
                 setTargets([
                   ...targets,
@@ -721,8 +1100,34 @@ export function FilterTemplateEditor() {
     </Spin>
   );
 
-  function updateRow(rowId: string, patch: Partial<FlatRuleRow>) {
-    setRows((curr) => curr.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)));
+  function updateParameterRow(rowId: string, patch: Partial<ParameterConditionRow>) {
+    setParameterRows((curr) => curr.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)));
+  }
+
+  function removeParameterRow(rowId: string) {
+    setParameterRows((curr) => curr.filter((r) => r.rowId !== rowId));
+  }
+
+  function updateInstructionRow(
+    side: 'start' | 'end',
+    rowId: string,
+    patch: Partial<InstructionConditionRow>
+  ) {
+    if (side === 'start') {
+      setStartCommands((curr) => curr.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)));
+      return;
+    }
+
+    setEndCommands((curr) => curr.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)));
+  }
+
+  function removeInstructionRow(side: 'start' | 'end', rowId: string) {
+    if (side === 'start') {
+      setStartCommands((curr) => curr.filter((r) => r.rowId !== rowId));
+      return;
+    }
+
+    setEndCommands((curr) => curr.filter((r) => r.rowId !== rowId));
   }
 
   function updateTarget(idx: number, patch: Partial<FilterTargetParam>) {

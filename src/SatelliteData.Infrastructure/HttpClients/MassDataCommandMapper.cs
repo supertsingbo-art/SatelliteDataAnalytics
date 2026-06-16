@@ -4,7 +4,7 @@ using SatelliteData.Domain.Assets;
 namespace SatelliteData.Infrastructure.HttpClients;
 
 /// <summary>
-/// 将海量 <c>POST /api/mass-data/basic/commands</c> 单条记录映射为 <see cref="CommandCache"/>。
+/// 将海量 <c>POST /api/v2/mass-data/basic/commands</c> 单条记录映射为 <see cref="CommandCache"/>。
 /// 文档主字段落结构化列；其余字段保留在 <see cref="CommandCache.RawJson"/>。
 /// </summary>
 internal static class MassDataCommandMapper

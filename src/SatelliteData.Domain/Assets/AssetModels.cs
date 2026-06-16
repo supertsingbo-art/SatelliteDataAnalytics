@@ -47,7 +47,7 @@ public sealed record SatelliteCache(
     JsonElement RawJson);
 
 /// <summary>
-/// 参数元数据缓存（海量 <c>POST /api/mass-data/basic/parameters</c>）。
+/// 参数元数据缓存（海量 <c>POST /api/v2/mass-data/basic/parameters</c>）。
 /// </summary>
 public sealed record ParamCache(
     string TasookNo,
@@ -80,7 +80,7 @@ public sealed record ParamCache(
 }
 
 /// <summary>
-/// 指令元数据缓存（海量 <c>POST /api/mass-data/basic/commands</c>）。
+/// 指令元数据缓存（海量 <c>POST /api/v2/mass-data/basic/commands</c>）。
 /// </summary>
 public sealed record CommandCache(
     string TasookNo,
