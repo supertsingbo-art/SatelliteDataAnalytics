@@ -1,11 +1,9 @@
 using Microsoft.Extensions.Options;
-using SatelliteData.Application.Assets;
 using SatelliteData.Application.Pipeline;
 
 namespace SatelliteData.Infrastructure.Mongo;
 
 public sealed class MongoConditionHistoryProvider(
-    MongoConnectionPool mongoPool,
     IMongoPkgSeriesReader mongoPkgReader,
     IMongoInstructionSeriesReader mongoInstructionReader,
     IOptions<PipelineOptions> pipelineOptions) : IConditionHistoryProvider
@@ -13,9 +11,8 @@ public sealed class MongoConditionHistoryProvider(
     private readonly PipelineOptions _pipelineOptions = pipelineOptions.Value;
 
     public async Task<IReadOnlyDictionary<string, IReadOnlyList<RawSeriesPoint>>> QueryParameterSeriesAsync(
-        string tasookNo,
-        string satelliteNo,
-        string? dbStage,
+        string mongoUri,
+        string mongoDb,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         IReadOnlyCollection<ParameterHistoryLookup> lookups,
@@ -30,7 +27,6 @@ public sealed class MongoConditionHistoryProvider(
             return result;
         }
 
-        var (mongoUri, mongoDb) = await ResolveMongoAsync(tasookNo, satelliteNo, cancellationToken);
         foreach (var lookup in lookups)
         {
             var series = await mongoPkgReader.ReadSeriesAsync(
@@ -48,9 +44,8 @@ public sealed class MongoConditionHistoryProvider(
     }
 
     public async Task<IReadOnlyList<InstructionHistoryPoint>> QueryInstructionHistoryAsync(
-        string tasookNo,
-        string satelliteNo,
-        string? dbStage,
+        string mongoUri,
+        string mongoDb,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         IReadOnlyCollection<InstructionHistoryLookup> lookups,
@@ -61,7 +56,6 @@ public sealed class MongoConditionHistoryProvider(
             return Array.Empty<InstructionHistoryPoint>();
         }
 
-        var (mongoUri, mongoDb) = await ResolveMongoAsync(tasookNo, satelliteNo, cancellationToken);
         return await mongoInstructionReader.ReadHistoryAsync(
             mongoUri,
             mongoDb,
@@ -70,15 +64,5 @@ public sealed class MongoConditionHistoryProvider(
             windowEnd,
             lookups,
             cancellationToken);
-    }
-
-    private async Task<(string MongoUri, string MongoDb)> ResolveMongoAsync(
-        string tasookNo,
-        string satelliteNo,
-        CancellationToken cancellationToken)
-    {
-        var mongoInfo = await mongoPool.GetConnectionInfoAsync(tasookNo, satelliteNo, cancellationToken);
-        var mongoDb = string.IsNullOrWhiteSpace(mongoInfo.DbName) ? "test" : mongoInfo.DbName;
-        return (mongoInfo.MongoUri, mongoDb);
     }
 }

@@ -19,18 +19,16 @@ public sealed record InstructionHistoryPoint(
 public interface IConditionHistoryProvider
 {
     Task<IReadOnlyDictionary<string, IReadOnlyList<RawSeriesPoint>>> QueryParameterSeriesAsync(
-        string tasookNo,
-        string satelliteNo,
-        string? dbStage,
+        string mongoUri,
+        string mongoDb,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         IReadOnlyCollection<ParameterHistoryLookup> lookups,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<InstructionHistoryPoint>> QueryInstructionHistoryAsync(
-        string tasookNo,
-        string satelliteNo,
-        string? dbStage,
+        string mongoUri,
+        string mongoDb,
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         IReadOnlyCollection<InstructionHistoryLookup> lookups,

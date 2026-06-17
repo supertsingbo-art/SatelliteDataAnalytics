@@ -149,11 +149,13 @@ public sealed class PreprocessPipeline(
             .ToDictionary(p => p.ParamId, StringComparer.Ordinal);
 
         var (refTasook, refSatellite) = ResolveReferenceSatellite(filter.ConfigJson, run.TasookNo, run.SatelliteNo);
-        var refSatelliteCache = string.Equals(refTasook, run.TasookNo, StringComparison.Ordinal)
-                                && string.Equals(refSatellite, run.SatelliteNo, StringComparison.Ordinal)
-            ? satellite
-            : await assetCache.GetSatelliteAsync(refTasook, refSatellite, cancellationToken)
+        if (!string.Equals(refTasook, run.TasookNo, StringComparison.Ordinal)
+            || !string.Equals(refSatellite, run.SatelliteNo, StringComparison.Ordinal))
+        {
+            _ = await assetCache.GetSatelliteAsync(refTasook, refSatellite, cancellationToken)
                 ?? throw new InvalidOperationException($"参考星缓存不存在：{refTasook}/{refSatellite}");
+        }
+
         var refParameters = string.Equals(refTasook, run.TasookNo, StringComparison.Ordinal)
                             && string.Equals(refSatellite, run.SatelliteNo, StringComparison.Ordinal)
             ? parameters
@@ -175,9 +177,10 @@ public sealed class PreprocessPipeline(
                 conditionConfig,
                 window,
                 durationSeconds,
+                mongoUri,
+                mongoDb,
                 refTasook,
                 refSatellite,
-                refSatelliteCache.DbStage,
                 refParameters,
                 cancellationToken);
         }
@@ -390,9 +393,10 @@ public sealed class PreprocessPipeline(
         FilterConditionConfig conditionConfig,
         EffectiveWindow window,
         int durationSeconds,
+        string mongoUri,
+        string mongoDb,
         string referenceTasookNo,
         string referenceSatelliteNo,
-        string? referenceDbStage,
         IReadOnlyDictionary<string, ParamCache> referenceParameters,
         CancellationToken cancellationToken)
     {
@@ -420,9 +424,8 @@ public sealed class PreprocessPipeline(
             }
 
             var conditionSeries = await conditionHistoryProvider.QueryParameterSeriesAsync(
-                referenceTasookNo,
-                referenceSatelliteNo,
-                referenceDbStage,
+                mongoUri,
+                mongoDb,
                 window.Start,
                 window.End,
                 lookups,
@@ -466,9 +469,8 @@ public sealed class PreprocessPipeline(
                 .Select(x => x.First())
                 .ToList();
             var history = await conditionHistoryProvider.QueryInstructionHistoryAsync(
-                referenceTasookNo,
-                referenceSatelliteNo,
-                referenceDbStage,
+                mongoUri,
+                mongoDb,
                 window.Start,
                 window.End,
                 commandLookups,
