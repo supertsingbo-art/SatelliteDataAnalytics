@@ -21,17 +21,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { filterTemplatesApi } from '@/api/templates';
 import { groupsApi } from '@/api/groups';
 import { assetsApi } from '@/api/assets';
+import { CommandCacheSelect } from '@/components/CommandCacheSelect';
 import { ParamCacheSelect } from '@/components/ParamCacheSelect';
 import {
   CommandCache,
   FilterTargetParam,
   FilterTemplateConfigJson,
   ParamCache,
-  formatCommandCacheLabel,
   formatParamCacheLabel,
   paramCacheId,
-  RuleLeaf,
-  RuleNode,
   RuleOperator,
   SatelliteListItem,
   SatelliteGroupMemberDto,
@@ -79,22 +77,6 @@ const OUTLIER_METHODS: { value: OutlierMethod; label: string }[] = [
 
 function cryptoRandomId(): string {
   return Math.random().toString(36).slice(2, 10);
-}
-
-function normalizeOperator(op: RuleOperator): ConditionOperator {
-  return op === '==' ? '=' : op;
-}
-
-function flattenRules(root?: RuleNode): RuleLeaf[] {
-  if (!root) {
-    return [];
-  }
-
-  if ('paramId' in root) {
-    return [root];
-  }
-
-  return root.children.flatMap((child) => flattenRules(child));
 }
 
 function buildDefaultExpression(conditionIds: string[]): string {
@@ -224,6 +206,8 @@ export function FilterTemplateEditor() {
   const [endCommands, setEndCommands] = useState<InstructionConditionRow[]>([]);
   const [startRelation, setStartRelation] = useState<'AND' | 'OR'>('OR');
   const [endRelation, setEndRelation] = useState<'AND' | 'OR'>('OR');
+  const [startRangeSeconds, setStartRangeSeconds] = useState(0);
+  const [endRangeSeconds, setEndRangeSeconds] = useState(0);
   const [expression, setExpression] = useState('');
 
   const [targets, setTargets] = useState<FilterTargetParam[]>([]);
@@ -272,6 +256,8 @@ export function FilterTemplateEditor() {
             setParameterRows(paramsRows);
             setStartRelation(cc.instructions?.startRelation ?? 'OR');
             setEndRelation(cc.instructions?.endRelation ?? 'OR');
+            setStartRangeSeconds(cc.instructions?.startRangeSeconds ?? 0);
+            setEndRangeSeconds(cc.instructions?.endRangeSeconds ?? 0);
             setStartCommands(
               (cc.instructions?.startCommands ?? []).map((item) => ({
                 rowId: cryptoRandomId(),
@@ -290,17 +276,15 @@ export function FilterTemplateEditor() {
             );
             setExpression(cc.expression ?? buildDefaultExpression(paramsRows.map((r) => r.conditionId)));
           } else {
-            const oldRows = flattenRules(detail.configJson.ruleTree).map((leaf, index) => ({
-              rowId: cryptoRandomId(),
-              conditionId: `P${index + 1}`,
-              paramId: leaf.paramId,
-              operator: normalizeOperator(leaf.operator),
-              value: leaf.value
-            }));
-            setParameterRows(oldRows);
-            setExpression(buildDefaultExpression(oldRows.map((r) => r.conditionId)));
+            setParameterRows([]);
             setStartCommands([]);
             setEndCommands([]);
+            setStartRelation('OR');
+            setEndRelation('OR');
+            setStartRangeSeconds(0);
+            setEndRangeSeconds(0);
+            setExpression('');
+            message.warning('当前模板缺少 conditionConfig，已按新规则清空条件，请重新配置后保存。');
           }
 
           setTargets(detail.configJson.targetParams);
@@ -326,6 +310,14 @@ export function FilterTemplateEditor() {
             bufferAfterSeconds: 5,
             durationSeconds: 10
           });
+          setStartRelation('OR');
+          setEndRelation('OR');
+          setStartRangeSeconds(0);
+          setEndRangeSeconds(0);
+          setStartCommands([]);
+          setEndCommands([]);
+          setParameterRows([]);
+          setExpression('');
         }
       } finally {
         setLoading(false);
@@ -377,16 +369,11 @@ export function FilterTemplateEditor() {
       try {
         const [paramResult, commandResult] = await Promise.all([
           assetsApi.listAllParams(taskNo, satNo),
-          assetsApi.listCommands(taskNo, satNo, { pageNo: 1, pageSize: 2000 })
+          assetsApi.listAllCommands(taskNo, satNo)
         ]);
         if (!cancelled) {
           setParamOptions(paramResult.items);
           setCommandOptions(commandResult.items);
-          if (commandResult.total > commandResult.items.length) {
-            message.warning(
-              `指令缓存共 ${commandResult.total} 条，仅加载 ${commandResult.items.length} 条，请扩大分页上限`
-            );
-          }
         }
       } finally {
         if (!cancelled) {
@@ -409,15 +396,6 @@ export function FilterTemplateEditor() {
         return { value: `${m.tasookNo}||${m.satelliteNo}`, label };
       }),
     [groupMembers, satellites]
-  );
-
-  const commandSelectOptions = useMemo(
-    () =>
-      commandOptions.map((cmd) => ({
-        value: String(cmd.cmdId),
-        label: formatCommandCacheLabel(cmd)
-      })),
-    [commandOptions]
   );
 
   const buildPayload = (): FilterTemplateConfigJson => {
@@ -481,6 +459,8 @@ export function FilterTemplateEditor() {
         instructions: {
           startRelation,
           endRelation,
+          startRangeSeconds,
+          endRangeSeconds,
           startCommands: cleanedStart,
           endCommands: cleanedEnd
         },
@@ -656,6 +636,13 @@ export function FilterTemplateEditor() {
                     ]}
                     style={{ width: 100 }}
                   />
+                  <Text>时间范围(秒)：</Text>
+                  <InputNumber
+                    min={0}
+                    value={startRangeSeconds}
+                    onChange={(value) => setStartRangeSeconds(value ?? 0)}
+                    style={{ width: 140 }}
+                  />
                 </Space>
                 <Table<InstructionConditionRow>
                   size="small"
@@ -676,11 +663,10 @@ export function FilterTemplateEditor() {
                     {
                       title: '指令',
                       render: (_, row) => (
-                        <Select
-                          value={row.commandId || undefined}
-                          options={commandSelectOptions}
-                          showSearch
-                          optionFilterProp="label"
+                        <CommandCacheSelect
+                          value={row.commandId}
+                          commands={commandOptions}
+                          loading={optionsLoading}
                           onChange={(value) => updateInstructionRow('start', row.rowId, { commandId: value })}
                         />
                       )
@@ -738,6 +724,13 @@ export function FilterTemplateEditor() {
                     ]}
                     style={{ width: 100 }}
                   />
+                  <Text>时间范围(秒)：</Text>
+                  <InputNumber
+                    min={0}
+                    value={endRangeSeconds}
+                    onChange={(value) => setEndRangeSeconds(value ?? 0)}
+                    style={{ width: 140 }}
+                  />
                 </Space>
                 <Table<InstructionConditionRow>
                   size="small"
@@ -758,11 +751,10 @@ export function FilterTemplateEditor() {
                     {
                       title: '指令',
                       render: (_, row) => (
-                        <Select
-                          value={row.commandId || undefined}
-                          options={commandSelectOptions}
-                          showSearch
-                          optionFilterProp="label"
+                        <CommandCacheSelect
+                          value={row.commandId}
+                          commands={commandOptions}
+                          loading={optionsLoading}
                           onChange={(value) => updateInstructionRow('end', row.rowId, { commandId: value })}
                         />
                       )

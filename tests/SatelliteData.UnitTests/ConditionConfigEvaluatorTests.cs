@@ -110,5 +110,36 @@ public class ConditionConfigEvaluatorTests
         Assert.Equal(T0.AddSeconds(60), ranges[1].End);
     }
 
+    [Fact]
+    public void EvaluateInstructionRanges_AndRelationWithRange_UsesLastEventAsTrigger()
+    {
+        var config = new FilterConditionConfig(
+            StartCommands:
+            [
+                new InstructionConditionItem("S1", "1001", 0),
+                new InstructionConditionItem("S2", "1002", 0)
+            ],
+            EndCommands: [],
+            StartRelation: "AND",
+            EndRelation: "OR",
+            Parameters: [],
+            Expression: string.Empty,
+            StartRangeSeconds: 5);
+        var history = new List<InstructionHistoryPoint>
+        {
+            new("1001", 1001, 0, T0.AddSeconds(10)),
+            new("1002", 1002, 0, T0.AddSeconds(14)),
+            new("1001", 1001, 0, T0.AddSeconds(26)),
+            new("1002", 1002, 0, T0.AddSeconds(40))
+        };
+
+        var ranges = _evaluator.EvaluateInstructionRanges(config, Window, history);
+
+        Assert.Single(ranges);
+        // 起始触发时刻取窗口内最后事件时间（14s）
+        Assert.Equal(T0.AddSeconds(14), ranges[0].Start);
+        Assert.Equal(Window.End, ranges[0].End);
+    }
+
     private static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement.Clone();
 }

@@ -75,4 +75,33 @@ public class FilterTemplateValidatorTests
         Assert.Equal(TemplateErrorCodes.FilterTemplateConfigInvalid, ex.ErrorCode);
         Assert.Contains("未定义条件ID", ex.Message);
     }
+
+    [Fact]
+    public void Validate_RejectsRuleTreeOnlyTemplate()
+    {
+        var config = JsonDocument.Parse(
+            """
+            {
+              "scope": {
+                "groupId": "d95de6dd-a5b1-4e70-b957-796cb47008dc",
+                "referenceTasookNo": "TASK_A",
+                "referenceSatelliteNo": "SAT_01"
+              },
+              "timeWindow": {
+                "mode": "TEST_BATCH"
+              },
+              "ruleTree": {
+                "op": "AND",
+                "children": []
+              },
+              "targetParams": [
+                { "paramId": "2001", "outlier": { "method": "SIGMA", "sigma": 3 } }
+              ]
+            }
+            """).RootElement;
+
+        var ex = Assert.Throws<TemplateGovernanceException>(() => FilterTemplateValidator.Validate(config));
+        Assert.Equal(TemplateErrorCodes.FilterTemplateConfigInvalid, ex.ErrorCode);
+        Assert.Contains("conditionConfig 必须存在", ex.Message);
+    }
 }

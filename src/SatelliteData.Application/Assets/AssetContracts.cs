@@ -76,6 +76,7 @@ public sealed record CommandCacheView(
     string SatelliteNo,
     int CmdId,
     string? CmdCode,
+    string? CmdName,
     string? CmdDesc,
     int? CmdType,
     int? CmdLen,

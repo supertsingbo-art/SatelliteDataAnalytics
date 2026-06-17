@@ -85,13 +85,21 @@ export const assetsApi = {
   listCommands: (
     tasookNo: string,
     satelliteNo: string,
-    params: { keyword?: string; pageNo?: number; pageSize?: number }
+    params: { keyword?: string; pageNo?: number; pageSize?: number; unpaged?: boolean }
   ) =>
     request<PagedResult<CommandCache>>(
       'get',
       `${BASE}/satellites/${encodeURIComponent(tasookNo)}/${encodeURIComponent(satelliteNo)}/commands`,
       undefined,
       params
+    ),
+  /** 筛选模板等场景：一次拉取参考星全部指令（unpaged=true，服务端上限 5 万条）。 */
+  listAllCommands: (tasookNo: string, satelliteNo: string, keyword?: string) =>
+    request<PagedResult<CommandCache>>(
+      'get',
+      `${BASE}/satellites/${encodeURIComponent(tasookNo)}/${encodeURIComponent(satelliteNo)}/commands`,
+      undefined,
+      { unpaged: true, keyword: keyword?.trim() || undefined }
     ),
   listTestPhases: (tasookNo: string, satelliteNo: string) =>
     request<TestPhase[]>(

@@ -19,7 +19,9 @@ public sealed record FilterConditionConfig(
     string StartRelation,
     string EndRelation,
     IReadOnlyList<ParameterConditionItem> Parameters,
-    string Expression);
+    string Expression,
+    int StartRangeSeconds = 0,
+    int EndRangeSeconds = 0);
 
 public static class ConditionConfigParser
 {
@@ -36,6 +38,8 @@ public static class ConditionConfigParser
             : default;
         var startRelation = ReadRelation(instructions, "startRelation", "OR");
         var endRelation = ReadRelation(instructions, "endRelation", "OR");
+        var startRangeSeconds = ReadNonNegativeInt(instructions, "startRangeSeconds");
+        var endRangeSeconds = ReadNonNegativeInt(instructions, "endRangeSeconds");
         var startCommands = ParseCommands(instructions, "startCommands", "S");
         var endCommands = ParseCommands(instructions, "endCommands", "E");
         var parameters = ParseParameters(cc);
@@ -49,7 +53,9 @@ public static class ConditionConfigParser
             startRelation,
             endRelation,
             parameters,
-            expression.Trim());
+            expression.Trim(),
+            startRangeSeconds,
+            endRangeSeconds);
         return true;
     }
 
@@ -67,6 +73,19 @@ public static class ConditionConfigParser
         }
 
         return fallback;
+    }
+
+    private static int ReadNonNegativeInt(JsonElement parent, string property)
+    {
+        if (parent.ValueKind == JsonValueKind.Object
+            && parent.TryGetProperty(property, out var node)
+            && node.ValueKind == JsonValueKind.Number
+            && node.TryGetInt32(out var number))
+        {
+            return Math.Max(0, number);
+        }
+
+        return 0;
     }
 
     private static IReadOnlyList<InstructionConditionItem> ParseCommands(

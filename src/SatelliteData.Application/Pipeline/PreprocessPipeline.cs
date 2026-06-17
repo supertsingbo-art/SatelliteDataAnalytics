@@ -21,7 +21,6 @@ public sealed class PreprocessPipeline(
     IMongoPkgSeriesReader mongoPkgReader,
     IMongoRawSeriesReader mongoRawReader,
     IConditionHistoryProvider conditionHistoryProvider,
-    RuleTreeSegmentEvaluator ruleTreeEvaluator,
     ConditionRangeEvaluator conditionRangeEvaluator,
     IOutlierDetector outlierDetector,
     IClickHouseGateway clickHouse,
@@ -182,45 +181,15 @@ public sealed class PreprocessPipeline(
                 refParameters,
                 cancellationToken);
         }
-        else if (filter.ConfigJson.TryGetProperty("ruleTree", out var ruleTree)
-                 && RuleTreeSegmentEvaluator.HasConditionParameters(ruleTree))
-        {
-            var conditionParamIds = RuleTreeSegmentEvaluator.CollectConditionParamIds(ruleTree);
-            var conditionSeries = new Dictionary<string, IReadOnlyList<RawSeriesPoint>>(StringComparer.Ordinal);
-            foreach (var paramId in conditionParamIds)
-            {
-                var series = await ReadParamSeriesAsync(
-                    mongoUri,
-                    mongoDb,
-                    refTasook,
-                    refSatellite,
-                    refParameters,
-                    paramId,
-                    window.Start,
-                    window.End,
-                    opt,
-                    cancellationToken);
-                conditionSeries[paramId] = series;
-            }
-
-            validRanges = ruleTreeEvaluator.ComputeValidRanges(
-                ruleTree,
-                durationSeconds,
-                window,
-                conditionSeries);
-        }
         else
         {
-            validRanges = [new TimeRange(window.Start, window.End)];
-            logger.LogDebug(
-                "目标参数有效窗=任务数据时间范围 {Start:o}..{End:o}（无 ruleTree 参数条件）",
-                window.Start,
-                window.End);
+            await FailAsync(run, "PRE_004", "筛选模板缺少 conditionConfig，无法计算有效时间段", cancellationToken);
+            return;
         }
 
         if (validRanges.Count == 0)
         {
-            await FailAsync(run, "PRE_004", "ruleTree 未产生有效时间段", cancellationToken);
+            await FailAsync(run, "PRE_004", "conditionConfig 未产生有效时间段", cancellationToken);
             return;
         }
 

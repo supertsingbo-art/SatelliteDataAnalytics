@@ -109,11 +109,13 @@ public sealed class ConditionRangeEvaluator(ILogger<ConditionRangeEvaluator> log
         var startTimes = ResolveInstructionTimes(
             history,
             config.StartCommands,
-            config.StartRelation);
+            config.StartRelation,
+            config.StartRangeSeconds);
         var endTimes = ResolveInstructionTimes(
             history,
             config.EndCommands,
-            config.EndRelation);
+            config.EndRelation,
+            config.EndRangeSeconds);
 
         if (startTimes.Count == 0 && endTimes.Count == 0)
         {
@@ -156,7 +158,8 @@ public sealed class ConditionRangeEvaluator(ILogger<ConditionRangeEvaluator> log
     private static IReadOnlyList<DateTimeOffset> ResolveInstructionTimes(
         IReadOnlyList<InstructionHistoryPoint> history,
         IReadOnlyList<InstructionConditionItem> conditions,
-        string relation)
+        string relation,
+        int rangeSeconds)
     {
         if (conditions.Count == 0)
         {
@@ -181,23 +184,47 @@ public sealed class ConditionRangeEvaluator(ILogger<ConditionRangeEvaluator> log
 
         if (string.Equals(relation, "AND", StringComparison.Ordinal))
         {
-            // 以秒级桶近似多指令“同时成立”语义。
-            var secondBuckets = new Dictionary<long, HashSet<string>>();
-            foreach (var item in history.Where(x => commandIds.Contains(x.CommandId, StringComparer.Ordinal)))
+            if (rangeSeconds <= 0)
             {
-                var bucket = item.ExecuteTime.ToUnixTimeSeconds();
-                if (!secondBuckets.TryGetValue(bucket, out var set))
+                // 默认按秒级桶近似多指令“同时成立”语义。
+                var secondBuckets = new Dictionary<long, HashSet<string>>();
+                foreach (var item in history.Where(x => commandIds.Contains(x.CommandId, StringComparer.Ordinal)))
                 {
-                    set = new HashSet<string>(StringComparer.Ordinal);
-                    secondBuckets[bucket] = set;
+                    var bucket = item.ExecuteTime.ToUnixTimeSeconds();
+                    if (!secondBuckets.TryGetValue(bucket, out var set))
+                    {
+                        set = new HashSet<string>(StringComparer.Ordinal);
+                        secondBuckets[bucket] = set;
+                    }
+
+                    set.Add(item.CommandId);
                 }
 
-                set.Add(item.CommandId);
+                return secondBuckets
+                    .Where(x => commandIds.All(c => x.Value.Contains(c)))
+                    .Select(x => DateTimeOffset.FromUnixTimeSeconds(x.Key))
+                    .OrderBy(x => x)
+                    .ToArray();
             }
 
-            return secondBuckets
-                .Where(x => commandIds.All(c => x.Value.Contains(c)))
-                .Select(x => DateTimeOffset.FromUnixTimeSeconds(x.Key))
+            // 时间范围语义（秒）：在 [t-rangeSeconds, t] 窗口内，所有指令至少出现一次，则以 t（最后事件时刻）触发。
+            var range = TimeSpan.FromSeconds(rangeSeconds);
+            var lastSeen = commandIds.ToDictionary(x => x, _ => (DateTimeOffset?)null, StringComparer.Ordinal);
+            var hits = new List<DateTimeOffset>();
+            foreach (var item in history
+                         .Where(x => commandIds.Contains(x.CommandId, StringComparer.Ordinal))
+                         .OrderBy(x => x.ExecuteTime))
+            {
+                lastSeen[item.CommandId] = item.ExecuteTime;
+                var allMatched = lastSeen.Values.All(ts => ts is not null && item.ExecuteTime - ts.Value <= range);
+                if (allMatched)
+                {
+                    hits.Add(item.ExecuteTime);
+                }
+            }
+
+            return hits
+                .Distinct()
                 .OrderBy(x => x)
                 .ToArray();
         }

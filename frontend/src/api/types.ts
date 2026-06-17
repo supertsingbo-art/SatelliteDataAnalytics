@@ -114,6 +114,7 @@ export interface CommandCache {
   satelliteNo: string;
   cmdId: number;
   cmdCode: string | null;
+  cmdName?: string | null;
   cmdDesc: string | null;
   cmdType: number | null;
   cmdLen: number | null;
@@ -125,8 +126,23 @@ export interface CommandCache {
 }
 
 export function formatCommandCacheLabel(c: CommandCache): string {
-  const name = c.cmdCode ?? c.cmdDesc ?? String(c.cmdId);
-  return `${c.cmdId}（${name}）`;
+  const code = c.cmdCode?.trim() || String(c.cmdId);
+  const name = c.cmdName?.trim() || c.cmdCode?.trim() || c.cmdDesc?.trim() || String(c.cmdId);
+  const desc = c.cmdDesc?.trim();
+
+  if (name !== code) {
+    if (desc && desc !== name) {
+      return `${code} ${name}(${desc})`;
+    }
+
+    return `${code} ${name}`;
+  }
+
+  if (desc && desc !== code) {
+    return `${code}(${desc})`;
+  }
+
+  return code;
 }
 
 export function commandCacheRowKey(c: CommandCache): string {
@@ -256,6 +272,8 @@ export interface ConditionConfig {
   instructions?: {
     startRelation?: 'AND' | 'OR';
     endRelation?: 'AND' | 'OR';
+    startRangeSeconds?: number;
+    endRangeSeconds?: number;
     startCommands?: InstructionConditionItem[];
     endCommands?: InstructionConditionItem[];
   };

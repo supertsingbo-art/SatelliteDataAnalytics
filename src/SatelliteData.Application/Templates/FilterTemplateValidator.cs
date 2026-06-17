@@ -37,18 +37,13 @@ public static class FilterTemplateValidator
         ValidateTimeWindow(configJson);
         var hasConditionConfig = configJson.TryGetProperty("conditionConfig", out var conditionConfig)
                                  && conditionConfig.ValueKind == JsonValueKind.Object;
-        var hasRuleTree = configJson.TryGetProperty("ruleTree", out _);
         if (hasConditionConfig)
         {
             ValidateConditionConfig(conditionConfig);
         }
-        else if (hasRuleTree)
-        {
-            ValidateRuleTree(configJson);
-        }
         else
         {
-            throw Invalid("conditionConfig / ruleTree 至少需要配置一个");
+            throw Invalid("conditionConfig 必须存在且为对象");
         }
 
         ValidateDuration(configJson);
@@ -158,8 +153,23 @@ public static class FilterTemplateValidator
 
         ValidateInstructionRelation(ins, "startRelation");
         ValidateInstructionRelation(ins, "endRelation");
+        ValidateInstructionRange(ins, "startRangeSeconds");
+        ValidateInstructionRange(ins, "endRangeSeconds");
         ValidateInstructionCommandArray(ins, "startCommands");
         ValidateInstructionCommandArray(ins, "endCommands");
+    }
+
+    private static void ValidateInstructionRange(JsonElement parent, string property)
+    {
+        if (!parent.TryGetProperty(property, out var value))
+        {
+            return;
+        }
+
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var seconds) || seconds < 0)
+        {
+            throw Invalid($"conditionConfig.instructions.{property} 必须是非负整数");
+        }
     }
 
     private static void ValidateInstructionRelation(JsonElement parent, string property)

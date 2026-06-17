@@ -88,12 +88,13 @@ public sealed class AssetSatellitesController(AssetQueryService queryService) : 
         [FromQuery] string? keyword,
         [FromQuery] int pageNo = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] bool unpaged = false,
         CancellationToken cancellationToken = default)
     {
         var page = await queryService.GetCommandsAsync(
             tasookNo,
             satelliteNo,
-            new AssetPageRequest(keyword, pageNo, pageSize),
+            new AssetPageRequest(keyword, pageNo, pageSize, unpaged),
             cancellationToken);
 
         return Ok(ApiResponse<PagedResult<CommandCacheView>>.Ok(page, HttpContext));
