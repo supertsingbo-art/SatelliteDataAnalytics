@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
-using SatelliteData.Application.Pipeline;
 using SatelliteData.Application.Templates;
 using SatelliteData.Infrastructure.HttpClients;
 using SatelliteData.Infrastructure.Pipeline;
@@ -99,11 +98,6 @@ public static class DependencyInjection
         }
 
         services.AddHttpClient<IMassDataAssetProvider, MassDataApiClient>((serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<AssetProviderOptions>>().Value;
-            client.BaseAddress = new Uri(options.MassDataApiBaseUrl.TrimEnd('/'));
-        });
-        services.AddHttpClient<IConditionHistoryProvider, MassDataConditionHistoryProvider>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<AssetProviderOptions>>().Value;
             client.BaseAddress = new Uri(options.MassDataApiBaseUrl.TrimEnd('/'));

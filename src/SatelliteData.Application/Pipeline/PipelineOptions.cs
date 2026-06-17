@@ -18,5 +18,8 @@ public sealed class PipelineOptions
 
     public string MongoRawCollection { get; init; } = "parameter_raw";
 
+    /// <summary>指令历史 Mongo 集合名（默认与海量/AIRTP 一致）。</summary>
+    public string MongoInstructionCollection { get; init; } = "IndicatorCollection";
+
     public int ClickHouseBatchSize { get; init; } = 100_000;
 }

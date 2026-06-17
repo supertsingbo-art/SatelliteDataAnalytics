@@ -19,6 +19,8 @@ public static class PipelineServiceCollectionExtensions
         services.AddSingleton<IClickHouseGateway, ClickHouseHttpGateway>();
         services.AddSingleton<IMongoRawSeriesReader, MongoRawSeriesReader>();
         services.AddSingleton<IMongoPkgSeriesReader, MongoPkgSeriesReader>();
+        services.AddSingleton<IMongoInstructionSeriesReader, MongoInstructionSeriesReader>();
+        services.AddSingleton<IConditionHistoryProvider, MongoConditionHistoryProvider>();
         services.AddSingleton<IFilterRuleEvaluator, FilterRuleEvaluator>();
         services.AddSingleton<RuleTreeSegmentEvaluator>();
         services.AddSingleton<ConditionRangeEvaluator>();
