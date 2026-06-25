@@ -25,6 +25,7 @@ public sealed class PreprocessPipeline(
     IOutlierDetector outlierDetector,
     IClickHouseGateway clickHouse,
     IHqParamMetadataRepository hqMetadata,
+    IPreprocessParamClaimRepository paramClaims,
     IPreprocessOutlierSegmentRepository outlierSegments,
     IPreprocessOutlierPointReviewRepository outlierReviews,
     PreprocessScheduleService scheduleService,
@@ -196,198 +197,302 @@ public sealed class PreprocessPipeline(
             return;
         }
 
-        await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
-        await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
-
-        ulong versionCounter = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var buffer = new List<string>();
-        var allOutlierSegments = new List<PreprocessOutlierSegment>();
-        var allOutlierReviews = new List<PreprocessOutlierPointReview>();
-        var now = DateTimeOffset.UtcNow;
-
+        var targetPlans = new List<TargetExecutionPlan>();
         foreach (var spec in targets)
         {
-            if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
-
             var paramRanges = RuleTreeSegmentEvaluator.ApplyBuffer(
                 validRanges,
                 window,
                 spec.BoundaryBufferBeforeSec,
                 spec.BoundaryBufferAfterSec);
-
             if (paramRanges.Count == 0)
             {
                 logger.LogWarning("参数 {Param} 缓冲后无有效窗，跳过", spec.ParamId);
                 continue;
             }
 
-            var points = new List<RawSeriesPoint>();
-            foreach (var range in paramRanges)
+            targetPlans.Add(new TargetExecutionPlan(spec, paramRanges));
+        }
+
+        try
+        {
+            await paramClaims.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await FailAsync(run, "PRE_003", $"清理参数时间段占位失败：{ex.Message}", cancellationToken);
+            return;
+        }
+
+        var claimRequests = BuildClaimRequests(targetPlans);
+        var claimsAcquired = false;
+        var claimsCommitted = false;
+        if (claimRequests.Count > 0)
+        {
+            PreprocessParamClaimAcquireResult acquireResult;
+            try
             {
-                var chunk = await ReadParamSeriesAsync(
-                    mongoUri,
-                    mongoDb,
+                acquireResult = await paramClaims.TryAcquireAsync(
+                    runId,
                     run.TasookNo,
                     run.SatelliteNo,
-                    parameters,
-                    spec.ParamId,
-                    range.Start,
-                    range.End,
-                    opt,
-                    cancellationToken);
-                points.AddRange(chunk);
+                    filterTemplateId,
+                    filterTemplateVersion,
+                    claimRequests,
+                    cancellationToken).ConfigureAwait(false);
             }
-
-            points = points.OrderBy(p => p.Ts).ToList();
-
-            if (points.Count == 0)
+            catch (Exception ex)
             {
-                await FailAsync(run, "PRE_001", $"无有效数据：{spec.ParamId}", cancellationToken);
+                await FailAsync(run, "PRE_003", $"申请参数时间段占位失败：{ex.Message}", cancellationToken);
                 return;
             }
 
-            var values = points.Select(p => p.Value).ToList();
-            var flags = outlierDetector.MarkOutliers(values, spec.Outlier);
-
-            for (var i = 0; i < points.Count; i++)
+            if (!acquireResult.Acquired)
             {
-                versionCounter++;
-                var row = new Dictionary<string, object?>
+                await FailAsync(run, "PRE_006", BuildClaimConflictMessage(acquireResult), cancellationToken);
+                return;
+            }
+
+            claimsAcquired = true;
+        }
+
+        try
+        {
+            await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+            await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+
+            ulong versionCounter = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var buffer = new List<string>();
+            var allOutlierSegments = new List<PreprocessOutlierSegment>();
+            var allOutlierReviews = new List<PreprocessOutlierPointReview>();
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var plan in targetPlans)
+            {
+                var spec = plan.Target;
+                if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
                 {
-                    ["tasook_no"] = run.TasookNo,
-                    ["satellite_no"] = run.SatelliteNo,
-                    ["test_batch_id"] = warehouseBatchLabel,
-                    ["param_id"] = spec.ParamId,
-                    ["ts"] = points[i].Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
-                    ["raw_value"] = points[i].Value,
-                    ["processed_value"] = points[i].Value,
-                    ["is_outlier"] = flags[i],
-                    ["is_confirmed_outlier"] = 0,
-                    ["version"] = versionCounter
-                };
-                buffer.Add(JsonSerializer.Serialize(row));
-                if (flags[i] != 0)
+                    return;
+                }
+
+                var points = new List<RawSeriesPoint>();
+                foreach (var range in plan.ParamRanges)
                 {
-                    allOutlierReviews.Add(new PreprocessOutlierPointReview(
-                        Guid.NewGuid(),
+                    var chunk = await ReadParamSeriesAsync(
+                        mongoUri,
+                        mongoDb,
+                        run.TasookNo,
+                        run.SatelliteNo,
+                        parameters,
+                        spec.ParamId,
+                        range.Start,
+                        range.End,
+                        opt,
+                        cancellationToken);
+                    points.AddRange(chunk);
+                }
+
+                points = points.OrderBy(p => p.Ts).ToList();
+
+                if (points.Count == 0)
+                {
+                    await FailAsync(run, "PRE_001", $"无有效数据：{spec.ParamId}", cancellationToken);
+                    return;
+                }
+
+                var values = points.Select(p => p.Value).ToList();
+                var flags = outlierDetector.MarkOutliers(values, spec.Outlier);
+
+                for (var i = 0; i < points.Count; i++)
+                {
+                    versionCounter++;
+                    var row = new Dictionary<string, object?>
+                    {
+                        ["tasook_no"] = run.TasookNo,
+                        ["satellite_no"] = run.SatelliteNo,
+                        ["test_batch_id"] = warehouseBatchLabel,
+                        ["param_id"] = spec.ParamId,
+                        ["ts"] = points[i].Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
+                        ["raw_value"] = points[i].Value,
+                        ["processed_value"] = points[i].Value,
+                        ["is_outlier"] = flags[i],
+                        ["is_confirmed_outlier"] = 0,
+                        ["version"] = versionCounter
+                    };
+                    buffer.Add(JsonSerializer.Serialize(row));
+                    if (flags[i] != 0)
+                    {
+                        allOutlierReviews.Add(new PreprocessOutlierPointReview(
+                            Guid.NewGuid(),
+                            runId,
+                            run.TasookNo,
+                            run.SatelliteNo,
+                            spec.ParamId,
+                            points[i].Ts,
+                            points[i].Value,
+                            spec.OutlierMethod,
+                            OutlierReviewPointStatus.Pending,
+                            null,
+                            null,
+                            null,
+                            now));
+                    }
+
+                    if (buffer.Count >= opt.ClickHouseBatchSize)
+                    {
+                        await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
+                        buffer.Clear();
+                    }
+                }
+
+                allOutlierSegments.AddRange(
+                    RuleTreeSegmentEvaluator.MergeOutlierSegments(
                         runId,
                         run.TasookNo,
                         run.SatelliteNo,
                         spec.ParamId,
-                        points[i].Ts,
-                        points[i].Value,
+                        points,
+                        flags,
                         spec.OutlierMethod,
-                        OutlierReviewPointStatus.Pending,
-                        null,
-                        null,
-                        null,
                         now));
-                }
-                if (buffer.Count >= opt.ClickHouseBatchSize)
-                {
-                    await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
-                    buffer.Clear();
-                }
+
+                await hqMetadata.InsertAsync(
+                    new HqParamMetadataRow(
+                        Guid.NewGuid(),
+                        runId,
+                        run.TasookNo,
+                        run.SatelliteNo,
+                        warehouseBatchLabel,
+                        spec.ParamId,
+                        window.Start,
+                        window.End,
+                        filterTemplateId,
+                        filterTemplateVersion,
+                        spec.OutlierMethod,
+                        null),
+                    cancellationToken);
             }
 
-            allOutlierSegments.AddRange(
-                RuleTreeSegmentEvaluator.MergeOutlierSegments(
-                    runId,
-                    run.TasookNo,
-                    run.SatelliteNo,
-                    spec.ParamId,
-                    points,
-                    flags,
-                    spec.OutlierMethod,
-                    now));
-
-            await hqMetadata.InsertAsync(
-                new HqParamMetadataRow(
-                    Guid.NewGuid(),
-                    runId,
-                    run.TasookNo,
-                    run.SatelliteNo,
-                    warehouseBatchLabel,
-                    spec.ParamId,
-                    window.Start,
-                    window.End,
-                    filterTemplateId,
-                    filterTemplateVersion,
-                    spec.OutlierMethod,
-                    null),
-                cancellationToken);
-        }
-
-        if (buffer.Count > 0)
-        {
-            await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
-        }
-
-        if (allOutlierReviews.Count > 0)
-        {
-            await outlierReviews.InsertBatchAsync(allOutlierReviews, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (allOutlierSegments.Count > 0)
-        {
-            await outlierSegments.InsertBatchAsync(allOutlierSegments, cancellationToken);
-        }
-
-        if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
-        if (run.Status == TaskRunStatus.Cancelled)
-        {
-            return;
-        }
-
-        var end = DateTimeOffset.UtcNow;
-
-        if (run.JobType == TaskJobType.Preprocess)
-        {
-            var autoCount = allOutlierReviews.Count;
-            run = run with
+            if (buffer.Count > 0)
             {
-                Status = TaskRunStatus.Succeeded,
-                ProgressPercent = 95m,
-                CurrentStep = "preprocess_done",
-                EndTime = end,
-                OutlierReviewStatus = autoCount == 0
-                    ? OutlierReviewRunStatus.NotRequired
-                    : OutlierReviewRunStatus.Pending,
-                OutlierAutoCount = autoCount,
-                OutlierPendingCount = autoCount,
-                OutlierConfirmedCount = 0,
-                OutlierJitterCount = 0
-            };
+                await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
+            }
+
+            if (allOutlierReviews.Count > 0)
+            {
+                await outlierReviews.InsertBatchAsync(allOutlierReviews, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (allOutlierSegments.Count > 0)
+            {
+                await outlierSegments.InsertBatchAsync(allOutlierSegments, cancellationToken);
+            }
+
+            if (claimsAcquired)
+            {
+                await paramClaims.MarkCommittedByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+                claimsCommitted = true;
+            }
+
+            if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
+            if (run.Status == TaskRunStatus.Cancelled)
+            {
+                return;
+            }
+
+            var end = DateTimeOffset.UtcNow;
+
+            if (run.JobType == TaskJobType.Preprocess)
+            {
+                var autoCount = allOutlierReviews.Count;
+                run = run with
+                {
+                    Status = TaskRunStatus.Succeeded,
+                    ProgressPercent = 95m,
+                    CurrentStep = "preprocess_done",
+                    EndTime = end,
+                    OutlierReviewStatus = autoCount == 0
+                        ? OutlierReviewRunStatus.NotRequired
+                        : OutlierReviewRunStatus.Pending,
+                    OutlierAutoCount = autoCount,
+                    OutlierPendingCount = autoCount,
+                    OutlierConfirmedCount = 0,
+                    OutlierJitterCount = 0
+                };
+                await taskRuns.UpdateAsync(run, cancellationToken);
+                await scheduleService.UpdateScheduleFromRunAsync(run, cancellationToken);
+                await taskEvents.AppendAsync(
+                    new TaskEvent(
+                        Guid.NewGuid(),
+                        runId,
+                        "task.succeeded",
+                        "Succeeded",
+                        null,
+                        null,
+                        null,
+                        end),
+                    cancellationToken);
+                scheduler.EnqueueWebhook(runId);
+                return;
+            }
+
+            run = run with { ProgressPercent = TaskProgressBands.AlgorithmMax - 1m, CurrentStep = "preprocess_done" };
             await taskRuns.UpdateAsync(run, cancellationToken);
-            await scheduleService.UpdateScheduleFromRunAsync(run, cancellationToken);
-            await taskEvents.AppendAsync(
-                new TaskEvent(
-                    Guid.NewGuid(),
-                    runId,
-                    "task.succeeded",
-                    "Succeeded",
-                    null,
-                    null,
-                    null,
-                    end),
-                cancellationToken);
-            scheduler.EnqueueWebhook(runId);
-            return;
+            scheduler.EnqueueAlgorithm(runId);
+        }
+        finally
+        {
+            if (claimsAcquired && !claimsCommitted)
+            {
+                try
+                {
+                    await paramClaims.ReleaseActiveByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "释放预处理参数时间段占位失败，run={RunId}", runId);
+                }
+            }
+        }
+    }
+
+    private static IReadOnlyList<PreprocessParamClaimRequest> BuildClaimRequests(
+        IReadOnlyList<TargetExecutionPlan> targetPlans)
+    {
+        var result = new List<PreprocessParamClaimRequest>();
+        foreach (var grouped in targetPlans.GroupBy(x => x.Target.ParamId, StringComparer.Ordinal))
+        {
+            var merged = ConditionRangeEvaluator.UnionRanges(grouped.SelectMany(x => x.ParamRanges).ToArray());
+            foreach (var range in merged)
+            {
+                result.Add(new PreprocessParamClaimRequest(grouped.Key, range.Start, range.End));
+            }
         }
 
-        run = run with { ProgressPercent = TaskProgressBands.AlgorithmMax - 1m, CurrentStep = "preprocess_done" };
-        await taskRuns.UpdateAsync(run, cancellationToken);
-
-        scheduler.EnqueueAlgorithm(runId);
+        return result;
     }
+
+    private static string BuildClaimConflictMessage(PreprocessParamClaimAcquireResult result)
+    {
+        var paramText = result.ConflictParamIds.Count == 0
+            ? "未知参数"
+            : string.Join(", ", result.ConflictParamIds);
+        if (result.ConflictDetail is null)
+        {
+            return $"参数冲突: param_id={paramText}，请调整模板条件后重试";
+        }
+
+        return $"参数冲突: param_id={paramText}, 冲突模板={result.ConflictDetail.ConflictFilterTemplateId}/v{result.ConflictDetail.ConflictFilterTemplateVersion}, 冲突任务={result.ConflictDetail.ConflictRunId}，请调整模板条件后重试";
+    }
+
+    private sealed record TargetExecutionPlan(
+        TargetParamSpec Target,
+        IReadOnlyList<TimeRange> ParamRanges);
 
     private async Task<IReadOnlyList<TimeRange>> EvaluateByConditionConfigAsync(
         FilterConditionConfig conditionConfig,

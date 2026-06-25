@@ -1303,6 +1303,259 @@ public sealed class PgHqParamMetadataRepository : IHqParamMetadataRepository
                 : r.GetString(r.GetOrdinal("outlier_reason_pattern")));
 }
 
+public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepository
+{
+    private const string ActiveStatus = "ACTIVE";
+    private const string CommittedStatus = "COMMITTED";
+    private const string SchemaSql = """
+        CREATE TABLE IF NOT EXISTS preprocess_param_claim (
+            claim_id uuid PRIMARY KEY,
+            run_id uuid NOT NULL,
+            tasook_no varchar(64) NOT NULL,
+            satellite_no varchar(64) NOT NULL,
+            param_id varchar(128) NOT NULL,
+            segment_start timestamptz NOT NULL,
+            segment_end timestamptz NOT NULL,
+            filter_template_id uuid NOT NULL,
+            filter_template_version int NOT NULL,
+            status varchar(16) NOT NULL,
+            created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_preprocess_param_claim_run
+            ON preprocess_param_claim(run_id, status);
+        CREATE INDEX IF NOT EXISTS idx_preprocess_param_claim_lookup
+            ON preprocess_param_claim(tasook_no, satellite_no, param_id, segment_start, segment_end, status);
+        CREATE OR REPLACE FUNCTION enforce_preprocess_param_claim_no_overlap()
+        RETURNS trigger AS $$
+        DECLARE
+            key_hash bigint;
+        BEGIN
+            IF NEW.segment_start >= NEW.segment_end THEN
+                RAISE EXCEPTION 'segment_start must be before segment_end';
+            END IF;
+
+            key_hash := hashtextextended(
+                COALESCE(NEW.tasook_no, '') || '|' || COALESCE(NEW.satellite_no, '') || '|' || COALESCE(NEW.param_id, ''),
+                0);
+            PERFORM pg_advisory_xact_lock(key_hash);
+
+            IF EXISTS (
+                SELECT 1
+                FROM preprocess_param_claim c
+                WHERE c.run_id <> NEW.run_id
+                  AND c.tasook_no = NEW.tasook_no
+                  AND c.satellite_no = NEW.satellite_no
+                  AND c.param_id = NEW.param_id
+                  AND c.status IN ('ACTIVE', 'COMMITTED')
+                  AND tstzrange(c.segment_start, c.segment_end, '[)')
+                      && tstzrange(NEW.segment_start, NEW.segment_end, '[)')
+            ) THEN
+                RAISE EXCEPTION 'preprocess param claim overlap for %', NEW.param_id USING ERRCODE = '23505';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        DROP TRIGGER IF EXISTS trg_preprocess_param_claim_no_overlap ON preprocess_param_claim;
+        CREATE TRIGGER trg_preprocess_param_claim_no_overlap
+            BEFORE INSERT OR UPDATE OF tasook_no, satellite_no, param_id, segment_start, segment_end, status
+            ON preprocess_param_claim
+            FOR EACH ROW
+            EXECUTE FUNCTION enforce_preprocess_param_claim_no_overlap();
+        """;
+
+    private readonly string _cs;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private bool _ready;
+
+    public PgPreprocessParamClaimRepository(IOptions<DatabaseConnectionOptions> options) =>
+        _cs = options.Value.Postgres;
+
+    private async Task EnsureAsync(CancellationToken cancellationToken)
+    {
+        if (_ready) return;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_ready) return;
+            await using var conn = new NpgsqlConnection(_cs);
+            await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var cmd = new NpgsqlCommand(SchemaSql, conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            _ready = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<PreprocessParamClaimAcquireResult> TryAcquireAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        Guid filterTemplateId,
+        int filterTemplateVersion,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        var normalized = claims
+            .Where(c => !string.IsNullOrWhiteSpace(c.ParamId) && c.SegmentStart < c.SegmentEnd)
+            .Select(c => c with { ParamId = c.ParamId.Trim() })
+            .OrderBy(c => c.ParamId, StringComparer.Ordinal)
+            .ThenBy(c => c.SegmentStart)
+            .ToArray();
+        if (normalized.Length == 0)
+        {
+            return PreprocessParamClaimAcquireResult.Success;
+        }
+
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            foreach (var claim in normalized)
+            {
+                await using var cmd = new NpgsqlCommand(
+                    """
+                    INSERT INTO preprocess_param_claim (
+                      claim_id, run_id, tasook_no, satellite_no, param_id,
+                      segment_start, segment_end, filter_template_id, filter_template_version, status, created_at
+                    ) VALUES (
+                      @id, @run_id, @tasook_no, @satellite_no, @param_id,
+                      @segment_start, @segment_end, @template_id, @template_version, @status, now()
+                    )
+                    """,
+                    conn,
+                    tx);
+                cmd.Parameters.AddWithValue("id", Guid.NewGuid());
+                cmd.Parameters.AddWithValue("run_id", runId);
+                cmd.Parameters.AddWithValue("tasook_no", tasookNo);
+                cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
+                cmd.Parameters.AddWithValue("param_id", claim.ParamId);
+                cmd.Parameters.AddWithValue("segment_start", claim.SegmentStart);
+                cmd.Parameters.AddWithValue("segment_end", claim.SegmentEnd);
+                cmd.Parameters.AddWithValue("template_id", filterTemplateId);
+                cmd.Parameters.AddWithValue("template_version", filterTemplateVersion);
+                cmd.Parameters.AddWithValue("status", ActiveStatus);
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return PreprocessParamClaimAcquireResult.Success;
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505")
+        {
+            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return await QueryConflictsAsync(
+                conn,
+                runId,
+                tasookNo,
+                satelliteNo,
+                normalized,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task MarkCommittedByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE preprocess_param_claim
+            SET status = @committed
+            WHERE run_id = @run_id AND status = @active
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("run_id", runId);
+        cmd.Parameters.AddWithValue("active", ActiveStatus);
+        cmd.Parameters.AddWithValue("committed", CommittedStatus);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task ReleaseActiveByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM preprocess_param_claim WHERE run_id = @run_id AND status = @active",
+            conn);
+        cmd.Parameters.AddWithValue("run_id", runId);
+        cmd.Parameters.AddWithValue("active", ActiveStatus);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM preprocess_param_claim WHERE run_id = @run_id",
+            conn);
+        cmd.Parameters.AddWithValue("run_id", runId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<PreprocessParamClaimAcquireResult> QueryConflictsAsync(
+        NpgsqlConnection conn,
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        var conflictParams = new HashSet<string>(StringComparer.Ordinal);
+        PreprocessParamClaimConflict? first = null;
+        foreach (var claim in claims)
+        {
+            await using var cmd = new NpgsqlCommand(
+                """
+                SELECT param_id, run_id, filter_template_id, filter_template_version
+                FROM preprocess_param_claim
+                WHERE run_id <> @run_id
+                  AND tasook_no = @tasook_no
+                  AND satellite_no = @satellite_no
+                  AND param_id = @param_id
+                  AND status IN ('ACTIVE', 'COMMITTED')
+                  AND tstzrange(segment_start, segment_end, '[)') && tstzrange(@segment_start, @segment_end, '[)')
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                conn);
+            cmd.Parameters.AddWithValue("run_id", runId);
+            cmd.Parameters.AddWithValue("tasook_no", tasookNo);
+            cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
+            cmd.Parameters.AddWithValue("param_id", claim.ParamId);
+            cmd.Parameters.AddWithValue("segment_start", claim.SegmentStart);
+            cmd.Parameters.AddWithValue("segment_end", claim.SegmentEnd);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            var paramId = reader.GetString(reader.GetOrdinal("param_id"));
+            conflictParams.Add(paramId);
+            first ??= new PreprocessParamClaimConflict(
+                paramId,
+                reader.GetGuid(reader.GetOrdinal("run_id")),
+                reader.GetGuid(reader.GetOrdinal("filter_template_id")),
+                reader.GetInt32(reader.GetOrdinal("filter_template_version")));
+        }
+
+        return PreprocessParamClaimAcquireResult.Conflict(
+            conflictParams.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+            first);
+    }
+}
+
 public sealed class PgClientCallbackRepository : IClientCallbackRepository
 {
     private const string Sql = """

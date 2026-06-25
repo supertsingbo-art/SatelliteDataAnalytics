@@ -32,6 +32,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<ITaskRunRepository, PgTaskRunRepository>();
             services.AddSingleton<ITaskEventRepository, PgTaskEventRepository>();
             services.AddSingleton<IHqParamMetadataRepository, PgHqParamMetadataRepository>();
+            services.AddSingleton<IPreprocessParamClaimRepository, PgPreprocessParamClaimRepository>();
             services.AddSingleton<IClientCallbackRepository, PgClientCallbackRepository>();
             services.AddSingleton<IPreprocessScheduleRepository, PgPreprocessScheduleRepository>();
             services.AddSingleton<IPreprocessOutlierSegmentRepository, PgPreprocessOutlierSegmentRepository>();
@@ -42,6 +43,7 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<ITaskRunRepository, InMemoryTaskRunRepository>();
             services.AddSingleton<ITaskEventRepository, InMemoryTaskEventRepository>();
             services.AddSingleton<IHqParamMetadataRepository, InMemoryHqParamMetadataRepository>();
+            services.AddSingleton<IPreprocessParamClaimRepository, InMemoryPreprocessParamClaimRepository>();
             services.AddSingleton<IClientCallbackRepository, InMemoryClientCallbackRepository>();
             services.AddSingleton<IPreprocessScheduleRepository, InMemoryPreprocessScheduleRepository>();
             services.AddSingleton<IPreprocessOutlierSegmentRepository, InMemoryPreprocessOutlierSegmentRepository>();

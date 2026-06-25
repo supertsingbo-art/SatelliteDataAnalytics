@@ -19,6 +19,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { ReloadOutlined } from '@ant-design/icons';
 import { tasksApi } from '@/api/tasks';
+import { parseApiError } from '@/api/client';
 import type {
   OutlierReviewItem,
   OutlierReviewList,
@@ -90,9 +91,86 @@ function statusSummaryText(row: TaskListItemV2): string {
   return parts.join(' · ');
 }
 
+interface Pre006ConflictInfo {
+  paramIds: string[];
+  templateId?: string;
+  templateVersion?: number;
+  runId?: string;
+}
+
+function parsePre006ConflictInfo(messageText: string): Pre006ConflictInfo {
+  const paramIds: string[] = [];
+  const paramMatch = messageText.match(
+    /param_id=([\s\S]*?)(?:,\s*冲突模板=|,\s*冲突任务=|，\s*冲突模板=|，\s*冲突任务=|$)/
+  );
+  if (paramMatch?.[1]) {
+    paramIds.push(
+      ...paramMatch[1]
+        .split(/[,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    );
+  }
+
+  const templateMatch = messageText.match(/冲突模板=([0-9a-fA-F-]{36})\/v(\d+)/);
+  const runMatch = messageText.match(/冲突任务=([0-9a-fA-F-]{36})/);
+  return {
+    paramIds,
+    templateId: templateMatch?.[1],
+    templateVersion: templateMatch?.[2] ? Number(templateMatch[2]) : undefined,
+    runId: runMatch?.[1]
+  };
+}
+
 type DataViewMode = 'all' | 'outlier-points' | 'outlier-segments';
 
 export function TasksListPage() {
+  const openTemplateEditor = (templateId: string, version: number) => {
+    window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
+  };
+
+  const showPre006Conflict = (rawMessage: string) => {
+    const conflict = parsePre006ConflictInfo(rawMessage);
+    Modal.warning({
+      title: '参数时间段冲突',
+      okText: '知道了',
+      content: (
+        <Space direction="vertical" size={4}>
+          <Text>
+            同一参数在同一时间段内只能有一份记录。当前任务与其他模板执行结果发生冲突，请先调整模板后重试。
+          </Text>
+          {conflict.paramIds.length > 0 && (
+            <Text>
+              冲突参数：<Text code>{conflict.paramIds.join(', ')}</Text>
+            </Text>
+          )}
+          {conflict.templateId && (
+            <Text>
+              冲突模板：<Text code>{conflict.templateId}</Text> / v{conflict.templateVersion ?? 1}
+            </Text>
+          )}
+          {conflict.runId && (
+            <Text>
+              冲突任务：<Text code>{conflict.runId}</Text>
+            </Text>
+          )}
+          {conflict.templateId && (
+            <Button
+              type="link"
+              style={{ paddingInline: 0 }}
+              onClick={() => {
+                if (!conflict.templateId) return;
+                openTemplateEditor(conflict.templateId, conflict.templateVersion ?? 1);
+              }}
+            >
+              去修改冲突模板
+            </Button>
+          )}
+        </Space>
+      )
+    });
+  };
+
   const [rows, setRows] = useState<TaskListItemV2[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -182,8 +260,11 @@ export function TasksListPage() {
         message.success(`任务已提交执行（${res.display_status}）`);
       }
       await load();
-    } catch {
-      /* axios 已提示 */
+    } catch (error) {
+      const parsed = parseApiError(error);
+      if (parsed?.code === 'PRE_006') {
+        showPre006Conflict(parsed.message);
+      }
     } finally {
       setExecutingKey(null);
     }
@@ -196,8 +277,11 @@ export function TasksListPage() {
       const res = await tasksApi.reExecuteRun(row.run_id);
       message.success(`已重新提交执行（${res.display_status}）`);
       await load();
-    } catch {
-      /* axios 已提示 */
+    } catch (error) {
+      const parsed = parseApiError(error);
+      if (parsed?.code === 'PRE_006') {
+        showPre006Conflict(parsed.message);
+      }
     } finally {
       setExecutingKey(null);
     }

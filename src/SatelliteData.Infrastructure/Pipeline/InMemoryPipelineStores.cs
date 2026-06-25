@@ -171,6 +171,144 @@ public sealed class InMemoryHqParamMetadataRepository : IHqParamMetadataReposito
     }
 }
 
+public sealed class InMemoryPreprocessParamClaimRepository : IPreprocessParamClaimRepository
+{
+    private readonly List<InMemoryClaimRow> _rows = [];
+    private readonly object _gate = new();
+
+    public Task<PreprocessParamClaimAcquireResult> TryAcquireAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        Guid filterTemplateId,
+        int filterTemplateVersion,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        if (claims.Count == 0)
+        {
+            return Task.FromResult(PreprocessParamClaimAcquireResult.Success);
+        }
+
+        lock (_gate)
+        {
+            var normalized = claims
+                .Where(c => !string.IsNullOrWhiteSpace(c.ParamId) && c.SegmentStart < c.SegmentEnd)
+                .Select(c => c with { ParamId = c.ParamId.Trim() })
+                .ToList();
+
+            var conflictParams = new HashSet<string>(StringComparer.Ordinal);
+            PreprocessParamClaimConflict? firstConflict = null;
+            foreach (var claim in normalized)
+            {
+                var conflict = _rows.FirstOrDefault(row =>
+                    row.RunId != runId
+                    && string.Equals(row.TasookNo, tasookNo, StringComparison.Ordinal)
+                    && string.Equals(row.SatelliteNo, satelliteNo, StringComparison.Ordinal)
+                    && string.Equals(row.ParamId, claim.ParamId, StringComparison.Ordinal)
+                    && row.Status is ClaimStatus.Active or ClaimStatus.Committed
+                    && claim.SegmentStart < row.SegmentEnd
+                    && claim.SegmentEnd > row.SegmentStart);
+                if (conflict is null)
+                {
+                    continue;
+                }
+
+                conflictParams.Add(claim.ParamId);
+                firstConflict ??= new PreprocessParamClaimConflict(
+                    claim.ParamId,
+                    conflict.RunId,
+                    conflict.FilterTemplateId,
+                    conflict.FilterTemplateVersion);
+            }
+
+            if (conflictParams.Count > 0)
+            {
+                return Task.FromResult(
+                    PreprocessParamClaimAcquireResult.Conflict(
+                        conflictParams.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+                        firstConflict));
+            }
+
+            foreach (var claim in normalized)
+            {
+                _rows.Add(new InMemoryClaimRow(
+                    Guid.NewGuid(),
+                    runId,
+                    tasookNo,
+                    satelliteNo,
+                    claim.ParamId,
+                    claim.SegmentStart,
+                    claim.SegmentEnd,
+                    filterTemplateId,
+                    filterTemplateVersion,
+                    ClaimStatus.Active,
+                    DateTimeOffset.UtcNow));
+            }
+
+            return Task.FromResult(PreprocessParamClaimAcquireResult.Success);
+        }
+    }
+
+    public Task MarkCommittedByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            for (var i = 0; i < _rows.Count; i++)
+            {
+                var row = _rows[i];
+                if (row.RunId == runId && row.Status == ClaimStatus.Active)
+                {
+                    _rows[i] = row with { Status = ClaimStatus.Committed };
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task ReleaseActiveByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _rows.RemoveAll(row => row.RunId == runId && row.Status == ClaimStatus.Active);
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task DeleteByRunIdAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _rows.RemoveAll(row => row.RunId == runId);
+            return Task.CompletedTask;
+        }
+    }
+
+    private enum ClaimStatus
+    {
+        Active = 0,
+        Committed = 1
+    }
+
+    private sealed record InMemoryClaimRow(
+        Guid ClaimId,
+        Guid RunId,
+        string TasookNo,
+        string SatelliteNo,
+        string ParamId,
+        DateTimeOffset SegmentStart,
+        DateTimeOffset SegmentEnd,
+        Guid FilterTemplateId,
+        int FilterTemplateVersion,
+        ClaimStatus Status,
+        DateTimeOffset CreatedAt);
+}
+
 public sealed class InMemoryPreprocessScheduleRepository : IPreprocessScheduleRepository
 {
     private readonly Dictionary<Guid, PreprocessSchedule> _byId = [];

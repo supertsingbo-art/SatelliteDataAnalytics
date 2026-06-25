@@ -43,13 +43,49 @@ interface AxiosErrorBody {
   message: string;
 }
 
+export interface ParsedApiError {
+  code: string;
+  message: string;
+  status?: number;
+}
+
+type ErrorWithApiCode = Error & {
+  apiCode?: string;
+  apiMessage?: string;
+  apiStatus?: number;
+};
+
+export function parseApiError(error: unknown): ParsedApiError | null {
+  if (!error) return null;
+  const e = error as ErrorWithApiCode;
+  if (typeof e.apiCode === 'string' && typeof e.apiMessage === 'string') {
+    return { code: e.apiCode, message: e.apiMessage, status: e.apiStatus };
+  }
+
+  if (axios.isAxiosError<AxiosErrorBody>(error)) {
+    const code = error.response?.data?.code;
+    const msg = error.response?.data?.message;
+    if (typeof code === 'string' && typeof msg === 'string') {
+      return { code, message: msg, status: error.response?.status };
+    }
+  }
+
+  return null;
+}
+
 http.interceptors.response.use(
   (response: AxiosResponse<ApiResponse<unknown>>) => {
     const body = response.data;
     if (body && body.success === false) {
       const code = body.code || 'UNKNOWN';
-      message.error(`${code}：${body.message}`);
-      return Promise.reject(new Error(body.message));
+      const apiError: ErrorWithApiCode = new Error(body.message);
+      apiError.apiCode = code;
+      apiError.apiMessage = body.message;
+      apiError.apiStatus = response.status;
+      if (code !== 'PRE_006') {
+        message.error(`${code}：${body.message}`);
+      }
+      return Promise.reject(apiError);
     }
     return response;
   },
@@ -58,7 +94,9 @@ http.interceptors.response.use(
       const data = error.response.data;
       const code = data?.code ?? `HTTP_${error.response.status}`;
       const msg = data?.message ?? error.message;
-      message.error(`${code}：${msg}`);
+      if (code !== 'PRE_006') {
+        message.error(`${code}：${msg}`);
+      }
     } else {
       message.error(error.message || '网络异常');
     }
