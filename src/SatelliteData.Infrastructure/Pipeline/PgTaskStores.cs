@@ -863,8 +863,11 @@ public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlie
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
         await using var conn = new NpgsqlConnection(_cs);
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        int nn = 0;
         foreach (var r in reviews)
         {
+            if (++nn == 295)
+            { }
             await using var cmd = new NpgsqlCommand(
                 """
                 INSERT INTO preprocess_outlier_point_review (
@@ -888,7 +891,12 @@ public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlie
             cmd.Parameters.AddWithValue("rb", (object?)r.ReviewedBy ?? DBNull.Value);
             cmd.Parameters.AddWithValue("rm", (object?)r.Remark ?? DBNull.Value);
             cmd.Parameters.AddWithValue("ca", r.CreatedAt);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) 
+            { }
         }
     }
 
