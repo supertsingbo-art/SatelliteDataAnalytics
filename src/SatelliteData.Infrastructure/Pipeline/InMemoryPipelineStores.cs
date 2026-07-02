@@ -86,6 +86,19 @@ public sealed class InMemoryTaskRunRepository : ITaskRunRepository
         }
     }
 
+    public Task<IReadOnlyList<TaskRun>> ListByFilterTemplateIdAsync(Guid filterTemplateId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _byId.Values
+                .Where(r => r.FilterTemplateId == filterTemplateId)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<TaskRun>>(arr);
+        }
+    }
+
     public Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
     {
         _ = cancellationToken;
@@ -368,6 +381,29 @@ public sealed class InMemoryPreprocessScheduleRepository : IPreprocessScheduleRe
         {
             var arr = _byId.Values.Where(s => s.Enabled).OrderByDescending(s => s.CreatedAt).ToArray();
             return Task.FromResult<IReadOnlyList<PreprocessSchedule>>(arr);
+        }
+    }
+
+    public Task<IReadOnlyList<PreprocessSchedule>> ListByFilterTemplateIdAsync(Guid filterTemplateId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _byId.Values
+                .Where(s => s.FilterTemplateId == filterTemplateId)
+                .OrderByDescending(s => s.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<PreprocessSchedule>>(arr);
+        }
+    }
+
+    public Task DeleteAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            _byId.Remove(scheduleId);
+            return Task.CompletedTask;
         }
     }
 }

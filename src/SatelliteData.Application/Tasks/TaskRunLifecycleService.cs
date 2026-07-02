@@ -7,6 +7,7 @@ public sealed class TaskRunLifecycleService(
     ITaskRunRepository taskRuns,
     ITaskEventRepository taskEvents,
     IHqParamMetadataRepository hqMetadata,
+    IPreprocessParamClaimRepository paramClaims,
     IPreprocessOutlierSegmentRepository outlierSegments,
     IPreprocessOutlierPointReviewRepository outlierReviews,
     IBackgroundJobScheduler scheduler,
@@ -22,12 +23,20 @@ public sealed class TaskRunLifecycleService(
             throw new TaskValidationException(TaskErrorCodes.NotDeletable, "仅已结束的预处理任务可删除");
         }
 
-        await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
-        await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
-        await hqMetadata.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
-        await taskEvents.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
-        await taskRuns.DeleteAsync(runId, cancellationToken).ConfigureAwait(false);
+        await DeleteRunCoreAsync(runId, cancellationToken).ConfigureAwait(false);
         logger.LogInformation("Deleted preprocess task run {RunId}", runId);
+    }
+
+    public async Task DeleteRunForceAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return;
+        }
+
+        await DeleteRunCoreAsync(runId, cancellationToken).ConfigureAwait(false);
+        logger.LogInformation("Force deleted task run {RunId}", runId);
     }
 
     public async Task<ExecuteTaskResultDto> ReExecuteRunAsync(Guid runId, CancellationToken cancellationToken)
@@ -67,5 +76,15 @@ public sealed class TaskRunLifecycleService(
             run.ScheduleId,
             run.JobId,
             run.Status.ToString());
+    }
+
+    private async Task DeleteRunCoreAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await hqMetadata.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await paramClaims.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await taskEvents.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await taskRuns.DeleteAsync(runId, cancellationToken).ConfigureAwait(false);
     }
 }

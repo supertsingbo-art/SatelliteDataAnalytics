@@ -364,6 +364,25 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         return list;
     }
 
+    public async Task<IReadOnlyList<TaskRun>> ListByFilterTemplateIdAsync(Guid filterTemplateId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM task_run WHERE filter_template_id=@tid ORDER BY created_at DESC",
+            conn);
+        cmd.Parameters.AddWithValue("tid", filterTemplateId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<TaskRun>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(Read(reader));
+        }
+
+        return list;
+    }
+
     public async Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
@@ -615,6 +634,35 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
         }
 
         return list;
+    }
+
+    public async Task<IReadOnlyList<PreprocessSchedule>> ListByFilterTemplateIdAsync(Guid filterTemplateId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM preprocess_schedule WHERE filter_template_id=@ft ORDER BY created_at DESC",
+            conn);
+        cmd.Parameters.AddWithValue("ft", filterTemplateId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<PreprocessSchedule>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(Read(reader));
+        }
+
+        return list;
+    }
+
+    public async Task DeleteAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand("DELETE FROM preprocess_schedule WHERE schedule_id=@id", conn);
+        cmd.Parameters.AddWithValue("id", scheduleId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void AddParams(NpgsqlCommand cmd, PreprocessSchedule s)

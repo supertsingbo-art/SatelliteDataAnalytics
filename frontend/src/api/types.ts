@@ -238,6 +238,18 @@ export interface FilterTemplateResolvedDetail {
   resolutionWarnings: string[];
 }
 
+export interface FilterTemplateDeleteImpact {
+  templateId: string;
+  templateName: string;
+  versionCount: number;
+  taskRunCount: number;
+  runningTaskRunCount: number;
+  scheduleCount: number;
+  taskRunIds: string[];
+  scheduleIds: string[];
+  hasReferences: boolean;
+}
+
 export type RuleOperator = '>' | '>=' | '<' | '<=' | '=' | '==' | '!=' | 'between';
 
 export interface RuleLeaf {

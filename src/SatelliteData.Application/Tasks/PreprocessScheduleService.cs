@@ -204,6 +204,19 @@ public sealed class PreprocessScheduleService(
         logger.LogInformation("Disabled preprocess schedule {ScheduleId}", scheduleId);
     }
 
+    public async Task DeleteScheduleAsync(Guid scheduleId, CancellationToken cancellationToken)
+    {
+        var schedule = await schedules.GetByIdAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+        if (schedule is null)
+        {
+            return;
+        }
+
+        scheduler.RemoveDailySchedule(schedule.HangfireRecurringId);
+        await schedules.DeleteAsync(scheduleId, cancellationToken).ConfigureAwait(false);
+        logger.LogInformation("Deleted preprocess schedule {ScheduleId}", scheduleId);
+    }
+
     private static string BuildDailyInstanceKey(Guid scheduleId, DateOnly localDate)
     {
         var raw = $"DAILY|{scheduleId:N}|{localDate:yyyy-MM-dd}";

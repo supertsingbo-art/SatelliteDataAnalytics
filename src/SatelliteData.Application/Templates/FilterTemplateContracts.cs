@@ -38,6 +38,19 @@ public sealed record FilterTemplateResolvedDetail(
     JsonElement ConfigJson,
     IReadOnlyList<string> ResolutionWarnings);
 
+public sealed record FilterTemplateDeleteImpact(
+    Guid TemplateId,
+    string TemplateName,
+    int VersionCount,
+    int TaskRunCount,
+    int RunningTaskRunCount,
+    int ScheduleCount,
+    IReadOnlyList<Guid> TaskRunIds,
+    IReadOnlyList<Guid> ScheduleIds)
+{
+    public bool HasReferences => TaskRunCount > 0 || ScheduleCount > 0;
+}
+
 public sealed record FilterTemplateListRequest(
     Guid? GroupId,
     TemplateStatus? Status,
@@ -60,4 +73,6 @@ public interface IFilterTemplateRepository
     Task SaveAsync(FilterTemplate template, CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid templateId, int version, CancellationToken cancellationToken);
+
+    Task DeleteAllByTemplateIdAsync(Guid templateId, CancellationToken cancellationToken);
 }

@@ -564,7 +564,7 @@ export function FilterTemplateEditor() {
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            message="该版本已发布或归档，不可修改。请通过列表「克隆新版本」生成新的 Draft。"
+            message="该版本已发布或归档，不可修改。请通过列表「复制为新模板」生成新的 Draft。"
           />
         )}
 

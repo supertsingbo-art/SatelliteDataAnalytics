@@ -7,6 +7,7 @@ import {
   AlgorithmTemplateValidationResult,
   AlgorithmTemplateView,
   FilterTemplateConfigJson,
+  FilterTemplateDeleteImpact,
   FilterTemplateDetail,
   FilterTemplateResolvedDetail,
   FilterTemplateView,
@@ -51,6 +52,10 @@ export const filterTemplatesApi = {
     request<FilterTemplateView>('post', `${FILTER_BASE}/${templateId}/versions/${version}/archive`),
   clone: (templateId: string, sourceVersion?: number) =>
     request<FilterTemplateDetail>('post', `${FILTER_BASE}/${templateId}/clone`, undefined, { sourceVersion }),
+  deleteImpact: (templateId: string) =>
+    request<FilterTemplateDeleteImpact>('get', `${FILTER_BASE}/${templateId}/delete-impact`),
+  removeTemplate: (templateId: string, cascade = true) =>
+    request<{ deleted: boolean }>('delete', `${FILTER_BASE}/${templateId}`, undefined, { cascade }),
   remove: (templateId: string, version: number) =>
     request<{ deleted: boolean }>('delete', `${FILTER_BASE}/${templateId}/versions/${version}`)
 };
