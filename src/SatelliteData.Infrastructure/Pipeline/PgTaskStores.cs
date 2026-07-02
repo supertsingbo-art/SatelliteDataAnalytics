@@ -6,6 +6,7 @@ using SatelliteData.Application.Pipeline;
 using SatelliteData.Application.Tasks;
 using SatelliteData.Domain.Tasks;
 using SatelliteData.Infrastructure;
+using SatelliteData.Infrastructure.PostgreSql;
 
 namespace SatelliteData.Infrastructure.Pipeline;
 
@@ -291,6 +292,34 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<bool> UpdateIfNotCancelledAsync(TaskRun run, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            """
+            UPDATE task_run SET
+              job_type=@job_type, trigger_type=@trigger_type, status=@status,
+              tasook_no=@tasook_no, satellite_no=@satellite_no, test_batch_name=@test_batch_name,
+              window_start=@window_start, window_end=@window_end,
+              filter_template_id=@filter_template_id, filter_template_version=@filter_template_version,
+              algorithm_template_id=@algorithm_template_id, algorithm_template_version=@algorithm_template_version,
+              report_template_id=@report_template_id, report_template_version=@report_template_version,
+              progress_percent=@progress_percent, current_step=@current_step, start_time=@start_time, end_time=@end_time,
+              timeout_flag=@timeout_flag, error_code=@error_code, error_msg=@error_msg,
+              execution_mode=@execution_mode, scheduled_at=@scheduled_at, schedule_id=@schedule_id, hangfire_job_id=@hangfire_job_id,
+              outlier_review_status=@outlier_review_status, outlier_auto_count=@outlier_auto_count,
+              outlier_pending_count=@outlier_pending_count, outlier_confirmed_count=@outlier_confirmed_count,
+              outlier_jitter_count=@outlier_jitter_count
+            WHERE run_id=@run_id AND status <> 'Cancelled'
+            """,
+            conn);
+        AddParams(cmd, run);
+        var rows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return rows > 0;
+    }
+
     public async Task<TaskRun?> GetByRunIdAsync(Guid runId, CancellationToken cancellationToken)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
@@ -382,8 +411,8 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         cmd.Parameters.AddWithValue("tasook_no", run.TasookNo);
         cmd.Parameters.AddWithValue("satellite_no", run.SatelliteNo);
         cmd.Parameters.AddWithValue("test_batch_name", (object?)run.TestBatchName ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("window_start", (object?)run.WindowStart ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("window_end", (object?)run.WindowEnd ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("window_start", PgTimestamptz.UtcOrDbNull(run.WindowStart));
+        cmd.Parameters.AddWithValue("window_end", PgTimestamptz.UtcOrDbNull(run.WindowEnd));
         cmd.Parameters.AddWithValue("filter_template_id", (object?)run.FilterTemplateId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("filter_template_version", (object?)run.FilterTemplateVersion ?? DBNull.Value);
         cmd.Parameters.AddWithValue("algorithm_template_id", (object?)run.AlgorithmTemplateId ?? DBNull.Value);
@@ -392,17 +421,17 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         cmd.Parameters.AddWithValue("report_template_version", (object?)run.ReportTemplateVersion ?? DBNull.Value);
         cmd.Parameters.AddWithValue("progress_percent", run.ProgressPercent);
         cmd.Parameters.AddWithValue("current_step", (object?)run.CurrentStep ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("start_time", (object?)run.StartTime ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("end_time", (object?)run.EndTime ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("start_time", PgTimestamptz.UtcOrDbNull(run.StartTime));
+        cmd.Parameters.AddWithValue("end_time", PgTimestamptz.UtcOrDbNull(run.EndTime));
         cmd.Parameters.AddWithValue("timeout_flag", run.TimeoutFlag);
         cmd.Parameters.AddWithValue("error_code", (object?)run.ErrorCode ?? DBNull.Value);
         cmd.Parameters.AddWithValue("error_msg", (object?)run.ErrorMsg ?? DBNull.Value);
         cmd.Parameters.AddWithValue("created_by", (object?)run.CreatedBy ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("created_at", run.CreatedAt);
+        cmd.Parameters.AddWithValue("created_at", PgTimestamptz.Utc(run.CreatedAt));
         cmd.Parameters.AddWithValue(
             "execution_mode",
             run.ExecutionMode is { } em ? TaskRunDbMapper.ExecutionModeToDb(em) : DBNull.Value);
-        cmd.Parameters.AddWithValue("scheduled_at", (object?)run.ScheduledAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("scheduled_at", PgTimestamptz.UtcOrDbNull(run.ScheduledAt));
         cmd.Parameters.AddWithValue("schedule_id", (object?)run.ScheduleId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("hangfire_job_id", (object?)run.HangfireJobId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("outlier_review_status", (object?)run.OutlierReviewStatus ?? DBNull.Value);
@@ -602,9 +631,9 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
         cmd.Parameters.AddWithValue("hf", s.HangfireRecurringId);
         cmd.Parameters.AddWithValue("lrid", (object?)s.LastRunId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("lrs", (object?)s.LastRunStatus ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("lre", (object?)s.LastRunEndAt ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("ca", s.CreatedAt);
-        cmd.Parameters.AddWithValue("ua", s.UpdatedAt);
+        cmd.Parameters.AddWithValue("lre", PgTimestamptz.UtcOrDbNull(s.LastRunEndAt));
+        cmd.Parameters.AddWithValue("ca", PgTimestamptz.Utc(s.CreatedAt));
+        cmd.Parameters.AddWithValue("ua", PgTimestamptz.Utc(s.UpdatedAt));
     }
 
     private static PreprocessSchedule Read(NpgsqlDataReader r)
@@ -690,30 +719,31 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
         await using var conn = new NpgsqlConnection(_cs);
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var s in segments)
+
+        const string sql = """
+            INSERT INTO preprocess_outlier_segment (
+              segment_id, run_id, tasook_no, satellite_no, param_id,
+              segment_start, segment_end, outlier_method, segment_kind, created_at
+            ) VALUES (
+              @id, @run, @t, @sat, @p, @ss, @se, @om, @sk, @ca
+            )
+            """;
+
+        var binders = segments.Select<PreprocessOutlierSegment, Action<NpgsqlBatchCommand>>(s => cmd =>
         {
-            await using var cmd = new NpgsqlCommand(
-                """
-                INSERT INTO preprocess_outlier_segment (
-                  segment_id, run_id, tasook_no, satellite_no, param_id,
-                  segment_start, segment_end, outlier_method, segment_kind, created_at
-                ) VALUES (
-                  @id, @run, @t, @sat, @p, @ss, @se, @om, @sk, @ca
-                )
-                """,
-                conn);
             cmd.Parameters.AddWithValue("id", s.SegmentId);
             cmd.Parameters.AddWithValue("run", s.RunId);
             cmd.Parameters.AddWithValue("t", s.TasookNo);
             cmd.Parameters.AddWithValue("sat", s.SatelliteNo);
             cmd.Parameters.AddWithValue("p", s.ParamId);
-            cmd.Parameters.AddWithValue("ss", s.SegmentStart);
-            cmd.Parameters.AddWithValue("se", s.SegmentEnd);
+            cmd.Parameters.AddWithValue("ss", PgTimestamptz.Utc(s.SegmentStart));
+            cmd.Parameters.AddWithValue("se", PgTimestamptz.Utc(s.SegmentEnd));
             cmd.Parameters.AddWithValue("om", (object?)s.OutlierMethod ?? DBNull.Value);
             cmd.Parameters.AddWithValue("sk", s.SegmentKind);
-            cmd.Parameters.AddWithValue("ca", s.CreatedAt);
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+            cmd.Parameters.AddWithValue("ca", PgTimestamptz.Utc(s.CreatedAt));
+        }).ToArray();
+
+        await PgBatchExecutor.ExecuteBatchAsync(conn, sql, binders, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<IReadOnlyList<PreprocessOutlierSegment>> ListByRunIdAsync(
@@ -863,41 +893,35 @@ public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlie
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
         await using var conn = new NpgsqlConnection(_cs);
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
-        int nn = 0;
-        foreach (var r in reviews)
+
+        const string sql = """
+            INSERT INTO preprocess_outlier_point_review (
+              review_id, run_id, tasook_no, satellite_no, param_id, ts,
+              auto_value, auto_outlier_method, review_status, reviewed_at, reviewed_by, remark, created_at
+            ) VALUES (
+              @id, @run, @t, @sat, @p, @ts, @av, @om, @st, @ra, @rb, @rm, @ca
+            )
+            ON CONFLICT (run_id, param_id, ts) DO NOTHING
+            """;
+
+        var binders = reviews.Select<PreprocessOutlierPointReview, Action<NpgsqlBatchCommand>>(r => cmd =>
         {
-            if (++nn == 295)
-            { }
-            await using var cmd = new NpgsqlCommand(
-                """
-                INSERT INTO preprocess_outlier_point_review (
-                  review_id, run_id, tasook_no, satellite_no, param_id, ts,
-                  auto_value, auto_outlier_method, review_status, reviewed_at, reviewed_by, remark, created_at
-                ) VALUES (
-                  @id, @run, @t, @sat, @p, @ts, @av, @om, @st, @ra, @rb, @rm, @ca
-                )
-                """,
-                conn);
             cmd.Parameters.AddWithValue("id", r.ReviewId);
             cmd.Parameters.AddWithValue("run", r.RunId);
             cmd.Parameters.AddWithValue("t", r.TasookNo);
             cmd.Parameters.AddWithValue("sat", r.SatelliteNo);
             cmd.Parameters.AddWithValue("p", r.ParamId);
-            cmd.Parameters.AddWithValue("ts", r.Ts);
+            cmd.Parameters.AddWithValue("ts", PgTimestamptz.Utc(r.Ts));
             cmd.Parameters.AddWithValue("av", (object?)r.AutoValue ?? DBNull.Value);
             cmd.Parameters.AddWithValue("om", (object?)r.AutoOutlierMethod ?? DBNull.Value);
             cmd.Parameters.AddWithValue("st", r.ReviewStatus);
-            cmd.Parameters.AddWithValue("ra", (object?)r.ReviewedAt ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("ra", PgTimestamptz.UtcOrDbNull(r.ReviewedAt));
             cmd.Parameters.AddWithValue("rb", (object?)r.ReviewedBy ?? DBNull.Value);
             cmd.Parameters.AddWithValue("rm", (object?)r.Remark ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("ca", r.CreatedAt);
-            try
-            {
-                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) 
-            { }
-        }
+            cmd.Parameters.AddWithValue("ca", PgTimestamptz.Utc(r.CreatedAt));
+        }).ToArray();
+
+        await PgBatchExecutor.ExecuteBatchAsync(conn, sql, binders, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<(IReadOnlyList<PreprocessOutlierPointReview> Items, long Total)> ListPageAsync(
@@ -1036,12 +1060,12 @@ public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlie
                 """,
                 conn);
             cmd.Parameters.AddWithValue("st", u.Status);
-            cmd.Parameters.AddWithValue("ra", reviewedAt);
+            cmd.Parameters.AddWithValue("ra", PgTimestamptz.Utc(reviewedAt));
             cmd.Parameters.AddWithValue("rb", (object?)reviewedBy ?? DBNull.Value);
             cmd.Parameters.AddWithValue("rm", (object?)u.Remark ?? DBNull.Value);
             cmd.Parameters.AddWithValue("run", runId);
             cmd.Parameters.AddWithValue("p", u.ParamId);
-            cmd.Parameters.AddWithValue("ts", u.Ts);
+            cmd.Parameters.AddWithValue("ts", PgTimestamptz.Utc(u.Ts));
             updated += await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1160,7 +1184,7 @@ public sealed class PgTaskEventRepository : ITaskEventRepository
         cmd.Parameters.AddWithValue("payload", (object?)evt.PayloadJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("ecode", (object?)evt.ErrorCode ?? DBNull.Value);
         cmd.Parameters.AddWithValue("emsg", (object?)evt.ErrorMsg ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("created", evt.CreatedAt);
+        cmd.Parameters.AddWithValue("created", PgTimestamptz.Utc(evt.CreatedAt));
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1245,8 +1269,8 @@ public sealed class PgHqParamMetadataRepository : IHqParamMetadataRepository
         cmd.Parameters.AddWithValue("s", row.SatelliteNo);
         cmd.Parameters.AddWithValue("b", row.TestBatchId);
         cmd.Parameters.AddWithValue("p", row.ParamId);
-        cmd.Parameters.AddWithValue("ws", row.WindowStart);
-        cmd.Parameters.AddWithValue("we", row.WindowEnd);
+        cmd.Parameters.AddWithValue("ws", PgTimestamptz.Utc(row.WindowStart));
+        cmd.Parameters.AddWithValue("we", PgTimestamptz.Utc(row.WindowEnd));
         cmd.Parameters.AddWithValue("ft", row.FilterTemplateId);
         cmd.Parameters.AddWithValue("fv", row.FilterTemplateVersion);
         cmd.Parameters.AddWithValue("om", (object?)row.OutlierMethod ?? DBNull.Value);
@@ -1417,32 +1441,32 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
 
         try
         {
-            foreach (var claim in normalized)
+            const string sql = """
+                INSERT INTO preprocess_param_claim (
+                  claim_id, run_id, tasook_no, satellite_no, param_id,
+                  segment_start, segment_end, filter_template_id, filter_template_version, status, created_at
+                ) VALUES (
+                  @id, @run_id, @tasook_no, @satellite_no, @param_id,
+                  @segment_start, @segment_end, @template_id, @template_version, @status, now()
+                )
+                """;
+
+            var binders = normalized.Select<PreprocessParamClaimRequest, Action<NpgsqlBatchCommand>>(claim => cmd =>
             {
-                await using var cmd = new NpgsqlCommand(
-                    """
-                    INSERT INTO preprocess_param_claim (
-                      claim_id, run_id, tasook_no, satellite_no, param_id,
-                      segment_start, segment_end, filter_template_id, filter_template_version, status, created_at
-                    ) VALUES (
-                      @id, @run_id, @tasook_no, @satellite_no, @param_id,
-                      @segment_start, @segment_end, @template_id, @template_version, @status, now()
-                    )
-                    """,
-                    conn,
-                    tx);
                 cmd.Parameters.AddWithValue("id", Guid.NewGuid());
                 cmd.Parameters.AddWithValue("run_id", runId);
                 cmd.Parameters.AddWithValue("tasook_no", tasookNo);
                 cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
                 cmd.Parameters.AddWithValue("param_id", claim.ParamId);
-                cmd.Parameters.AddWithValue("segment_start", claim.SegmentStart);
-                cmd.Parameters.AddWithValue("segment_end", claim.SegmentEnd);
+                cmd.Parameters.AddWithValue("segment_start", PgTimestamptz.Utc(claim.SegmentStart));
+                cmd.Parameters.AddWithValue("segment_end", PgTimestamptz.Utc(claim.SegmentEnd));
                 cmd.Parameters.AddWithValue("template_id", filterTemplateId);
                 cmd.Parameters.AddWithValue("template_version", filterTemplateVersion);
                 cmd.Parameters.AddWithValue("status", ActiveStatus);
-                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
+            }).ToArray();
+
+            await PgBatchExecutor.ExecuteBatchAsync(conn, sql, binders, cancellationToken, tx)
+                .ConfigureAwait(false);
 
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
             return PreprocessParamClaimAcquireResult.Success;
@@ -1533,8 +1557,8 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
             cmd.Parameters.AddWithValue("tasook_no", tasookNo);
             cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
             cmd.Parameters.AddWithValue("param_id", claim.ParamId);
-            cmd.Parameters.AddWithValue("segment_start", claim.SegmentStart);
-            cmd.Parameters.AddWithValue("segment_end", claim.SegmentEnd);
+            cmd.Parameters.AddWithValue("segment_start", PgTimestamptz.Utc(claim.SegmentStart));
+            cmd.Parameters.AddWithValue("segment_end", PgTimestamptz.Utc(claim.SegmentEnd));
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {

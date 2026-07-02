@@ -67,10 +67,10 @@ public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<Asse
             tasookNo,
             satelliteNo,
             batchName.Trim(),
-            start,
-            end,
+            start.ToUniversalTime(),
+            end.ToUniversalTime(),
             item.GetStringOrNull("sourceVersion", "version"),
-            syncedAt,
+            syncedAt.ToUniversalTime(),
             item.Clone());
     }
 }

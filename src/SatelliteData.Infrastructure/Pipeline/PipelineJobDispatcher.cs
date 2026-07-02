@@ -11,16 +11,34 @@ public sealed class PipelineJobDispatcher(IServiceScopeFactory scopeFactory)
     public async Task RunPreprocess(Guid runId)
     {
         using var scope = scopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ITaskRunCancellationRegistry>();
+        using var reg = registry.Register(runId);
         var p = scope.ServiceProvider.GetRequiredService<IPreprocessPipeline>();
-        await p.ExecuteAsync(runId, CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await p.ExecuteAsync(runId, reg.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (reg.Token.IsCancellationRequested)
+        {
+            // 用户取消，正常结束
+        }
     }
 
     [Queue("algorithm")]
     public async Task RunAlgorithm(Guid runId)
     {
         using var scope = scopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ITaskRunCancellationRegistry>();
+        using var reg = registry.Register(runId);
         var p = scope.ServiceProvider.GetRequiredService<IAlgorithmExecutionPipeline>();
-        await p.ExecuteAsync(runId, CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await p.ExecuteAsync(runId, reg.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (reg.Token.IsCancellationRequested)
+        {
+            // 用户取消，正常结束
+        }
     }
 
     [Queue("webhook")]

@@ -52,6 +52,26 @@ public sealed class InMemoryTaskRunRepository : ITaskRunRepository
         }
     }
 
+    public Task<bool> UpdateIfNotCancelledAsync(TaskRun run, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            if (_byId.TryGetValue(run.RunId, out var existing) && existing.Status == TaskRunStatus.Cancelled)
+            {
+                return Task.FromResult(false);
+            }
+
+            _byId[run.RunId] = run;
+            if (_byIdem.TryGetValue(run.IdempotencyKey, out var idem) && idem.RunId == run.RunId)
+            {
+                _byIdem[run.IdempotencyKey] = run;
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
     public Task<IReadOnlyList<TaskRun>> ListRecentAsync(int limit, CancellationToken cancellationToken)
     {
         _ = cancellationToken;

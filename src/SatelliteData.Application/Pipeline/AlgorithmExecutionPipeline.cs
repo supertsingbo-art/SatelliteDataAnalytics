@@ -28,8 +28,25 @@ public sealed class AlgorithmExecutionPipeline(
             return;
         }
 
+        try
+        {
+            await ExecuteCoreAsync(runId, run, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+    }
+
+    private async Task ExecuteCoreAsync(Guid runId, TaskRun run, CancellationToken cancellationToken)
+    {
+        await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false);
+
         run = run with { CurrentStep = "algorithm", ProgressPercent = TaskProgressBands.AlgorithmMax - 15m };
-        await taskRuns.UpdateAsync(run, cancellationToken);
+        if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
 
         if (run.AlgorithmTemplateId is null || run.AlgorithmTemplateVersion is null)
         {
@@ -71,10 +88,8 @@ public sealed class AlgorithmExecutionPipeline(
 
         foreach (var nodeId in order)
         {
-            if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
-            {
-                return;
-            }
+            await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                .ConfigureAwait(false);
 
             var node = nodeMap[nodeId];
             preds.TryGetValue(nodeId, out var predId);
@@ -167,6 +182,8 @@ public sealed class AlgorithmExecutionPipeline(
 
         if (algoRows.Count > 0)
         {
+            await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                .ConfigureAwait(false);
             await clickHouse.InsertJsonEachRowAsync("algo_result", algoRows, cancellationToken);
         }
 
@@ -189,7 +206,10 @@ public sealed class AlgorithmExecutionPipeline(
             CurrentStep = "algorithm_done",
             EndTime = end
         };
-        await taskRuns.UpdateAsync(run, cancellationToken);
+        if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
         await taskEvents.AppendAsync(
             new TaskEvent(
                 Guid.NewGuid(),
@@ -221,7 +241,7 @@ public sealed class AlgorithmExecutionPipeline(
         }
 
         var end = DateTimeOffset.UtcNow;
-        await taskRuns.UpdateAsync(
+        if (!await taskRuns.UpdateIfNotCancelledAsync(
             run with
             {
                 Status = TaskRunStatus.Failed,
@@ -230,7 +250,10 @@ public sealed class AlgorithmExecutionPipeline(
                 EndTime = end,
                 CurrentStep = "algorithm_failed"
             },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
         await taskEvents.AppendAsync(
             new TaskEvent(
                 Guid.NewGuid(),

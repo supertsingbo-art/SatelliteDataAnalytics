@@ -37,8 +37,8 @@ public sealed class MongoRawSeriesReader : IMongoRawSeriesReader
             {
                 foreach (var doc in cursor.Current)
                 {
-                    var ts = doc.TryGetValue("ts", out var t) && t.IsValidDateTime
-                        ? new DateTimeOffset(t.ToUniversalTime(), TimeSpan.Zero)
+                    var ts = doc.TryGetValue("ts", out var t)
+                        ? MongoDateTimeMapper.ToLocalOffset(t)
                         : default;
                     double v = 0;
                     if (doc.TryGetValue("value", out var val))

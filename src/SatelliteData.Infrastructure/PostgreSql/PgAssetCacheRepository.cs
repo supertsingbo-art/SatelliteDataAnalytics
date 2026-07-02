@@ -237,7 +237,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         cmd.Parameters.AddWithValue("mongo_db_name", (object?)mongoDb ?? DBNull.Value);
         cmd.Parameters.AddWithValue("mongo_auth_ref", (object?)mongoAuth ?? DBNull.Value);
         cmd.Parameters.AddWithValue("source_version", (object?)satellite.SourceVersion ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("last_synced_at", satellite.LastSyncedAt);
+        cmd.Parameters.AddWithValue("last_synced_at", PgTimestamptz.Utc(satellite.LastSyncedAt));
         cmd.Parameters.AddWithValue("cached_parameter_count", satellite.CachedParameterCount);
         cmd.Parameters.AddWithValue("cached_command_count", satellite.CachedCommandCount);
         cmd.Parameters.AddWithValue("is_enabled", satellite.IsEnabled);
@@ -259,34 +259,32 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var p in parameters)
-        {
-            await using var cmd = new NpgsqlCommand(
-                """
-                INSERT INTO param_cache (
-                    tasook_no, satellite_no, para_id, para_code, para_desc, para_type_desc,
-                    min_value, max_value, update_time, proc_desc, prm_sys_id,
-                    source_version, last_synced_at, raw_json)
-                VALUES (
-                    @tasook_no, @satellite_no, @para_id, @para_code, @para_desc, @para_type_desc,
-                    @min_value, @max_value, @update_time, @proc_desc, @prm_sys_id,
-                    @source_version, @last_synced_at, @raw_json)
-                ON CONFLICT (tasook_no, satellite_no, para_id) DO UPDATE SET
-                    para_code = EXCLUDED.para_code,
-                    para_desc = EXCLUDED.para_desc,
-                    para_type_desc = EXCLUDED.para_type_desc,
-                    min_value = EXCLUDED.min_value,
-                    max_value = EXCLUDED.max_value,
-                    update_time = EXCLUDED.update_time,
-                    proc_desc = EXCLUDED.proc_desc,
-                    prm_sys_id = EXCLUDED.prm_sys_id,
-                    source_version = EXCLUDED.source_version,
-                    last_synced_at = EXCLUDED.last_synced_at,
-                    raw_json = EXCLUDED.raw_json;
-                """,
-                conn,
-                tx);
 
+        const string paramSql = """
+            INSERT INTO param_cache (
+                tasook_no, satellite_no, para_id, para_code, para_desc, para_type_desc,
+                min_value, max_value, update_time, proc_desc, prm_sys_id,
+                source_version, last_synced_at, raw_json)
+            VALUES (
+                @tasook_no, @satellite_no, @para_id, @para_code, @para_desc, @para_type_desc,
+                @min_value, @max_value, @update_time, @proc_desc, @prm_sys_id,
+                @source_version, @last_synced_at, @raw_json)
+            ON CONFLICT (tasook_no, satellite_no, para_id) DO UPDATE SET
+                para_code = EXCLUDED.para_code,
+                para_desc = EXCLUDED.para_desc,
+                para_type_desc = EXCLUDED.para_type_desc,
+                min_value = EXCLUDED.min_value,
+                max_value = EXCLUDED.max_value,
+                update_time = EXCLUDED.update_time,
+                proc_desc = EXCLUDED.proc_desc,
+                prm_sys_id = EXCLUDED.prm_sys_id,
+                source_version = EXCLUDED.source_version,
+                last_synced_at = EXCLUDED.last_synced_at,
+                raw_json = EXCLUDED.raw_json;
+            """;
+
+        var paramBinders = parameters.Select<ParamCache, Action<NpgsqlBatchCommand>>(p => cmd =>
+        {
             cmd.Parameters.AddWithValue("tasook_no", p.TasookNo);
             cmd.Parameters.AddWithValue("satellite_no", p.SatelliteNo);
             cmd.Parameters.AddWithValue("para_id", p.ParaId);
@@ -299,11 +297,12 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             cmd.Parameters.AddWithValue("proc_desc", (object?)p.ProcDesc ?? DBNull.Value);
             cmd.Parameters.AddWithValue("prm_sys_id", (object?)p.PrmSysId ?? DBNull.Value);
             cmd.Parameters.AddWithValue("source_version", (object?)p.SourceVersion ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("last_synced_at", p.LastSyncedAt);
+            cmd.Parameters.AddWithValue("last_synced_at", PgTimestamptz.Utc(p.LastSyncedAt));
             cmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(p.RawJson);
+        }).ToArray();
 
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await PgBatchExecutor.ExecuteBatchAsync(conn, paramSql, paramBinders, cancellationToken, tx)
+            .ConfigureAwait(false);
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -329,47 +328,45 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             await del.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var c in commands)
+        const string cmdSql = """
+            INSERT INTO command_cache (
+                tasook_no, satellite_no, cmd_id, cmd_code, cmd_desc, cmd_type, cmd_len,
+                exe_time, valid_flag, cmd_sys_id, source_version, last_synced_at, raw_json)
+            VALUES (
+                @tasook_no, @satellite_no, @cmd_id, @cmd_code, @cmd_desc, @cmd_type, @cmd_len,
+                @exe_time, @valid_flag, @cmd_sys_id, @source_version, @last_synced_at, @raw_json)
+            ON CONFLICT (tasook_no, satellite_no, cmd_id) DO UPDATE SET
+                cmd_code = EXCLUDED.cmd_code,
+                cmd_desc = EXCLUDED.cmd_desc,
+                cmd_type = EXCLUDED.cmd_type,
+                cmd_len = EXCLUDED.cmd_len,
+                exe_time = EXCLUDED.exe_time,
+                valid_flag = EXCLUDED.valid_flag,
+                cmd_sys_id = EXCLUDED.cmd_sys_id,
+                source_version = EXCLUDED.source_version,
+                last_synced_at = EXCLUDED.last_synced_at,
+                raw_json = EXCLUDED.raw_json;
+            """;
+
+        var cmdBinders = commands.Select<CommandCache, Action<NpgsqlBatchCommand>>(c => batchCmd =>
         {
-            await using var cmd = new NpgsqlCommand(
-                """
-                INSERT INTO command_cache (
-                    tasook_no, satellite_no, cmd_id, cmd_code, cmd_desc, cmd_type, cmd_len,
-                    exe_time, valid_flag, cmd_sys_id, source_version, last_synced_at, raw_json)
-                VALUES (
-                    @tasook_no, @satellite_no, @cmd_id, @cmd_code, @cmd_desc, @cmd_type, @cmd_len,
-                    @exe_time, @valid_flag, @cmd_sys_id, @source_version, @last_synced_at, @raw_json)
-                ON CONFLICT (tasook_no, satellite_no, cmd_id) DO UPDATE SET
-                    cmd_code = EXCLUDED.cmd_code,
-                    cmd_desc = EXCLUDED.cmd_desc,
-                    cmd_type = EXCLUDED.cmd_type,
-                    cmd_len = EXCLUDED.cmd_len,
-                    exe_time = EXCLUDED.exe_time,
-                    valid_flag = EXCLUDED.valid_flag,
-                    cmd_sys_id = EXCLUDED.cmd_sys_id,
-                    source_version = EXCLUDED.source_version,
-                    last_synced_at = EXCLUDED.last_synced_at,
-                    raw_json = EXCLUDED.raw_json;
-                """,
-                conn,
-                tx);
+            batchCmd.Parameters.AddWithValue("tasook_no", c.TasookNo);
+            batchCmd.Parameters.AddWithValue("satellite_no", c.SatelliteNo);
+            batchCmd.Parameters.AddWithValue("cmd_id", c.CmdId);
+            batchCmd.Parameters.AddWithValue("cmd_code", (object?)c.CmdCode ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("cmd_desc", (object?)c.CmdDesc ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("cmd_type", (object?)c.CmdType ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("cmd_len", (object?)c.CmdLen ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("exe_time", (object?)c.ExeTime ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("valid_flag", (object?)c.ValidFlag ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("cmd_sys_id", (object?)c.CmdSysId ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("source_version", (object?)c.SourceVersion ?? DBNull.Value);
+            batchCmd.Parameters.AddWithValue("last_synced_at", PgTimestamptz.Utc(c.LastSyncedAt));
+            batchCmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(c.RawJson);
+        }).ToArray();
 
-            cmd.Parameters.AddWithValue("tasook_no", c.TasookNo);
-            cmd.Parameters.AddWithValue("satellite_no", c.SatelliteNo);
-            cmd.Parameters.AddWithValue("cmd_id", c.CmdId);
-            cmd.Parameters.AddWithValue("cmd_code", (object?)c.CmdCode ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("cmd_desc", (object?)c.CmdDesc ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("cmd_type", (object?)c.CmdType ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("cmd_len", (object?)c.CmdLen ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("exe_time", (object?)c.ExeTime ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("valid_flag", (object?)c.ValidFlag ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("cmd_sys_id", (object?)c.CmdSysId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("source_version", (object?)c.SourceVersion ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("last_synced_at", c.LastSyncedAt);
-            cmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(c.RawJson);
-
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await PgBatchExecutor.ExecuteBatchAsync(conn, cmdSql, cmdBinders, cancellationToken, tx)
+            .ConfigureAwait(false);
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -386,37 +383,36 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         await using var tx = await conn.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var t in testBatches)
-        {
-            await using var cmd = new NpgsqlCommand(
-                """
-                INSERT INTO test_batch_cache (
-                    tasook_no, satellite_no, test_batch_name, start_ts, end_ts,
-                    source_version, last_synced_at, raw_json)
-                VALUES (
-                    @tasook_no, @satellite_no, @test_batch_name, @start_ts, @end_ts,
-                    @source_version, @last_synced_at, @raw_json)
-                ON CONFLICT (tasook_no, satellite_no, test_batch_name) DO UPDATE SET
-                    start_ts = EXCLUDED.start_ts,
-                    end_ts = EXCLUDED.end_ts,
-                    source_version = EXCLUDED.source_version,
-                    last_synced_at = EXCLUDED.last_synced_at,
-                    raw_json = EXCLUDED.raw_json;
-                """,
-                conn,
-                tx);
 
+        const string batchSql = """
+            INSERT INTO test_batch_cache (
+                tasook_no, satellite_no, test_batch_name, start_ts, end_ts,
+                source_version, last_synced_at, raw_json)
+            VALUES (
+                @tasook_no, @satellite_no, @test_batch_name, @start_ts, @end_ts,
+                @source_version, @last_synced_at, @raw_json)
+            ON CONFLICT (tasook_no, satellite_no, test_batch_name) DO UPDATE SET
+                start_ts = EXCLUDED.start_ts,
+                end_ts = EXCLUDED.end_ts,
+                source_version = EXCLUDED.source_version,
+                last_synced_at = EXCLUDED.last_synced_at,
+                raw_json = EXCLUDED.raw_json;
+            """;
+
+        var batchBinders = testBatches.Select<TestBatchCache, Action<NpgsqlBatchCommand>>(t => cmd =>
+        {
             cmd.Parameters.AddWithValue("tasook_no", t.TasookNo);
             cmd.Parameters.AddWithValue("satellite_no", t.SatelliteNo);
             cmd.Parameters.AddWithValue("test_batch_name", t.TestBatchName);
-            cmd.Parameters.AddWithValue("start_ts", t.StartTs);
-            cmd.Parameters.AddWithValue("end_ts", t.EndTs);
+            cmd.Parameters.AddWithValue("start_ts", PgTimestamptz.Utc(t.StartTs));
+            cmd.Parameters.AddWithValue("end_ts", PgTimestamptz.Utc(t.EndTs));
             cmd.Parameters.AddWithValue("source_version", (object?)t.SourceVersion ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("last_synced_at", t.LastSyncedAt);
+            cmd.Parameters.AddWithValue("last_synced_at", PgTimestamptz.Utc(t.LastSyncedAt));
             cmd.Parameters.Add("raw_json", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(t.RawJson);
+        }).ToArray();
 
-            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await PgBatchExecutor.ExecuteBatchAsync(conn, batchSql, batchBinders, cancellationToken, tx)
+            .ConfigureAwait(false);
 
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }

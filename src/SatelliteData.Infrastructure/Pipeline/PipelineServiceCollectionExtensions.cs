@@ -56,6 +56,7 @@ public static class PipelineServiceCollectionExtensions
         services.AddScoped<IAlgorithmExecutionPipeline, AlgorithmExecutionPipeline>();
         services.AddScoped<IWebhookDeliveryPipeline, WebhookDeliveryPipeline>();
         services.AddScoped<TaskOrchestrator>();
+        services.AddSingleton<ITaskRunCancellationRegistry, TaskRunCancellationRegistry>();
         services.AddSingleton<IBackgroundJobScheduler, HangfireBackgroundJobScheduler>();
         services.AddTransient<PipelineJobDispatcher>();
 

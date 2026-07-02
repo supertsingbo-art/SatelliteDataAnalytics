@@ -49,6 +49,24 @@ public sealed class PreprocessPipeline(
             return;
         }
 
+        try
+        {
+            await ExecuteCoreAsync(runId, run, opt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+    }
+
+    private async Task ExecuteCoreAsync(
+        Guid runId,
+        TaskRun run,
+        PipelineOptions opt,
+        CancellationToken cancellationToken)
+    {
+        await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false);
+
         run = run with
         {
             Status = TaskRunStatus.Running,
@@ -56,7 +74,10 @@ public sealed class PreprocessPipeline(
             ProgressPercent = TaskProgressBands.AssetResolveMax,
             CurrentStep = "asset_resolve"
         };
-        await taskRuns.UpdateAsync(run, cancellationToken);
+        if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
 
         var needsAlgorithm = run.JobType == TaskJobType.Pipeline;
         if (run.FilterTemplateId is null || run.FilterTemplateVersion is null)
@@ -121,6 +142,7 @@ public sealed class PreprocessPipeline(
         }
 
         run = (await taskRuns.GetByRunIdAsync(runId, cancellationToken))!;
+        await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false);
         run = run with { ProgressPercent = TaskProgressBands.PreprocessMax, CurrentStep = "preprocess" };
         await taskRuns.UpdateAsync(run, cancellationToken);
 
@@ -270,10 +292,8 @@ public sealed class PreprocessPipeline(
             foreach (var plan in targetPlans)
             {
                 var spec = plan.Target;
-                if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
-                {
-                    return;
-                }
+                await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                    .ConfigureAwait(false);
 
                 var points = new List<RawSeriesPoint>();
                 foreach (var range in plan.ParamRanges)
@@ -290,6 +310,8 @@ public sealed class PreprocessPipeline(
                         opt,
                         cancellationToken);
                     points.AddRange(chunk);
+                    await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 points = points.OrderBy(p => p.Ts).ToList();
@@ -305,6 +327,12 @@ public sealed class PreprocessPipeline(
 
                 for (var i = 0; i < points.Count; i++)
                 {
+                    if (i > 0 && i % 1000 == 0)
+                    {
+                        await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
                     versionCounter++;
                     var row = new Dictionary<string, object?>
                     {
@@ -340,6 +368,8 @@ public sealed class PreprocessPipeline(
 
                     if (buffer.Count >= opt.ClickHouseBatchSize)
                     {
+                        await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                            .ConfigureAwait(false);
                         await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
                         buffer.Clear();
                     }
@@ -356,6 +386,8 @@ public sealed class PreprocessPipeline(
                         spec.OutlierMethod,
                         now));
 
+                await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                    .ConfigureAwait(false);
                 await hqMetadata.InsertAsync(
                     new HqParamMetadataRow(
                         Guid.NewGuid(),
@@ -375,16 +407,22 @@ public sealed class PreprocessPipeline(
 
             if (buffer.Count > 0)
             {
+                await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                    .ConfigureAwait(false);
                 await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
             }
 
             if (allOutlierReviews.Count > 0)
             {
+                await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                    .ConfigureAwait(false);
                 await outlierReviews.InsertBatchAsync(allOutlierReviews, cancellationToken).ConfigureAwait(false);
             }
 
             if (allOutlierSegments.Count > 0)
             {
+                await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
+                    .ConfigureAwait(false);
                 await outlierSegments.InsertBatchAsync(allOutlierSegments, cancellationToken);
             }
 
@@ -424,7 +462,10 @@ public sealed class PreprocessPipeline(
                     OutlierConfirmedCount = 0,
                     OutlierJitterCount = 0
                 };
-                await taskRuns.UpdateAsync(run, cancellationToken);
+                if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
                 await scheduleService.UpdateScheduleFromRunAsync(run, cancellationToken);
                 await taskEvents.AppendAsync(
                     new TaskEvent(
@@ -442,7 +483,11 @@ public sealed class PreprocessPipeline(
             }
 
             run = run with { ProgressPercent = TaskProgressBands.AlgorithmMax - 1m, CurrentStep = "preprocess_done" };
-            await taskRuns.UpdateAsync(run, cancellationToken);
+            if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+
             scheduler.EnqueueAlgorithm(runId);
         }
         finally
@@ -683,7 +728,11 @@ public sealed class PreprocessPipeline(
             ErrorCode = code,
             ErrorMsg = message
         };
-        await taskRuns.UpdateAsync(failed, cancellationToken);
+        if (!await taskRuns.UpdateIfNotCancelledAsync(failed, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         await scheduleService.UpdateScheduleFromRunAsync(failed, cancellationToken);
         await taskEvents.AppendAsync(
             new TaskEvent(

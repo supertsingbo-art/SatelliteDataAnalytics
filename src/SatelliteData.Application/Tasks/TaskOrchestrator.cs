@@ -10,6 +10,7 @@ public sealed class TaskOrchestrator(
     ITaskRunRepository taskRuns,
     ITaskEventRepository taskEvents,
     IBackgroundJobScheduler scheduler,
+    ITaskRunCancellationRegistry cancellationRegistry,
     PreprocessTaskValidator preprocessValidator,
     PreprocessScheduleService scheduleService,
     ILogger<TaskOrchestrator> logger)
@@ -227,6 +228,7 @@ public sealed class TaskOrchestrator(
             EndTime = now
         };
         await taskRuns.UpdateAsync(run, cancellationToken);
+        cancellationRegistry.Cancel(runId);
         await taskEvents.AppendAsync(
             new TaskEvent(
                 Guid.NewGuid(),
