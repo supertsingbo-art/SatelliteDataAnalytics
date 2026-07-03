@@ -618,13 +618,19 @@ export function FilterTemplateEditor() {
             </Form.Item>
           </Card>
 
-          <Card type="inner" title="1. 有效时间段提取规则" style={{ marginBottom: 16 }}>
+          <Card
+            type="inner"
+            title={<span style={{ fontSize: 18, fontWeight: 600 }}>1. 有效时间段提取规则</span>}
+            style={{ marginBottom: 16 }}
+          >
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
               配置阶段：指令从 command_cache 选择、参数从 param_cache 选择。执行阶段：按海量接口历史数据计算条件成立时间段。
             </Text>
 
             <Spin spinning={optionsLoading} tip="正在加载参考星参数/指令缓存…">
-              <Card type="inner" size="small" title="1.1 起始指令条件" style={{ marginBottom: 12 }}>
+              <Row gutter={[12, 12]}>
+                <Col xs={24} xl={12}>
+                  <Card type="inner" size="small" title="1.1 起始指令条件" style={{ height: '100%' }}>
                 <Space style={{ marginBottom: 8 }}>
                   <Text>指令关系：</Text>
                   <Select
@@ -710,9 +716,10 @@ export function FilterTemplateEditor() {
                 >
                   + 添加起始指令
                 </Button>
-              </Card>
-
-              <Card type="inner" size="small" title="1.2 结束指令条件" style={{ marginBottom: 12 }}>
+                  </Card>
+                </Col>
+                <Col xs={24} xl={12}>
+                  <Card type="inner" size="small" title="1.2 结束指令条件" style={{ height: '100%' }}>
                 <Space style={{ marginBottom: 8 }}>
                   <Text>指令关系：</Text>
                   <Select
@@ -798,9 +805,13 @@ export function FilterTemplateEditor() {
                 >
                   + 添加结束指令
                 </Button>
-              </Card>
+                  </Card>
+                </Col>
+              </Row>
 
-              <Card type="inner" size="small" title="1.3 参数条件 + 表达式">
+              <Row style={{ marginTop: 12 }}>
+                <Col span={24}>
+                  <Card type="inner" size="small" title="1.3 参数条件 + 表达式">
                 <Table<ParameterConditionRow>
                   size="small"
                   rowKey="rowId"
@@ -917,7 +928,9 @@ export function FilterTemplateEditor() {
                     语法检查
                   </Button>
                 </Space>
-              </Card>
+                  </Card>
+                </Col>
+              </Row>
             </Spin>
 
             <Row gutter={16} style={{ marginTop: 16 }}>
@@ -939,7 +952,10 @@ export function FilterTemplateEditor() {
             </Row>
           </Card>
 
-          <Card type="inner" title="2. 目标参数提取与质量规则">
+          <Card
+            type="inner"
+            title={<span style={{ fontSize: 18, fontWeight: 600 }}>2. 目标参数提取与质量规则</span>}
+          >
             <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
               在有效时间段内提取目标参数（无条件时为任务数据时间窗）；离群规则仅打标，不剔除、不插值。
             </Text>
