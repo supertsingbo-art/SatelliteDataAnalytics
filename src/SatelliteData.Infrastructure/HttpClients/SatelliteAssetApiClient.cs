@@ -17,7 +17,6 @@ public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<Asse
     public async Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken)
     {
         var baseUrl = _options.SatelliteAssetApiBaseUrl.TrimEnd('/');
@@ -26,8 +25,7 @@ public sealed class SatelliteAssetApiClient(HttpClient httpClient, IOptions<Asse
         var requestBody = new
         {
             taskNo = tasookNo,
-            satNo = satelliteNo,
-            dbStage = string.IsNullOrWhiteSpace(dbStage) ? _options.DefaultDbStage : dbStage
+            satNo = satelliteNo
         };
 
         using var response = await httpClient.PostAsJsonAsync(url, requestBody, cancellationToken);

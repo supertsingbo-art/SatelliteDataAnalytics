@@ -10,11 +10,7 @@ namespace SatelliteData.UnitTests;
 
 public class MassDataApiClientTests
 {
-    private static readonly AssetProviderOptions OptionsValue = new()
-    {
-        MassDataApiBaseUrl = "http://mass.test/",
-        DefaultDbStage = "DEV"
-    };
+    private const string MassApiBaseUrl = "http://mass.test/";
 
     private sealed class StubHandler : HttpMessageHandler
     {
@@ -38,15 +34,15 @@ public class MassDataApiClientTests
     private static MassDataApiClient CreateClient(Func<HttpRequestMessage, Task<(HttpStatusCode, string)>> respond)
     {
         var handler = new StubHandler(respond);
-        var http = new HttpClient(handler) { BaseAddress = new Uri(OptionsValue.MassDataApiBaseUrl) };
-        return new MassDataApiClient(http, Microsoft.Extensions.Options.Options.Create(OptionsValue));
+        var http = new HttpClient(handler) { BaseAddress = new Uri(MassApiBaseUrl) };
+        return new MassDataApiClient(http);
     }
 
     private static Task<(HttpStatusCode, string)> Ok(string body) =>
         Task.FromResult((HttpStatusCode.OK, body));
 
     [Fact]
-    public async Task GetSatellitesAsync_parses_datas_enables_and_dbstage_fallback()
+    public async Task GetSatellitesAsync_parses_datas_and_enabled()
     {
         var client = CreateClient(_ => Ok("""
             {
@@ -65,8 +61,6 @@ public class MassDataApiClientTests
         Assert.Equal("任务A", first.TasookName);
         Assert.Equal("卫星01", first.SatelliteName);
         Assert.False(first.IsEnabled);
-        // v2 列表不再返回 dbStage → 回退到配置默认值
-        Assert.Equal("DEV", first.DbStage);
         Assert.True(sats.Single(s => s.SatelliteNo == "SAT_02").IsEnabled);
     }
 

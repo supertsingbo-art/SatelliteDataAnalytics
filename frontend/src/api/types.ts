@@ -36,7 +36,6 @@ export interface SatelliteCache {
   satelliteNo: string;
   satelliteName: string;
   satelliteType: string | null;
-  dbStage: string | null;
   mongoInfo: MongoConnectionInfo | null;
   sourceVersion: string | null;
   lastSyncedAt: string;
@@ -51,7 +50,6 @@ export interface SatelliteListItem {
   tasookName: string | null;
   satelliteNo: string;
   satelliteName: string;
-  dbStage: string | null;
   mongoInfo: MongoConnectionInfo | null;
   sourceVersion: string | null;
   lastSyncedAt: string;

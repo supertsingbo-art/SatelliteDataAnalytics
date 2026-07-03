@@ -205,7 +205,6 @@ public sealed class PreprocessParamClaimIntegrationTests
                 "SAT-001",
                 "SAT-001",
                 null,
-                null,
                 new MongoConnectionInfo("mongodb://localhost:27017", "db", null),
                 "v1",
                 now,

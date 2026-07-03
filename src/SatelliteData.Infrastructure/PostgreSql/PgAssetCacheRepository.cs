@@ -20,7 +20,6 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             satellite_no varchar(64) NOT NULL,
             satellite_name varchar(256) NOT NULL,
             satellite_type varchar(128),
-            db_stage varchar(64),
             mongo_uri text,
             mongo_db_name varchar(256),
             mongo_auth_ref varchar(256),
@@ -175,6 +174,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS cached_command_count integer NOT NULL DEFAULT 0;
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS tasook_name varchar(256);
         ALTER TABLE satellite_cache ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
+        ALTER TABLE satellite_cache DROP COLUMN IF EXISTS db_stage;
         """;
 
     private readonly string _connectionString;
@@ -204,18 +204,17 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         await using var cmd = new NpgsqlCommand(
             """
             INSERT INTO satellite_cache (
-                tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
+                tasook_no, tasook_name, satellite_no, satellite_name, satellite_type,
                 mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
                 cached_parameter_count, cached_command_count, is_enabled, raw_json)
             VALUES (
-                @tasook_no, @tasook_name, @satellite_no, @satellite_name, @satellite_type, @db_stage,
+                @tasook_no, @tasook_name, @satellite_no, @satellite_name, @satellite_type,
                 @mongo_uri, @mongo_db_name, @mongo_auth_ref, @source_version, @last_synced_at,
                 @cached_parameter_count, @cached_command_count, @is_enabled, @raw_json)
             ON CONFLICT (tasook_no, satellite_no) DO UPDATE SET
                 tasook_name = EXCLUDED.tasook_name,
                 satellite_name = EXCLUDED.satellite_name,
                 satellite_type = EXCLUDED.satellite_type,
-                db_stage = EXCLUDED.db_stage,
                 mongo_uri = EXCLUDED.mongo_uri,
                 mongo_db_name = EXCLUDED.mongo_db_name,
                 mongo_auth_ref = EXCLUDED.mongo_auth_ref,
@@ -232,7 +231,6 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
         cmd.Parameters.AddWithValue("satellite_no", satellite.SatelliteNo);
         cmd.Parameters.AddWithValue("satellite_name", satellite.SatelliteName);
         cmd.Parameters.AddWithValue("satellite_type", (object?)satellite.SatelliteType ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("db_stage", (object?)satellite.DbStage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("mongo_uri", (object?)mongoUri ?? DBNull.Value);
         cmd.Parameters.AddWithValue("mongo_db_name", (object?)mongoDb ?? DBNull.Value);
         cmd.Parameters.AddWithValue("mongo_auth_ref", (object?)mongoAuth ?? DBNull.Value);
@@ -425,7 +423,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
+            SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type,
                    mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
                    cached_parameter_count, cached_command_count, is_enabled, raw_json::text
             FROM satellite_cache
@@ -475,7 +473,7 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
 
         await using var cmd = new NpgsqlCommand(
             """
-            SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type, db_stage,
+            SELECT tasook_no, tasook_name, satellite_no, satellite_name, satellite_type,
                    mongo_uri, mongo_db_name, mongo_auth_ref, source_version, last_synced_at,
                    cached_parameter_count, cached_command_count, is_enabled, raw_json::text
             FROM satellite_cache
@@ -700,7 +698,6 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
             reader.GetString(reader.GetOrdinal("satellite_no")),
             reader.GetString(reader.GetOrdinal("satellite_name")),
             reader.IsDBNull(reader.GetOrdinal("satellite_type")) ? null : reader.GetString(reader.GetOrdinal("satellite_type")),
-            reader.IsDBNull(reader.GetOrdinal("db_stage")) ? null : reader.GetString(reader.GetOrdinal("db_stage")),
             mongo,
             reader.IsDBNull(reader.GetOrdinal("source_version")) ? null : reader.GetString(reader.GetOrdinal("source_version")),
             reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("last_synced_at")),

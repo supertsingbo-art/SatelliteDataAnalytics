@@ -133,7 +133,7 @@ export function DataSourcesPage() {
     >
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
         本页仅维护外部服务入口与内部存储配置；按设计文档 6.1.4 安全要求，<Text strong>不允许配置 MONGO 类型</Text>，
-        MongoDB 连接信息由海量数据接口按 <Text code>tasook_no + satellite_no + dbStage</Text> 三元组动态返回。
+        MongoDB 连接信息由海量数据接口按 <Text code>tasook_no + satellite_no</Text> 二元组动态返回。
       </Text>
 
       <Table<DataSourceConfig>

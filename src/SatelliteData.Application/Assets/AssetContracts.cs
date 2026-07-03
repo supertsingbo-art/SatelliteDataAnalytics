@@ -40,7 +40,6 @@ public sealed record SatelliteListItem(
     string? TasookName,
     string SatelliteNo,
     string SatelliteName,
-    string? DbStage,
     MongoConnectionInfo? MongoInfo,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt,
@@ -174,6 +173,5 @@ public interface ISatelliteAssetProvider
     Task<IReadOnlyCollection<TestBatchCache>> GetTestPhasesAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken);
 }

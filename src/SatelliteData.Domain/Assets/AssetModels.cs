@@ -26,8 +26,7 @@ public sealed record DataSourceConfig(
     DateTimeOffset UpdatedAt);
 
 /// <summary>
-/// 卫星测试流程规划相关缓存（卫星维度元数据）。海量 Web API v2 卫星主键为 <c>taskNo + satNo</c>（不含 <c>dbStage</c>）；
-/// <paramref name="DbStage"/> 由配置默认值填充，仅用于 Step 3 卫星测试流程规划服务（<c>POST /api/testplan/teststages</c>）。
+/// 卫星维度元数据缓存。海量 Web API v2 卫星主键为 <c>taskNo + satNo</c>。
 /// </summary>
 public sealed record SatelliteCache(
     string TasookNo,
@@ -36,8 +35,6 @@ public sealed record SatelliteCache(
     string SatelliteNo,
     string SatelliteName,
     string? SatelliteType,
-    /// <summary>阶段代号，来自配置 <c>AssetProviders:DefaultDbStage</c>，供卫星测试流程规划服务使用。</summary>
-    string? DbStage,
     MongoConnectionInfo? MongoInfo,
     string? SourceVersion,
     DateTimeOffset LastSyncedAt,

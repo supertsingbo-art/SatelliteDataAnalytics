@@ -12,7 +12,6 @@ internal static class SatelliteListItemMapper
             satellite.TasookName,
             satellite.SatelliteNo,
             satellite.SatelliteName,
-            satellite.DbStage,
             satellite.MongoInfo,
             satellite.SourceVersion,
             satellite.LastSyncedAt,

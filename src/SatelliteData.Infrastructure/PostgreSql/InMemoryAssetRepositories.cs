@@ -17,11 +17,11 @@ public sealed class InMemoryDataSourceConfigRepository : IDataSourceConfigReposi
         var assets = assetProviders.Value;
         var connections = databaseConnections.Value;
 
-        Seed(DataSourceTypes.MassDataApi, "海量数据接口服务-开发", assets.MassDataApiBaseUrl, assets.DefaultDbStage);
-        Seed(DataSourceTypes.SatelliteAssetApi, "卫星测试流程规划服务-开发", assets.SatelliteAssetApiBaseUrl, assets.DefaultDbStage);
-        Seed(DataSourceTypes.ClickHouse, "ClickHouse 分析库-开发", connections.ClickHouse, assets.DefaultDbStage);
-        Seed(DataSourceTypes.Minio, "MinIO 对象存储-开发", assets.MinioBaseUrl, assets.DefaultDbStage);
-        Seed(DataSourceTypes.PgMeta, "PostgreSQL 元数据库-开发", connections.Postgres, assets.DefaultDbStage);
+        Seed(DataSourceTypes.MassDataApi, "海量数据接口服务-开发", assets.MassDataApiBaseUrl, assets.DefaultEnv);
+        Seed(DataSourceTypes.SatelliteAssetApi, "卫星测试流程规划服务-开发", assets.SatelliteAssetApiBaseUrl, assets.DefaultEnv);
+        Seed(DataSourceTypes.ClickHouse, "ClickHouse 分析库-开发", connections.ClickHouse, assets.DefaultEnv);
+        Seed(DataSourceTypes.Minio, "MinIO 对象存储-开发", assets.MinioBaseUrl, assets.DefaultEnv);
+        Seed(DataSourceTypes.PgMeta, "PostgreSQL 元数据库-开发", connections.Postgres, assets.DefaultEnv);
     }
 
     public Task<IReadOnlyCollection<DataSourceConfig>> GetAllAsync(CancellationToken cancellationToken)

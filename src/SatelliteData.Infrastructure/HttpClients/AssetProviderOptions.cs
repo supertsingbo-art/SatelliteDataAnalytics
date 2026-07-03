@@ -9,5 +9,6 @@ public sealed class AssetProviderOptions
 
     public string MinioBaseUrl { get; init; } = "http://localhost:9000";
 
-    public string DefaultDbStage { get; init; } = "DEV";
+    /// <summary>数据源配置种子写入 <c>data_source_config.env</c> 的默认值。</summary>
+    public string DefaultEnv { get; init; } = "DEV";
 }

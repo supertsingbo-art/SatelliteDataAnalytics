@@ -145,20 +145,20 @@ internal static class PgMetaSchema
         CancellationToken cancellationToken)
     {
         await SeedDataSourceRowAsync(
-            conn, DataSourceTypes.MassDataApi, "海量数据接口服务-开发", assets.MassDataApiBaseUrl, assets.DefaultDbStage, cancellationToken);
+            conn, DataSourceTypes.MassDataApi, "海量数据接口服务-开发", assets.MassDataApiBaseUrl, assets.DefaultEnv, cancellationToken);
         await SeedDataSourceRowAsync(
             conn,
             DataSourceTypes.SatelliteAssetApi,
             "卫星测试流程规划服务-开发",
             assets.SatelliteAssetApiBaseUrl,
-            assets.DefaultDbStage,
+            assets.DefaultEnv,
             cancellationToken);
         await SeedDataSourceRowAsync(
-            conn, DataSourceTypes.ClickHouse, "ClickHouse 分析库-开发", connections.ClickHouse, assets.DefaultDbStage, cancellationToken);
+            conn, DataSourceTypes.ClickHouse, "ClickHouse 分析库-开发", connections.ClickHouse, assets.DefaultEnv, cancellationToken);
         await SeedDataSourceRowAsync(
-            conn, DataSourceTypes.Minio, "MinIO 对象存储-开发", assets.MinioBaseUrl, assets.DefaultDbStage, cancellationToken);
+            conn, DataSourceTypes.Minio, "MinIO 对象存储-开发", assets.MinioBaseUrl, assets.DefaultEnv, cancellationToken);
         await SeedDataSourceRowAsync(
-            conn, DataSourceTypes.PgMeta, "PostgreSQL 元数据库-开发", connections.Postgres, assets.DefaultDbStage, cancellationToken);
+            conn, DataSourceTypes.PgMeta, "PostgreSQL 元数据库-开发", connections.Postgres, assets.DefaultEnv, cancellationToken);
     }
 
     public static async Task SeedBuiltinAlgorithmPackagesAsync(NpgsqlConnection conn, CancellationToken cancellationToken)

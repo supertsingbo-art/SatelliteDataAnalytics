@@ -394,8 +394,7 @@ export function SatelliteGroupsPage() {
           columns={[
             { title: '型号', dataIndex: 'tasookNo' },
             { title: '卫星', dataIndex: 'satelliteNo' },
-            { title: '名称', dataIndex: 'satelliteName' },
-            { title: '版本号', dataIndex: 'dbStage' }
+            { title: '名称', dataIndex: 'satelliteName' }
           ]}
         />
       </Modal>

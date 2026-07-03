@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS satellite_cache (
     satellite_no varchar(64) NOT NULL,
     satellite_name varchar(256) NOT NULL,
     satellite_type varchar(128),
-    db_stage varchar(64),
     mongo_uri text,
     mongo_db_name varchar(256),
     mongo_auth_ref varchar(256),

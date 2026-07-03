@@ -427,12 +427,6 @@ export function SatellitesPage() {
           { title: '卫星代号', dataIndex: 'satelliteNo', width: 120 },
           { title: '卫星名称', dataIndex: 'satelliteName', width: 140 },
           {
-            title: '版本号',
-            dataIndex: 'dbStage',
-            width: 100,
-            render: (v) => (v ? <Tag color="processing">{v}</Tag> : <Text type="secondary">-</Text>)
-          },
-          {
             title: '测试阶段',
             dataIndex: 'developmentPhases',
             width: 260,

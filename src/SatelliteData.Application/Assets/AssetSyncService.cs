@@ -5,7 +5,7 @@ namespace SatelliteData.Application.Assets;
 
 /// <summary>
 /// 资产同步编排服务。严格按照 6.1.2 流程执行：
-/// Step 1：拉取全量卫星列表，确定 (taskNo, satNo) 二元组并 upsert <c>satellite_cache</c>（<c>db_stage</c> 由配置默认值填充，供 Step 3 卫星测试流程规划服务使用）；
+/// Step 1：拉取全量卫星列表，确定 (taskNo, satNo) 二元组并 upsert <c>satellite_cache</c>；
 /// Step 2：每星拉取参数元数据 → upsert <c>param_cache</c>，并更新 <c>satellite_cache.cached_parameter_count</c>；
 /// Step 2b：每星拉取指令元数据 → upsert <c>command_cache</c>，并更新 <c>satellite_cache.cached_command_count</c>；
 /// Step 3：每星拉取测试阶段 → upsert <c>test_batch_cache</c>；
@@ -143,7 +143,7 @@ public sealed class AssetSyncService(
         SatelliteCache satellite,
         CancellationToken cancellationToken)
     {
-        var (tasookNo, satelliteNo, dbStage) = (satellite.TasookNo, satellite.SatelliteNo, satellite.DbStage);
+        var (tasookNo, satelliteNo) = (satellite.TasookNo, satellite.SatelliteNo);
 
         var parametersOk = false;
         var commandsOk = false;
@@ -184,7 +184,7 @@ public sealed class AssetSyncService(
 
         try
         {
-            var phases = await satelliteAssetProvider.GetTestPhasesAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
+            var phases = await satelliteAssetProvider.GetTestPhasesAsync(tasookNo, satelliteNo, cancellationToken);
             await cacheRepository.UpsertTestBatchesAsync(phases, cancellationToken);
             phaseCount = phases.Count;
             phasesOk = true;
