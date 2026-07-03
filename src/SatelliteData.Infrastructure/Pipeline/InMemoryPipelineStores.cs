@@ -231,8 +231,7 @@ public sealed class InMemoryPreprocessParamClaimRepository : IPreprocessParamCla
                 .Select(c => c with { ParamId = c.ParamId.Trim() })
                 .ToList();
 
-            var conflictParams = new HashSet<string>(StringComparer.Ordinal);
-            PreprocessParamClaimConflict? firstConflict = null;
+            var conflicts = new List<PreprocessParamClaimConflict>();
             foreach (var claim in normalized)
             {
                 var conflict = _rows.FirstOrDefault(row =>
@@ -248,20 +247,24 @@ public sealed class InMemoryPreprocessParamClaimRepository : IPreprocessParamCla
                     continue;
                 }
 
-                conflictParams.Add(claim.ParamId);
-                firstConflict ??= new PreprocessParamClaimConflict(
+                if (conflicts.Any(x =>
+                        string.Equals(x.ParamId, claim.ParamId, StringComparison.Ordinal)
+                        && x.ConflictRunId == conflict.RunId))
+                {
+                    continue;
+                }
+
+                conflicts.Add(new PreprocessParamClaimConflict(
                     claim.ParamId,
                     conflict.RunId,
                     conflict.FilterTemplateId,
-                    conflict.FilterTemplateVersion);
+                    conflict.FilterTemplateVersion,
+                    conflict.Status == ClaimStatus.Active ? "ACTIVE" : "COMMITTED"));
             }
 
-            if (conflictParams.Count > 0)
+            if (conflicts.Count > 0)
             {
-                return Task.FromResult(
-                    PreprocessParamClaimAcquireResult.Conflict(
-                        conflictParams.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
-                        firstConflict));
+                return Task.FromResult(PreprocessParamClaimAcquireResult.Conflict(conflicts));
             }
 
             foreach (var claim in normalized)
@@ -298,6 +301,34 @@ public sealed class InMemoryPreprocessParamClaimRepository : IPreprocessParamCla
                 }
             }
 
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task DeleteCommittedOverlapsAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        if (claims.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        lock (_gate)
+        {
+            _rows.RemoveAll(row =>
+                row.RunId != runId
+                && row.Status == ClaimStatus.Committed
+                && string.Equals(row.TasookNo, tasookNo, StringComparison.Ordinal)
+                && string.Equals(row.SatelliteNo, satelliteNo, StringComparison.Ordinal)
+                && claims.Any(claim =>
+                    string.Equals(claim.ParamId, row.ParamId, StringComparison.Ordinal)
+                    && claim.SegmentStart < row.SegmentEnd
+                    && claim.SegmentEnd > row.SegmentStart));
             return Task.CompletedTask;
         }
     }

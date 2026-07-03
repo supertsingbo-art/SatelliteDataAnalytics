@@ -29,6 +29,7 @@ public sealed class PreprocessPipeline(
     IPreprocessOutlierSegmentRepository outlierSegments,
     IPreprocessOutlierPointReviewRepository outlierReviews,
     IPreprocessValidRangeRepository validRangeRepository,
+    ITaskRunConflictOptionStore conflictOptionStore,
     PreprocessScheduleService scheduleService,
     IBackgroundJobScheduler scheduler,
     IOptions<PipelineOptions> pipelineOptions,
@@ -268,6 +269,10 @@ public sealed class PreprocessPipeline(
             targetPlans.Add(new TargetExecutionPlan(spec, paramRanges));
         }
 
+        var conflictOptions = conflictOptionStore.TryGet(runId, out var selectedConflictOptions)
+            ? selectedConflictOptions
+            : new PreprocessConflictHandlingOptions();
+
         try
         {
             await paramClaims.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
@@ -278,10 +283,13 @@ public sealed class PreprocessPipeline(
             return;
         }
 
-        var claimRequests = BuildClaimRequests(targetPlans);
+        var overwriteClaims = new List<PreprocessParamClaimRequest>();
+        var hasSkippedConflicts = false;
+        var claimPlans = targetPlans.ToList();
+        var claimRequests = BuildClaimRequests(claimPlans);
         var claimsAcquired = false;
         var claimsCommitted = false;
-        if (claimRequests.Count > 0)
+        while (claimRequests.Count > 0)
         {
             PreprocessParamClaimAcquireResult acquireResult;
             try
@@ -303,11 +311,87 @@ public sealed class PreprocessPipeline(
 
             if (!acquireResult.Acquired)
             {
-                await FailAsync(run, "PRE_006", BuildClaimConflictMessage(acquireResult), cancellationToken);
-                return;
+                var activeConflicts = acquireResult.Conflicts
+                    .Where(c => string.Equals(c.ConflictStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                    .Select(c => c.ParamId)
+                    .ToHashSet(StringComparer.Ordinal);
+                var committedConflicts = acquireResult.Conflicts
+                    .Where(c => string.Equals(c.ConflictStatus, "COMMITTED", StringComparison.OrdinalIgnoreCase))
+                    .Select(c => c.ParamId)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                var skipParams = new HashSet<string>(StringComparer.Ordinal);
+                var overwriteParams = new HashSet<string>(StringComparer.Ordinal);
+
+                if (activeConflicts.Count > 0)
+                {
+                    if (conflictOptions.OnActiveConflict == ActiveConflictHandling.Skip)
+                    {
+                        skipParams.UnionWith(activeConflicts);
+                    }
+                    else
+                    {
+                        await FailAsync(
+                            run,
+                            "PRE_006",
+                            BuildClaimConflictMessage(acquireResult, conflictOptions),
+                            cancellationToken);
+                        return;
+                    }
+                }
+
+                if (committedConflicts.Count > 0)
+                {
+                    if (conflictOptions.OnCommittedConflict == CommittedConflictHandling.Skip)
+                    {
+                        skipParams.UnionWith(committedConflicts);
+                    }
+                    else if (conflictOptions.OnCommittedConflict == CommittedConflictHandling.Overwrite)
+                    {
+                        overwriteParams.UnionWith(committedConflicts);
+                    }
+                    else
+                    {
+                        await FailAsync(
+                            run,
+                            "PRE_006",
+                            BuildClaimConflictMessage(acquireResult, conflictOptions),
+                            cancellationToken);
+                        return;
+                    }
+                }
+
+                if (skipParams.Count > 0)
+                {
+                    claimPlans = claimPlans
+                        .Where(p => !skipParams.Contains(p.Target.ParamId))
+                        .ToList();
+                    hasSkippedConflicts = true;
+                }
+
+                if (overwriteParams.Count > 0)
+                {
+                    var overwriteWindowClaims = claimRequests
+                        .Where(c => overwriteParams.Contains(c.ParamId))
+                        .ToArray();
+                    if (overwriteWindowClaims.Length > 0)
+                    {
+                        await paramClaims.DeleteCommittedOverlapsAsync(
+                            runId,
+                            run.TasookNo,
+                            run.SatelliteNo,
+                            overwriteWindowClaims,
+                            cancellationToken).ConfigureAwait(false);
+                        overwriteClaims.AddRange(overwriteWindowClaims);
+                    }
+                }
+
+                claimRequests = BuildClaimRequests(claimPlans);
+                continue;
             }
 
             claimsAcquired = true;
+            break;
         }
 
         try
@@ -316,12 +400,13 @@ public sealed class PreprocessPipeline(
             await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
 
             ulong versionCounter = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var writeVersionFloorExclusive = versionCounter + 1;
             var buffer = new List<string>();
             var allOutlierSegments = new List<PreprocessOutlierSegment>();
             var allOutlierReviews = new List<PreprocessOutlierPointReview>();
             var now = DateTimeOffset.UtcNow;
 
-            foreach (var plan in targetPlans)
+            foreach (var plan in claimPlans)
             {
                 var spec = plan.Target;
                 await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
@@ -464,6 +549,38 @@ public sealed class PreprocessPipeline(
                 claimsCommitted = true;
             }
 
+            if (overwriteClaims.Count > 0)
+            {
+                var cleanupClaims = overwriteClaims
+                    .GroupBy(
+                        c => c.ParamId,
+                        StringComparer.Ordinal)
+                    .SelectMany(g =>
+                    {
+                        var merged = ConditionRangeEvaluator.UnionRanges(
+                            g.Select(x => new TimeRange(x.SegmentStart, x.SegmentEnd)).ToArray());
+                        return merged.Select(m => new PreprocessParamClaimRequest(g.Key, m.Start, m.End));
+                    })
+                    .ToArray();
+                if (cleanupClaims.Length > 0)
+                {
+                    try
+                    {
+                        await clickHouse.DeleteByClaimsAsync(
+                            run.TasookNo,
+                            run.SatelliteNo,
+                            warehouseBatchLabel,
+                            cleanupClaims,
+                            writeVersionFloorExclusive,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "提交覆盖清理 mutation 失败，run={RunId}", runId);
+                    }
+                }
+            }
+
             if (await TaskRunCancellation.IsCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false))
             {
                 return;
@@ -484,7 +601,6 @@ public sealed class PreprocessPipeline(
                 {
                     Status = TaskRunStatus.Succeeded,
                     ProgressPercent = 95m,
-                    CurrentStep = "preprocess_done",
                     EndTime = end,
                     OutlierReviewStatus = autoCount == 0
                         ? OutlierReviewRunStatus.NotRequired
@@ -492,7 +608,10 @@ public sealed class PreprocessPipeline(
                     OutlierAutoCount = autoCount,
                     OutlierPendingCount = autoCount,
                     OutlierConfirmedCount = 0,
-                    OutlierJitterCount = 0
+                    OutlierJitterCount = 0,
+                    CurrentStep = hasSkippedConflicts
+                        ? "preprocess_done(skipped_conflicts)"
+                        : "preprocess_done"
                 };
                 if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
                 {
@@ -524,6 +643,7 @@ public sealed class PreprocessPipeline(
         }
         finally
         {
+            conflictOptionStore.Clear(runId);
             if (claimsAcquired && !claimsCommitted)
             {
                 try
@@ -554,17 +674,22 @@ public sealed class PreprocessPipeline(
         return result;
     }
 
-    private static string BuildClaimConflictMessage(PreprocessParamClaimAcquireResult result)
+    private static string BuildClaimConflictMessage(
+        PreprocessParamClaimAcquireResult result,
+        PreprocessConflictHandlingOptions options)
     {
-        var paramText = result.ConflictParamIds.Count == 0
-            ? "未知参数"
-            : string.Join(", ", result.ConflictParamIds);
-        if (result.ConflictDetail is null)
+        if (result.Conflicts.Count == 0)
         {
-            return $"参数冲突: param_id={paramText}，请调整模板条件后重试";
+            return "参数冲突: 未找到可解析的冲突明细";
         }
 
-        return $"参数冲突: param_id={paramText}, 冲突模板={result.ConflictDetail.ConflictFilterTemplateId}/v{result.ConflictDetail.ConflictFilterTemplateVersion}, 冲突任务={result.ConflictDetail.ConflictRunId}，请调整模板条件后重试";
+        var conflicts = result.Conflicts
+            .OrderBy(c => c.ParamId, StringComparer.Ordinal)
+            .ThenBy(c => c.ConflictStatus, StringComparer.Ordinal)
+            .Select(c =>
+                $"param_id={c.ParamId},status={c.ConflictStatus},冲突模板={c.ConflictFilterTemplateId}/v{c.ConflictFilterTemplateVersion},冲突任务={c.ConflictRunId}")
+            .ToArray();
+        return $"参数冲突: {string.Join(" | ", conflicts)}。当前策略(active={options.OnActiveConflict}, committed={options.OnCommittedConflict})";
     }
 
     private sealed record TargetExecutionPlan(

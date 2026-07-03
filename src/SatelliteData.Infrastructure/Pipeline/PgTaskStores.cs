@@ -1565,6 +1565,50 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task DeleteCommittedOverlapsAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        if (claims.Count == 0)
+        {
+            return;
+        }
+
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var claim in claims)
+        {
+            if (string.IsNullOrWhiteSpace(claim.ParamId) || claim.SegmentStart >= claim.SegmentEnd)
+            {
+                continue;
+            }
+
+            await using var cmd = new NpgsqlCommand(
+                """
+                DELETE FROM preprocess_param_claim
+                WHERE run_id <> @run_id
+                  AND tasook_no = @tasook_no
+                  AND satellite_no = @satellite_no
+                  AND param_id = @param_id
+                  AND status = @committed
+                  AND tstzrange(segment_start, segment_end, '[)') && tstzrange(@segment_start, @segment_end, '[)')
+                """,
+                conn);
+            cmd.Parameters.AddWithValue("run_id", runId);
+            cmd.Parameters.AddWithValue("tasook_no", tasookNo);
+            cmd.Parameters.AddWithValue("satellite_no", satelliteNo);
+            cmd.Parameters.AddWithValue("param_id", claim.ParamId.Trim());
+            cmd.Parameters.AddWithValue("committed", CommittedStatus);
+            cmd.Parameters.AddWithValue("segment_start", PgTimestamptz.Utc(claim.SegmentStart));
+            cmd.Parameters.AddWithValue("segment_end", PgTimestamptz.Utc(claim.SegmentEnd));
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public async Task ReleaseActiveByRunIdAsync(Guid runId, CancellationToken cancellationToken)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
@@ -1598,13 +1642,12 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
         IReadOnlyList<PreprocessParamClaimRequest> claims,
         CancellationToken cancellationToken)
     {
-        var conflictParams = new HashSet<string>(StringComparer.Ordinal);
-        PreprocessParamClaimConflict? first = null;
+        var details = new List<PreprocessParamClaimConflict>();
         foreach (var claim in claims)
         {
             await using var cmd = new NpgsqlCommand(
                 """
-                SELECT param_id, run_id, filter_template_id, filter_template_version
+                SELECT param_id, run_id, filter_template_id, filter_template_version, status
                 FROM preprocess_param_claim
                 WHERE run_id <> @run_id
                   AND tasook_no = @tasook_no
@@ -1629,17 +1672,24 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
             }
 
             var paramId = reader.GetString(reader.GetOrdinal("param_id"));
-            conflictParams.Add(paramId);
-            first ??= new PreprocessParamClaimConflict(
+            var conflict = new PreprocessParamClaimConflict(
                 paramId,
                 reader.GetGuid(reader.GetOrdinal("run_id")),
                 reader.GetGuid(reader.GetOrdinal("filter_template_id")),
-                reader.GetInt32(reader.GetOrdinal("filter_template_version")));
+                reader.GetInt32(reader.GetOrdinal("filter_template_version")),
+                reader.GetString(reader.GetOrdinal("status")));
+            if (details.Any(x =>
+                    string.Equals(x.ParamId, conflict.ParamId, StringComparison.Ordinal)
+                    && x.ConflictRunId == conflict.ConflictRunId
+                    && string.Equals(x.ConflictStatus, conflict.ConflictStatus, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            details.Add(conflict);
         }
 
-        return PreprocessParamClaimAcquireResult.Conflict(
-            conflictParams.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
-            first);
+        return PreprocessParamClaimAcquireResult.Conflict(details);
     }
 }
 

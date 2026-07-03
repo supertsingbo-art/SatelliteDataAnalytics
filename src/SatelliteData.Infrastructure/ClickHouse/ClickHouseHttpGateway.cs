@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SatelliteData.Application.Pipeline;
+using SatelliteData.Application.Tasks;
 using SatelliteData.Infrastructure;
 
 namespace SatelliteData.Infrastructure.ClickHouse;
@@ -103,7 +104,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         var ws = ToUtcTimestampLiteral(windowStart);
         var we = ToUtcTimestampLiteral(windowEnd);
         var sql = $"""
-            SELECT ts, processed_value
+            SELECT ts, argMax(processed_value, version) AS processed_value
             FROM hq_param_point
             WHERE tasook_no = '{Escape(tasookNo)}'
               AND satellite_no = '{Escape(satelliteNo)}'
@@ -111,6 +112,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
               AND param_id = '{Escape(paramId)}'
               AND ts >= parseDateTime64BestEffort('{ws}')
               AND ts <= parseDateTime64BestEffort('{we}')
+            GROUP BY ts
             ORDER BY ts
             FORMAT JSONEachRow
             """;
@@ -164,7 +166,12 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         var inList = string.Join(", ", paramIds.Select(id => $"'{Escape(id)}'"));
         var limit = Math.Clamp(maxRows, 1, 50_000);
         var sql = $"""
-            SELECT param_id, ts, processed_value, is_outlier
+            SELECT
+              param_id,
+              ts,
+              argMax(processed_value, version) AS processed_value,
+              argMax(is_outlier, version) AS is_outlier,
+              argMax(is_confirmed_outlier, version) AS is_confirmed_outlier
             FROM hq_param_point
             WHERE tasook_no = '{Escape(tasookNo)}'
               AND satellite_no = '{Escape(satelliteNo)}'
@@ -172,6 +179,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
               AND param_id IN ({inList})
               AND ts >= parseDateTime64BestEffort('{ws}')
               AND ts <= parseDateTime64BestEffort('{we}')
+            GROUP BY param_id, ts
             ORDER BY ts, param_id
             LIMIT {limit}
             FORMAT JSONEachRow
@@ -206,10 +214,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
 
             if (!root.TryGetProperty("processed_value", out var vEl) || vEl.ValueKind == JsonValueKind.Null) continue;
             if (!vEl.TryGetDouble(out var v)) continue;
-            var isOutlier = root.TryGetProperty("is_outlier", out var oEl) && oEl.ValueKind == JsonValueKind.Number
-                && oEl.TryGetUInt32(out var o)
-                && o != 0;
-            list.Add(new HqParamPointRow(pid, ts, v, isOutlier));
+            list.Add(ParseHqParamPointRow(root, pid, ts, v));
         }
 
         return list;
@@ -252,7 +257,12 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         var offset = (safePage - 1) * safePageSize;
         var filter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
         var sql = $"""
-            SELECT param_id, ts, processed_value, is_outlier, is_confirmed_outlier
+            SELECT
+              param_id,
+              ts,
+              argMax(processed_value, version) AS processed_value,
+              argMax(is_outlier, version) AS is_outlier,
+              argMax(is_confirmed_outlier, version) AS is_confirmed_outlier
             FROM hq_param_point
             WHERE {filter}
               AND ts IN (
@@ -265,6 +275,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
                   LIMIT {safePageSize} OFFSET {offset}
                 )
               )
+            GROUP BY param_id, ts
             ORDER BY ts ASC, param_id ASC
             FORMAT JSONEachRow
             """;
@@ -280,18 +291,29 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd,
         string? paramIdFilter,
-        CancellationToken cancellationToken) =>
-        ExecuteScalarLongAsync(
-            BuildOutlierFilterSql(
-                tasookNo,
-                satelliteNo,
-                testBatchId,
-                paramIds,
-                windowStart,
-                windowEnd,
-                paramIdFilter,
-                "SELECT count() AS cnt FROM hq_param_point WHERE {filter}"),
-            cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        if (paramIds.Count == 0)
+        {
+            return Task.FromResult(0L);
+        }
+
+        var filter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
+        var paramFilter = string.IsNullOrWhiteSpace(paramIdFilter)
+            ? string.Empty
+            : $" AND param_id = '{Escape(paramIdFilter.Trim())}'";
+        var sql = $"""
+            SELECT count() AS cnt
+            FROM (
+              SELECT param_id, ts
+              FROM hq_param_point
+              WHERE {filter}{paramFilter}
+              GROUP BY param_id, ts
+              HAVING argMax(is_outlier, version) = 1
+            )
+            """;
+        return ExecuteScalarLongAsync(sql, cancellationToken);
+    }
 
     public Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsPageAsync(
         string tasookNo,
@@ -322,9 +344,16 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
             windowEnd,
             paramIdFilter);
         var sql = $"""
-            SELECT param_id, ts, processed_value, is_outlier, is_confirmed_outlier
+            SELECT
+              param_id,
+              ts,
+              argMax(processed_value, version) AS processed_value,
+              argMax(is_outlier, version) AS is_outlier,
+              argMax(is_confirmed_outlier, version) AS is_confirmed_outlier
             FROM hq_param_point
             WHERE {filter}
+            GROUP BY param_id, ts
+            HAVING is_outlier = 1
             ORDER BY ts ASC, param_id ASC
             LIMIT {safePageSize} OFFSET {offset}
             FORMAT JSONEachRow
@@ -432,6 +461,42 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         await InsertJsonEachRowAsync("hq_param_point", jsonRows, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task DeleteByClaimsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        ulong keepVersionFromInclusive,
+        CancellationToken cancellationToken)
+    {
+        if (claims.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var claim in claims)
+        {
+            if (string.IsNullOrWhiteSpace(claim.ParamId) || claim.SegmentStart >= claim.SegmentEnd)
+            {
+                continue;
+            }
+
+            var start = ToUtcTimestampLiteral(claim.SegmentStart);
+            var end = ToUtcTimestampLiteral(claim.SegmentEnd);
+            var sql = $"""
+                ALTER TABLE hq_param_point DELETE
+                WHERE tasook_no = '{Escape(tasookNo)}'
+                  AND satellite_no = '{Escape(satelliteNo)}'
+                  AND test_batch_id = '{Escape(testBatchId)}'
+                  AND param_id = '{Escape(claim.ParamId.Trim())}'
+                  AND ts >= parseDateTime64BestEffort('{start}')
+                  AND ts < parseDateTime64BestEffort('{end}')
+                  AND version < {keepVersionFromInclusive}
+                """;
+            await ExecuteNonQueryAsync(sql, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private static string BuildMatrixWhereClause(
         string tasookNo,
         string satelliteNo,
@@ -477,7 +542,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         string? paramIdFilter)
     {
         var baseFilter = BuildMatrixWhereClause(tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd);
-        var outlierFilter = $"{baseFilter}\n  AND is_outlier = 1";
+        var outlierFilter = baseFilter;
         if (!string.IsNullOrWhiteSpace(paramIdFilter))
         {
             outlierFilter += $"\n  AND param_id = '{Escape(paramIdFilter.Trim())}'";

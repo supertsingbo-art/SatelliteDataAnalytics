@@ -155,6 +155,7 @@ public sealed class PreprocessParamClaimIntegrationTests
             outlierSegments,
             outlierReviews,
             new InMemoryPreprocessValidRangeRepository(),
+            new InMemoryTaskRunConflictOptionStore(),
             scheduleService,
             scheduler,
             Options.Create(new PipelineOptions { ClickHouseBatchSize = 100 }),
@@ -452,5 +453,14 @@ public sealed class PreprocessParamClaimIntegrationTests
             int pageSize,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<HqParamPointRow>>(Array.Empty<HqParamPointRow>());
+
+        public Task DeleteByClaimsAsync(
+            string tasookNo,
+            string satelliteNo,
+            string testBatchId,
+            IReadOnlyList<PreprocessParamClaimRequest> claims,
+            ulong keepVersionFromInclusive,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

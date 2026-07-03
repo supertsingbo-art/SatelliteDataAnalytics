@@ -107,21 +107,48 @@ interface Pre006ConflictInfo {
   templateId?: string;
   templateVersion?: number;
   runId?: string;
+  details: Array<{
+    paramId: string;
+    status: 'ACTIVE' | 'COMMITTED' | string;
+    templateId?: string;
+    templateVersion?: number;
+    runId?: string;
+  }>;
 }
 
 function parsePre006ConflictInfo(messageText: string): Pre006ConflictInfo {
-  const paramIds: string[] = [];
-  const paramMatch = messageText.match(
-    /param_id=([\s\S]*?)(?:,\s*冲突模板=|,\s*冲突任务=|，\s*冲突模板=|，\s*冲突任务=|$)/
-  );
-  if (paramMatch?.[1]) {
-    paramIds.push(
-      ...paramMatch[1]
-        .split(/[,，]/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    );
+  const details: Pre006ConflictInfo['details'] = [];
+  const re = /param_id=([^,|，]+),status=([^,|，]+),冲突模板=([0-9a-fA-F-]{36})\/v(\d+),冲突任务=([0-9a-fA-F-]{36})/g;
+  for (;;) {
+    const m = re.exec(messageText);
+    if (!m) break;
+    details.push({
+      paramId: m[1].trim(),
+      status: m[2].trim().toUpperCase(),
+      templateId: m[3],
+      templateVersion: Number(m[4]),
+      runId: m[5]
+    });
   }
+
+  const paramIds = details.length > 0
+    ? Array.from(new Set(details.map((x) => x.paramId)))
+    : (() => {
+        const oldParamIds: string[] = [];
+        const paramMatch = messageText.match(
+          /param_id=([\s\S]*?)(?:,\s*冲突模板=|,\s*冲突任务=|，\s*冲突模板=|，\s*冲突任务=|$)/
+        );
+        if (paramMatch?.[1]) {
+          oldParamIds.push(
+            ...paramMatch[1]
+              .split(/[,，]/)
+              .map((item) => item.trim())
+              .filter(Boolean)
+          );
+        }
+
+        return oldParamIds;
+      })();
 
   const templateMatch = messageText.match(/冲突模板=([0-9a-fA-F-]{36})\/v(\d+)/);
   const runMatch = messageText.match(/冲突任务=([0-9a-fA-F-]{36})/);
@@ -129,7 +156,8 @@ function parsePre006ConflictInfo(messageText: string): Pre006ConflictInfo {
     paramIds,
     templateId: templateMatch?.[1],
     templateVersion: templateMatch?.[2] ? Number(templateMatch[2]) : undefined,
-    runId: runMatch?.[1]
+    runId: runMatch?.[1],
+    details
   };
 }
 
@@ -157,8 +185,55 @@ export function TasksListPage() {
     window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
   };
 
-  const showPre006Conflict = (rawMessage: string) => {
+  const showPre006Conflict = (
+    rawMessage: string,
+    retryWithPolicy?: (policy: 'OVERWRITE' | 'SKIP') => Promise<void>
+  ) => {
     const conflict = parsePre006ConflictInfo(rawMessage);
+    const activeParams = conflict.details
+      .filter((x) => x.status === 'ACTIVE')
+      .map((x) => x.paramId);
+    const committedParams = conflict.details
+      .filter((x) => x.status === 'COMMITTED')
+      .map((x) => x.paramId);
+
+    if (retryWithPolicy) {
+      Modal.confirm({
+        title: '参数时间段冲突',
+        okText: '覆盖已完成冲突并继续',
+        cancelText: '跳过冲突参数并继续',
+        onOk: async () => {
+          await retryWithPolicy('OVERWRITE');
+        },
+        onCancel: async () => {
+          await retryWithPolicy('SKIP');
+        },
+        content: (
+          <Space direction="vertical" size={4}>
+            <Text>检测到参数时间段冲突，请按下列规则选择处理策略：</Text>
+            <Text>
+              1) <Text strong>执行中冲突（状态：执行中）</Text>：只能跳过，不支持覆盖。
+            </Text>
+            <Text>
+              2) <Text strong>已完成冲突（状态：已完成）</Text>：可覆盖或跳过。
+            </Text>
+            {activeParams.length > 0 && (
+              <Text>
+                执行中冲突参数：<Text code>{Array.from(new Set(activeParams)).join(', ')}</Text>
+              </Text>
+            )}
+            {committedParams.length > 0 && (
+              <Text>
+                已完成冲突参数：<Text code>{Array.from(new Set(committedParams)).join(', ')}</Text>
+              </Text>
+            )}
+            <Text type="secondary">关闭弹窗表示暂不处理（可等待，或先取消冲突任务后再重试）。</Text>
+          </Space>
+        )
+      });
+      return;
+    }
+
     Modal.warning({
       title: '参数时间段冲突',
       okText: '知道了',
@@ -310,7 +385,15 @@ export function TasksListPage() {
     } catch (error) {
       const parsed = parseApiError(error);
       if (parsed?.code === 'PRE_006') {
-        showPre006Conflict(parsed.message);
+        showPre006Conflict(parsed.message, async (policy) => {
+          if (!row.run_id) return;
+          const res = await tasksApi.executeRun(row.run_id, {
+            onActiveConflict: 'SKIP',
+            onCommittedConflict: policy
+          });
+          message.success(`任务已提交执行（${res.display_status}）`);
+          await load();
+        });
       }
     } finally {
       setExecutingKey(null);
@@ -327,7 +410,15 @@ export function TasksListPage() {
     } catch (error) {
       const parsed = parseApiError(error);
       if (parsed?.code === 'PRE_006') {
-        showPre006Conflict(parsed.message);
+        showPre006Conflict(parsed.message, async (policy) => {
+          if (!row.run_id) return;
+          const res = await tasksApi.reExecuteRun(row.run_id, {
+            onActiveConflict: 'SKIP',
+            onCommittedConflict: policy
+          });
+          message.success(`已重新提交执行（${res.display_status}）`);
+          await load();
+        });
       }
     } finally {
       setExecutingKey(null);

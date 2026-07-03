@@ -53,6 +53,11 @@ export interface ExecuteTaskResult {
   status: string;
 }
 
+export interface RunConflictOptions {
+  onActiveConflict?: 'FAIL' | 'SKIP';
+  onCommittedConflict?: 'FAIL' | 'SKIP' | 'OVERWRITE';
+}
+
 export const tasksApi = {
   list: (params?: { pageSize?: number }) =>
     request<TaskListItemV2[]>('get', TASKS_BASE, undefined, {
@@ -89,8 +94,8 @@ export const tasksApi = {
     }),
   disableSchedule: (scheduleId: string) =>
     request<{ scheduleId: string; enabled: boolean }>('post', `${TASKS_BASE}/schedules/${scheduleId}/disable`),
-  executeRun: (runId: string) =>
-    request<ExecuteTaskResult>('post', `${TASKS_BASE}/${runId}/execute`),
+  executeRun: (runId: string, options?: RunConflictOptions) =>
+    request<ExecuteTaskResult>('post', `${TASKS_BASE}/${runId}/execute`, options),
   executeSchedule: (scheduleId: string) =>
     request<ExecuteTaskResult>('post', `${TASKS_BASE}/schedules/${scheduleId}/execute`),
   listRunExecutions: (runId: string) =>
@@ -102,8 +107,8 @@ export const tasksApi = {
     request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`),
   deleteRun: (runId: string) =>
     request<{ runId: string; deleted: boolean }>('delete', `${TASKS_BASE}/${runId}`),
-  reExecuteRun: (runId: string) =>
-    request<ExecuteTaskResult>('post', `${TASKS_BASE}/${runId}/reexecute`),
+  reExecuteRun: (runId: string, options?: RunConflictOptions) =>
+    request<ExecuteTaskResult>('post', `${TASKS_BASE}/${runId}/reexecute`, options),
   getProcessedData: (runId: string, params?: { page?: number; pageSize?: number }) =>
     request<TaskProcessedData>('get', `${TASKS_BASE}/${runId}/processed-data`, undefined, {
       page: params?.page ?? 1,

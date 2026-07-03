@@ -216,6 +216,7 @@ public sealed class FilterTemplateServiceTests
                 new InMemoryPreprocessOutlierSegmentRepository(),
                 new InMemoryPreprocessOutlierPointReviewRepository(),
                 new InMemoryPreprocessValidRangeRepository(),
+                new InMemoryTaskRunConflictOptionStore(),
                 Scheduler,
                 NullLogger<TaskRunLifecycleService>.Instance);
             Service = new FilterTemplateService(

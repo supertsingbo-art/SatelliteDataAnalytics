@@ -9,20 +9,27 @@ public sealed record PreprocessParamClaimConflict(
     string ParamId,
     Guid ConflictRunId,
     Guid ConflictFilterTemplateId,
-    int ConflictFilterTemplateVersion);
+    int ConflictFilterTemplateVersion,
+    string ConflictStatus);
 
 public sealed record PreprocessParamClaimAcquireResult(
     bool Acquired,
-    IReadOnlyList<string> ConflictParamIds,
-    PreprocessParamClaimConflict? ConflictDetail)
+    IReadOnlyList<PreprocessParamClaimConflict> Conflicts)
 {
+    public IReadOnlyList<string> ConflictParamIds => Conflicts
+        .Select(x => x.ParamId)
+        .Distinct(StringComparer.Ordinal)
+        .OrderBy(x => x, StringComparer.Ordinal)
+        .ToArray();
+
+    public PreprocessParamClaimConflict? ConflictDetail => Conflicts.FirstOrDefault();
+
     public static PreprocessParamClaimAcquireResult Success { get; } =
-        new(true, Array.Empty<string>(), null);
+        new(true, Array.Empty<PreprocessParamClaimConflict>());
 
     public static PreprocessParamClaimAcquireResult Conflict(
-        IReadOnlyList<string> paramIds,
-        PreprocessParamClaimConflict? detail) =>
-        new(false, paramIds, detail);
+        IReadOnlyList<PreprocessParamClaimConflict> details) =>
+        new(false, details);
 }
 
 public interface IPreprocessParamClaimRepository
@@ -37,6 +44,13 @@ public interface IPreprocessParamClaimRepository
         CancellationToken cancellationToken);
 
     Task MarkCommittedByRunIdAsync(Guid runId, CancellationToken cancellationToken);
+
+    Task DeleteCommittedOverlapsAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken);
 
     Task ReleaseActiveByRunIdAsync(Guid runId, CancellationToken cancellationToken);
 

@@ -7,9 +7,13 @@ public sealed class TaskExecutionService(
     ITaskRunRepository taskRuns,
     IPreprocessScheduleRepository schedules,
     IBackgroundJobScheduler scheduler,
+    ITaskRunConflictOptionStore conflictOptionStore,
     ILogger<TaskExecutionService> logger)
 {
-    public async Task<ExecuteTaskResultDto> ExecuteRunAsync(Guid runId, CancellationToken cancellationToken)
+    public async Task<ExecuteTaskResultDto> ExecuteRunAsync(
+        Guid runId,
+        PreprocessConflictHandlingOptions? conflictOptions,
+        CancellationToken cancellationToken)
     {
         var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false)
             ?? throw new TaskValidationException(TaskErrorCodes.NotFound, "任务不存在");
@@ -35,6 +39,14 @@ public sealed class TaskExecutionService(
             }
 
             var hangfireId = scheduler.EnqueuePreprocess(runId);
+            if (conflictOptions is null)
+            {
+                conflictOptionStore.Clear(runId);
+            }
+            else
+            {
+                conflictOptionStore.Set(runId, conflictOptions);
+            }
             run = run with
             {
                 HangfireJobId = hangfireId,

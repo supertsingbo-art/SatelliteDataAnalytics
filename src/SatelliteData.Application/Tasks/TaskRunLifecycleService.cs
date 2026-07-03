@@ -11,6 +11,7 @@ public sealed class TaskRunLifecycleService(
     IPreprocessOutlierSegmentRepository outlierSegments,
     IPreprocessOutlierPointReviewRepository outlierReviews,
     IPreprocessValidRangeRepository validRanges,
+    ITaskRunConflictOptionStore conflictOptionStore,
     IBackgroundJobScheduler scheduler,
     ILogger<TaskRunLifecycleService> logger)
 {
@@ -40,7 +41,10 @@ public sealed class TaskRunLifecycleService(
         logger.LogInformation("Force deleted task run {RunId}", runId);
     }
 
-    public async Task<ExecuteTaskResultDto> ReExecuteRunAsync(Guid runId, CancellationToken cancellationToken)
+    public async Task<ExecuteTaskResultDto> ReExecuteRunAsync(
+        Guid runId,
+        PreprocessConflictHandlingOptions? conflictOptions,
+        CancellationToken cancellationToken)
     {
         var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false)
             ?? throw new TaskValidationException(TaskErrorCodes.NotFound, "任务不存在");
@@ -66,6 +70,14 @@ public sealed class TaskRunLifecycleService(
         await taskRuns.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
 
         var hangfireId = scheduler.EnqueuePreprocess(runId);
+        if (conflictOptions is null)
+        {
+            conflictOptionStore.Clear(runId);
+        }
+        else
+        {
+            conflictOptionStore.Set(runId, conflictOptions);
+        }
         run = run with { HangfireJobId = hangfireId, CurrentStep = "queued" };
         await taskRuns.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
 

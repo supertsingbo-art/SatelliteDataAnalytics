@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using SatelliteData.Application.Tasks;
 using SatelliteData.Application.Templates;
 using SatelliteData.Domain.Tasks;
@@ -191,6 +192,10 @@ public sealed class TasksController(
         int? AlgorithmTemplateVersion,
         string? IdempotencyKey);
 
+    public sealed record ExecuteRunBody(
+        string? OnActiveConflict,
+        string? OnCommittedConflict);
+
     [HttpPost("pipeline")]
     public async Task<ActionResult<ApiResponse<AcceptedJobResponse>>> CreatePipeline(
         [FromBody] CreatePipelineBody body,
@@ -363,17 +368,21 @@ public sealed class TasksController(
     [HttpPost("{runId:guid}/execute")]
     public Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteRunShortcut(
         Guid runId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ExecuteRunBody? body,
         CancellationToken cancellationToken) =>
-        ExecuteRun(runId, cancellationToken);
+        ExecuteRun(runId, body, cancellationToken);
 
     [HttpPost("runs/{runId:guid}/execute")]
     public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteRun(
         Guid runId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ExecuteRunBody? body,
         CancellationToken cancellationToken)
     {
         try
         {
-            var result = await taskExecutionService.ExecuteRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            var result = await taskExecutionService
+                .ExecuteRunAsync(runId, ParseConflictOptions(body), cancellationToken)
+                .ConfigureAwait(false);
             return Ok(ApiResponse<ExecuteTaskResponse>.Ok(ToExecuteResponse(result), HttpContext));
         }
         catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
@@ -411,11 +420,14 @@ public sealed class TasksController(
     [HttpPost("{runId:guid}/reexecute")]
     public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ReExecuteRun(
         Guid runId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ExecuteRunBody? body,
         CancellationToken cancellationToken)
     {
         try
         {
-            var result = await taskLifecycleService.ReExecuteRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            var result = await taskLifecycleService
+                .ReExecuteRunAsync(runId, ParseConflictOptions(body), cancellationToken)
+                .ConfigureAwait(false);
             return Ok(ApiResponse<ExecuteTaskResponse>.Ok(ToExecuteResponse(result), HttpContext));
         }
         catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
@@ -917,6 +929,33 @@ public sealed class TasksController(
             d.RunId,
             d.Items.Select(x => new TaskValidRangeItemResponse(x.RangeStart, x.RangeEnd, x.DurationSeconds)).ToArray(),
             d.Total);
+
+    private static PreprocessConflictHandlingOptions? ParseConflictOptions(ExecuteRunBody? body)
+    {
+        if (body is null)
+        {
+            return null;
+        }
+
+        var hasAny = !string.IsNullOrWhiteSpace(body.OnActiveConflict)
+                     || !string.IsNullOrWhiteSpace(body.OnCommittedConflict);
+        if (!hasAny)
+        {
+            return null;
+        }
+
+        var active = string.Equals(body.OnActiveConflict, "SKIP", StringComparison.OrdinalIgnoreCase)
+            ? ActiveConflictHandling.Skip
+            : ActiveConflictHandling.Fail;
+        var committed = body.OnCommittedConflict?.Trim().ToUpperInvariant() switch
+        {
+            "SKIP" => CommittedConflictHandling.Skip,
+            "OVERWRITE" => CommittedConflictHandling.Overwrite,
+            _ => CommittedConflictHandling.Fail
+        };
+
+        return new PreprocessConflictHandlingOptions(active, committed);
+    }
 
     private static string JobTypeToApi(TaskJobType t) =>
         t switch

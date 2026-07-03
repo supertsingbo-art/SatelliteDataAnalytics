@@ -1,5 +1,7 @@
 namespace SatelliteData.Application.Pipeline;
 
+using SatelliteData.Application.Tasks;
+
 public interface IClickHouseGateway
 {
     Task ExecuteNonQueryAsync(string sql, CancellationToken cancellationToken);
@@ -85,6 +87,14 @@ public interface IClickHouseGateway
         string? paramIdFilter,
         int page,
         int pageSize,
+        CancellationToken cancellationToken);
+
+    Task DeleteByClaimsAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        ulong keepVersionFromInclusive,
         CancellationToken cancellationToken);
 }
 
