@@ -6,6 +6,7 @@ import type {
   TaskListItemV2,
   TaskOutlierPoints,
   TaskOutlierSegments,
+  TaskValidRanges,
   OutlierReviewSummary,
   OutlierReviewList,
   CompleteOutlierReviewResult,
@@ -117,6 +118,8 @@ export const tasksApi = {
     } as Record<string, unknown>),
   getOutlierSegments: (runId: string) =>
     request<TaskOutlierSegments>('get', `${TASKS_BASE}/${runId}/outlier-segments`),
+  getValidRanges: (runId: string) =>
+    request<TaskValidRanges>('get', `${TASKS_BASE}/${runId}/valid-ranges`),
   getOutlierReviewSummary: (runId: string) =>
     request<OutlierReviewSummary>('get', `${TASKS_BASE}/${runId}/outlier-reviews/summary`),
   getOutlierReviews: (runId: string, params?: { page?: number; pageSize?: number; status?: string; paramId?: string }) =>
@@ -128,7 +131,7 @@ export const tasksApi = {
     } as Record<string, unknown>),
   submitOutlierReviews: (
     runId: string,
-    items: { paramId: string; ts: string; status: 'CONFIRMED' | 'JITTER'; remark?: string }[]
+    items: { paramId: string; ts: string; status: string; remark?: string }[]
   ) =>
     request<OutlierReviewSummary>('patch', `${TASKS_BASE}/${runId}/outlier-reviews`, { items }),
   completeOutlierReview: (runId: string) =>

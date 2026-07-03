@@ -10,6 +10,7 @@ public sealed class TaskRunLifecycleService(
     IPreprocessParamClaimRepository paramClaims,
     IPreprocessOutlierSegmentRepository outlierSegments,
     IPreprocessOutlierPointReviewRepository outlierReviews,
+    IPreprocessValidRangeRepository validRanges,
     IBackgroundJobScheduler scheduler,
     ILogger<TaskRunLifecycleService> logger)
 {
@@ -82,6 +83,7 @@ public sealed class TaskRunLifecycleService(
     {
         await outlierReviews.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await outlierSegments.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        await validRanges.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await hqMetadata.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await paramClaims.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
         await taskEvents.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);

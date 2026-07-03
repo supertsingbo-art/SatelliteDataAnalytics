@@ -28,6 +28,7 @@ public sealed class PreprocessPipeline(
     IPreprocessParamClaimRepository paramClaims,
     IPreprocessOutlierSegmentRepository outlierSegments,
     IPreprocessOutlierPointReviewRepository outlierReviews,
+    IPreprocessValidRangeRepository validRangeRepository,
     PreprocessScheduleService scheduleService,
     IBackgroundJobScheduler scheduler,
     IOptions<PipelineOptions> pipelineOptions,
@@ -213,9 +214,40 @@ public sealed class PreprocessPipeline(
             return;
         }
 
+        try
+        {
+            await validRangeRepository.DeleteByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await FailAsync(run, "PRE_003", $"清理有效时间段失败：{ex.Message}", cancellationToken);
+            return;
+        }
+
         if (validRanges.Count == 0)
         {
             await FailAsync(run, "PRE_004", "conditionConfig 未产生有效时间段", cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var rows = validRanges
+                .Select(x => new PreprocessValidRange(
+                    Guid.NewGuid(),
+                    runId,
+                    run.TasookNo,
+                    run.SatelliteNo,
+                    x.Start,
+                    x.End,
+                    now))
+                .ToArray();
+            await validRangeRepository.InsertBatchAsync(rows, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await FailAsync(run, "PRE_003", $"保存有效时间段失败：{ex.Message}", cancellationToken);
             return;
         }
 

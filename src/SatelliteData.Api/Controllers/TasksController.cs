@@ -121,13 +121,32 @@ public sealed class TasksController(
         [property: JsonPropertyName("segment_kind")] string SegmentKind,
         [property: JsonPropertyName("review_completed")] bool ReviewCompleted);
 
+    public sealed record TaskValidRangeItemResponse(
+        [property: JsonPropertyName("range_start")] string RangeStart,
+        [property: JsonPropertyName("range_end")] string RangeEnd,
+        [property: JsonPropertyName("duration_seconds")] double DurationSeconds);
+
+    public sealed record TaskValidRangesResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("items")] IReadOnlyList<TaskValidRangeItemResponse> Items,
+        [property: JsonPropertyName("total")] int Total);
+
     public sealed record OutlierReviewSummaryResponse(
         [property: JsonPropertyName("run_id")] Guid RunId,
         [property: JsonPropertyName("outlier_review_status")] string? OutlierReviewStatus,
         [property: JsonPropertyName("auto_count")] int AutoCount,
         [property: JsonPropertyName("pending_count")] int PendingCount,
         [property: JsonPropertyName("confirmed_count")] int ConfirmedCount,
-        [property: JsonPropertyName("jitter_count")] int JitterCount);
+        [property: JsonPropertyName("jitter_count")] int JitterCount,
+        [property: JsonPropertyName("status_counts")] IReadOnlyDictionary<string, int> StatusCounts,
+        [property: JsonPropertyName("mark_options")] IReadOnlyList<OutlierMarkOptionResponse> MarkOptions);
+
+    public sealed record OutlierMarkOptionResponse(
+        [property: JsonPropertyName("mark_code")] string MarkCode,
+        [property: JsonPropertyName("mark_label")] string MarkLabel,
+        [property: JsonPropertyName("is_outlier")] bool IsOutlier,
+        [property: JsonPropertyName("sort_order")] int SortOrder,
+        [property: JsonPropertyName("enabled")] bool Enabled);
 
     public sealed record OutlierReviewItemResponse(
         [property: JsonPropertyName("review_id")] Guid ReviewId,
@@ -591,6 +610,30 @@ public sealed class TasksController(
         }
     }
 
+    [HttpGet("{runId:guid}/valid-ranges")]
+    public async Task<ActionResult<ApiResponse<TaskValidRangesResponse>>> GetValidRanges(
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var data = await taskProcessedDataService
+                .GetValidRangesAsync(runId, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<TaskValidRangesResponse>.Ok(ToValidRangesResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
     [HttpPost("schedules/{scheduleId:guid}/execute")]
     public async Task<ActionResult<ApiResponse<ExecuteTaskResponse>>> ExecuteSchedule(
         Guid scheduleId,
@@ -841,7 +884,17 @@ public sealed class TasksController(
             d.ReviewCompleted);
 
     private static OutlierReviewSummaryResponse ToOutlierReviewSummaryResponse(OutlierReviewSummaryDto d) =>
-        new(d.RunId, d.OutlierReviewStatus, d.AutoCount, d.PendingCount, d.ConfirmedCount, d.JitterCount);
+        new(
+            d.RunId,
+            d.OutlierReviewStatus,
+            d.AutoCount,
+            d.PendingCount,
+            d.ConfirmedCount,
+            d.JitterCount,
+            d.StatusCounts,
+            d.MarkOptions
+                .Select(x => new OutlierMarkOptionResponse(x.MarkCode, x.MarkLabel, x.IsOutlier, x.SortOrder, x.Enabled))
+                .ToArray());
 
     private static OutlierReviewListResponse ToOutlierReviewListResponse(OutlierReviewListDto d) =>
         new(
@@ -858,6 +911,12 @@ public sealed class TasksController(
             d.Total,
             d.Page,
             d.PageSize);
+
+    private static TaskValidRangesResponse ToValidRangesResponse(TaskValidRangesDto d) =>
+        new(
+            d.RunId,
+            d.Items.Select(x => new TaskValidRangeItemResponse(x.RangeStart, x.RangeEnd, x.DurationSeconds)).ToArray(),
+            d.Total);
 
     private static string JobTypeToApi(TaskJobType t) =>
         t switch

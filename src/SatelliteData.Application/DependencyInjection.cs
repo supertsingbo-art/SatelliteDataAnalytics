@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<TaskRunLifecycleService>();
         services.AddScoped<TaskRunProcessedDataService>();
         services.AddScoped<OutlierReviewService>();
+        services.AddScoped<OutlierMarkConfigService>();
 
         return services;
     }

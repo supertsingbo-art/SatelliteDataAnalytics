@@ -12,6 +12,7 @@ import { AlgorithmPackagesPage } from './pages/algorithms/AlgorithmPackagesPage'
 import { PipelineTasksPage } from './pages/tasks/PipelineTasksPage';
 import { PreprocessTasksPage } from './pages/tasks/PreprocessTasksPage';
 import { TasksListPage } from './pages/tasks/TasksListPage';
+import { SystemConfigPage } from './pages/settings/SystemConfigPage';
 
 export const router = createBrowserRouter([
   {
@@ -32,7 +33,8 @@ export const router = createBrowserRouter([
       { path: 'algorithms/packages', element: <AlgorithmPackagesPage /> },
       { path: 'tasks/pipeline', element: <PipelineTasksPage /> },
       { path: 'tasks/preprocess', element: <PreprocessTasksPage /> },
-      { path: 'tasks', element: <TasksListPage /> }
+      { path: 'tasks', element: <TasksListPage /> },
+      { path: 'settings/system', element: <SystemConfigPage /> }
     ]
   }
 ]);

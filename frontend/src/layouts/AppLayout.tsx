@@ -38,6 +38,11 @@ const menuItems = [
       { key: '/tasks/pipeline', label: '新建 PIPELINE' },
       { key: '/tasks/preprocess', label: '新建预处理入仓' }
     ]
+  },
+  {
+    key: '/settings',
+    label: '系统管理',
+    children: [{ key: '/settings/system', label: '系统配置' }]
   }
 ];
 
@@ -65,6 +70,7 @@ export function AppLayout() {
     if (path === '/tasks') return '任务编排 / 任务列表';
     if (path.startsWith('/tasks/pipeline')) return '任务编排 / 新建 PIPELINE';
     if (path.startsWith('/tasks/preprocess')) return '任务编排 / 新建预处理入仓';
+    if (path.startsWith('/settings/system')) return '系统管理 / 系统配置';
     return '卫星测试数据预处理与数据分析平台';
   }, [location.pathname]);
 

@@ -11,7 +11,8 @@ public sealed class TaskRunProcessedDataService(
     IAssetCacheRepository assetCache,
     IClickHouseGateway clickHouse,
     IPreprocessOutlierSegmentRepository outlierSegments,
-    IPreprocessOutlierPointReviewRepository outlierReviews)
+    IPreprocessOutlierPointReviewRepository outlierReviews,
+    IPreprocessValidRangeRepository validRanges)
 {
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 200;
@@ -147,6 +148,32 @@ public sealed class TaskRunProcessedDataService(
         return new TaskOutlierSegmentsDto(runId, items, items.Count, segmentKind, reviewCompleted);
     }
 
+    public async Task<TaskValidRangesDto> GetValidRangesAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        await LoadQueryContextAsync(runId, cancellationToken).ConfigureAwait(false);
+        var rows = await validRanges.ListByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        var items = rows
+            .OrderBy(x => x.RangeStart)
+            .Select(x =>
+            {
+                var duration = (x.RangeEnd - x.RangeStart).TotalSeconds;
+                if (duration < 0)
+                {
+                    duration = 0;
+                }
+
+                return new TaskValidRangeItemDto(
+                    x.RangeStart.ToString("O"),
+                    x.RangeEnd.ToString("O"),
+                    duration);
+            })
+            .ToArray();
+
+        return new TaskValidRangesDto(runId, items, items.Length);
+    }
+
     private static string? NormalizeReviewStatusFilter(string? status)
     {
         if (string.IsNullOrWhiteSpace(status) || string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase))
@@ -154,13 +181,13 @@ public sealed class TaskRunProcessedDataService(
             return null;
         }
 
-        return status.Trim().ToUpperInvariant() switch
+        var normalized = status.Trim().ToUpperInvariant();
+        if (normalized.Length == 0)
         {
-            "PENDING" => OutlierReviewPointStatus.Pending,
-            "CONFIRMED" => OutlierReviewPointStatus.Confirmed,
-            "JITTER" => OutlierReviewPointStatus.Jitter,
-            _ => throw new TaskValidationException(TaskErrorCodes.ValidationFailed, $"无效状态筛选：{status}")
-        };
+            return null;
+        }
+
+        return normalized;
     }
 
     private async Task<ProcessedDataQueryContext> LoadQueryContextAsync(

@@ -37,6 +37,8 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<IPreprocessScheduleRepository, PgPreprocessScheduleRepository>();
             services.AddSingleton<IPreprocessOutlierSegmentRepository, PgPreprocessOutlierSegmentRepository>();
             services.AddSingleton<IPreprocessOutlierPointReviewRepository, PgPreprocessOutlierPointReviewRepository>();
+            services.AddSingleton<IPreprocessValidRangeRepository, PgPreprocessValidRangeRepository>();
+            services.AddSingleton<IOutlierMarkConfigRepository, PgOutlierMarkConfigRepository>();
         }
         else
         {
@@ -48,6 +50,8 @@ public static class PipelineServiceCollectionExtensions
             services.AddSingleton<IPreprocessScheduleRepository, InMemoryPreprocessScheduleRepository>();
             services.AddSingleton<IPreprocessOutlierSegmentRepository, InMemoryPreprocessOutlierSegmentRepository>();
             services.AddSingleton<IPreprocessOutlierPointReviewRepository, InMemoryPreprocessOutlierPointReviewRepository>();
+            services.AddSingleton<IPreprocessValidRangeRepository, InMemoryPreprocessValidRangeRepository>();
+            services.AddSingleton<IOutlierMarkConfigRepository, InMemoryOutlierMarkConfigRepository>();
         }
 
         services.AddScoped<PreprocessScheduleService>();

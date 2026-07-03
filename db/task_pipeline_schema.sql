@@ -115,6 +115,27 @@ CREATE TABLE IF NOT EXISTS preprocess_outlier_point_review (
 
 CREATE INDEX IF NOT EXISTS idx_outlier_review_run_status ON preprocess_outlier_point_review(run_id, review_status);
 
+CREATE TABLE IF NOT EXISTS outlier_mark_config (
+    mark_code varchar(64) PRIMARY KEY,
+    mark_label varchar(128) NOT NULL,
+    is_outlier boolean NOT NULL,
+    sort_order int NOT NULL DEFAULT 0,
+    enabled boolean NOT NULL DEFAULT true,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS preprocess_valid_range (
+    range_id uuid PRIMARY KEY,
+    run_id uuid NOT NULL,
+    tasook_no varchar(64) NOT NULL,
+    satellite_no varchar(64) NOT NULL,
+    range_start timestamptz NOT NULL,
+    range_end timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_preprocess_valid_range_run ON preprocess_valid_range(run_id, range_start);
+
 CREATE TABLE IF NOT EXISTS task_event (
     event_id uuid PRIMARY KEY,
     run_id uuid NOT NULL,

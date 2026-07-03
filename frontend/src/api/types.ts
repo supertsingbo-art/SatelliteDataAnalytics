@@ -548,7 +548,7 @@ export interface TaskProcessedDataCell {
   value: number | null;
   is_outlier: boolean;
   is_confirmed_outlier?: boolean;
-  /** PENDING | CONFIRMED | JITTER；无记录表示普通点 */
+  /** PENDING 或系统配置中的标记编码；无记录表示普通点 */
   review_status?: string | null;
 }
 
@@ -585,6 +585,16 @@ export interface OutlierReviewSummary {
   pending_count: number;
   confirmed_count: number;
   jitter_count: number;
+  status_counts?: Record<string, number>;
+  mark_options?: OutlierMarkOption[];
+}
+
+export interface OutlierMarkOption {
+  mark_code: string;
+  mark_label: string;
+  is_outlier: boolean;
+  sort_order: number;
+  enabled: boolean;
 }
 
 export interface OutlierReviewItem {
@@ -636,4 +646,16 @@ export interface TaskOutlierSegments {
   total: number;
   segment_kind: string;
   review_completed: boolean;
+}
+
+export interface TaskValidRangeItem {
+  range_start: string;
+  range_end: string;
+  duration_seconds: number;
+}
+
+export interface TaskValidRanges {
+  run_id: string;
+  items: TaskValidRangeItem[];
+  total: number;
 }

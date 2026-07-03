@@ -154,6 +154,7 @@ public sealed class PreprocessParamClaimIntegrationTests
             paramClaims,
             outlierSegments,
             outlierReviews,
+            new InMemoryPreprocessValidRangeRepository(),
             scheduleService,
             scheduler,
             Options.Create(new PipelineOptions { ClickHouseBatchSize = 100 }),

@@ -11,18 +11,15 @@ public sealed class OutlierReviewService(
     IAssetCacheRepository assetCache,
     IPreprocessOutlierPointReviewRepository reviews,
     IPreprocessOutlierSegmentRepository outlierSegments,
-    IClickHouseGateway clickHouse)
+    IClickHouseGateway clickHouse,
+    OutlierMarkConfigService markConfigService)
 {
     public async Task<OutlierReviewSummaryDto> GetSummaryAsync(Guid runId, CancellationToken cancellationToken)
     {
-        var run = await LoadRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        return new OutlierReviewSummaryDto(
-            runId,
-            run.OutlierReviewStatus,
-            run.OutlierAutoCount,
-            run.OutlierPendingCount,
-            run.OutlierConfirmedCount,
-            run.OutlierJitterCount);
+        var run = await SyncRunCountsAsync(runId, cancellationToken).ConfigureAwait(false);
+        var statusCounts = await reviews.CountByStatusAsync(runId, cancellationToken).ConfigureAwait(false);
+        var markOptions = await markConfigService.GetEnabledOptionsAsync(cancellationToken).ConfigureAwait(false);
+        return BuildSummary(run, statusCounts, markOptions);
     }
 
     public async Task<OutlierReviewListDto> ListReviewsAsync(
@@ -82,17 +79,19 @@ public sealed class OutlierReviewService(
 
         var run = await LoadRunAsync(runId, cancellationToken).ConfigureAwait(false);
         var ctx = await BuildContextAsync(runId, cancellationToken).ConfigureAwait(false);
+        var markOptions = await markConfigService.GetEnabledOptionsAsync(cancellationToken).ConfigureAwait(false);
+        var markMap = markOptions.ToDictionary(x => x.MarkCode, x => x, StringComparer.Ordinal);
         var now = DateTimeOffset.UtcNow;
         var updates = new List<OutlierReviewUpdate>();
 
         foreach (var item in items)
         {
-            var status = NormalizePointStatus(item.Status);
-            if (status is null)
+            var normalizedStatus = NormalizeStatusCode(item.Status);
+            if (!markMap.TryGetValue(normalizedStatus, out var mark))
             {
                 throw new TaskValidationException(
                     TaskErrorCodes.ValidationFailed,
-                    $"无效的复核状态：{item.Status}，允许 CONFIRMED 或 JITTER");
+                    $"无效的复核状态：{item.Status}，请先在系统配置中维护可用离群标记");
             }
 
             if (!DateTimeOffset.TryParse(item.Ts, out var ts))
@@ -100,7 +99,7 @@ public sealed class OutlierReviewService(
                 throw new TaskValidationException(TaskErrorCodes.ValidationFailed, $"无效时间戳：{item.Ts}");
             }
 
-            updates.Add(new OutlierReviewUpdate(item.ParamId.Trim(), ts, status, item.Remark));
+            updates.Add(new OutlierReviewUpdate(item.ParamId.Trim(), ts, mark.MarkCode, item.Remark));
         }
 
         await reviews.UpdateStatusBatchAsync(runId, updates, now, reviewedBy, cancellationToken)
@@ -118,12 +117,11 @@ public sealed class OutlierReviewService(
                 cancellationToken).ConfigureAwait(false);
             if (latest is null) continue;
 
-            // 抖动 = 人工认定非离群：清除 is_outlier；确认离群 = 最终离群点
-            var confirmed = string.Equals(u.Status, OutlierReviewPointStatus.Confirmed, StringComparison.Ordinal);
+            var isOutlier = markMap.TryGetValue(u.Status, out var mark) && mark.IsOutlier;
             chRows.Add(latest with
             {
-                IsOutlier = confirmed ? (byte)1 : (byte)0,
-                IsConfirmedOutlier = confirmed ? (byte)1 : (byte)0,
+                IsOutlier = isOutlier ? (byte)1 : (byte)0,
+                IsConfirmedOutlier = isOutlier ? (byte)1 : (byte)0,
                 Version = latest.Version + 1
             });
         }
@@ -134,13 +132,8 @@ public sealed class OutlierReviewService(
         }
 
         run = await SyncRunCountsAsync(runId, cancellationToken).ConfigureAwait(false);
-        return new OutlierReviewSummaryDto(
-            runId,
-            run.OutlierReviewStatus,
-            run.OutlierAutoCount,
-            run.OutlierPendingCount,
-            run.OutlierConfirmedCount,
-            run.OutlierJitterCount);
+        var statusCounts = await reviews.CountByStatusAsync(runId, cancellationToken).ConfigureAwait(false);
+        return BuildSummary(run, statusCounts, markOptions);
     }
 
     public async Task<CompleteOutlierReviewResultDto> CompleteReviewAsync(
@@ -161,9 +154,19 @@ public sealed class OutlierReviewService(
         }
 
         var ctx = await BuildContextAsync(runId, cancellationToken).ConfigureAwait(false);
-        var confirmed = await reviews
-            .ListByRunIdAndStatusAsync(runId, OutlierReviewPointStatus.Confirmed, cancellationToken)
-            .ConfigureAwait(false);
+        var markOptions = await markConfigService.GetEnabledOptionsAsync(cancellationToken).ConfigureAwait(false);
+        var outlierStatuses = markOptions
+            .Where(x => x.IsOutlier)
+            .Select(x => x.MarkCode)
+            .ToHashSet(StringComparer.Ordinal);
+        if (outlierStatuses.Count == 0)
+        {
+            outlierStatuses.Add(OutlierReviewPointStatus.Confirmed);
+        }
+
+        var confirmed = (await reviews.ListByRunIdAsync(runId, cancellationToken).ConfigureAwait(false))
+            .Where(x => outlierStatuses.Contains(x.ReviewStatus))
+            .ToArray();
 
         await outlierSegments.DeleteByRunIdAndKindAsync(runId, OutlierSegmentKind.Confirmed, cancellationToken)
             .ConfigureAwait(false);
@@ -223,10 +226,31 @@ public sealed class OutlierReviewService(
         var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false)
             ?? throw new TaskValidationException(TaskErrorCodes.NotFound, "任务不存在");
         var counts = await reviews.CountByStatusAsync(runId, cancellationToken).ConfigureAwait(false);
+        var markMap = await markConfigService.GetEnabledMapAsync(cancellationToken).ConfigureAwait(false);
         counts.TryGetValue(OutlierReviewPointStatus.Pending, out var pending);
-        counts.TryGetValue(OutlierReviewPointStatus.Confirmed, out var confirmed);
-        counts.TryGetValue(OutlierReviewPointStatus.Jitter, out var jitter);
-        var auto = pending + confirmed + jitter;
+
+        var reviewedTotal = counts
+            .Where(x => !string.Equals(x.Key, OutlierReviewPointStatus.Pending, StringComparison.Ordinal))
+            .Sum(x => x.Value);
+        var confirmed = counts
+            .Where(x =>
+            {
+                if (string.Equals(x.Key, OutlierReviewPointStatus.Pending, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                if (markMap.TryGetValue(x.Key, out var mark))
+                {
+                    return mark.IsOutlier;
+                }
+
+                // 兼容历史固定状态
+                return string.Equals(x.Key, OutlierReviewPointStatus.Confirmed, StringComparison.Ordinal);
+            })
+            .Sum(x => x.Value);
+        var jitter = reviewedTotal - confirmed;
+        var auto = pending + reviewedTotal;
         var status = run.OutlierReviewStatus;
         if (string.Equals(status, OutlierReviewRunStatus.Completed, StringComparison.Ordinal))
         {
@@ -246,7 +270,7 @@ public sealed class OutlierReviewService(
             OutlierAutoCount = auto,
             OutlierPendingCount = pending,
             OutlierConfirmedCount = confirmed,
-            OutlierJitterCount = jitter,
+            OutlierJitterCount = Math.Max(0, jitter),
             OutlierReviewStatus = status
         };
         await taskRuns.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
@@ -292,22 +316,32 @@ public sealed class OutlierReviewService(
             return null;
         }
 
-        return status.Trim().ToUpperInvariant() switch
-        {
-            "PENDING" => OutlierReviewPointStatus.Pending,
-            "CONFIRMED" => OutlierReviewPointStatus.Confirmed,
-            "JITTER" => OutlierReviewPointStatus.Jitter,
-            _ => throw new TaskValidationException(TaskErrorCodes.ValidationFailed, $"无效状态筛选：{status}")
-        };
+        return NormalizeStatusCode(status);
     }
 
-    private static string? NormalizePointStatus(string status) =>
-        status.Trim().ToUpperInvariant() switch
-        {
-            "CONFIRMED" => OutlierReviewPointStatus.Confirmed,
-            "JITTER" => OutlierReviewPointStatus.Jitter,
-            _ => null
-        };
+    private static string NormalizeStatusCode(string status) => status.Trim().ToUpperInvariant();
+
+    private static OutlierReviewSummaryDto BuildSummary(
+        TaskRun run,
+        IReadOnlyDictionary<string, int> statusCounts,
+        IReadOnlyList<OutlierMarkOption> markOptions)
+    {
+        var normalized = statusCounts.ToDictionary(
+            x => x.Key.ToUpperInvariant(),
+            x => x.Value,
+            StringComparer.Ordinal);
+        return new OutlierReviewSummaryDto(
+            run.RunId,
+            run.OutlierReviewStatus,
+            run.OutlierAutoCount,
+            run.OutlierPendingCount,
+            run.OutlierConfirmedCount,
+            run.OutlierJitterCount,
+            normalized,
+            markOptions
+                .Select(x => new OutlierMarkOptionDto(x.MarkCode, x.MarkLabel, x.IsOutlier, x.SortOrder, x.Enabled))
+                .ToArray());
+    }
 
     private sealed record ReviewQueryContext(
         TaskRun Run,

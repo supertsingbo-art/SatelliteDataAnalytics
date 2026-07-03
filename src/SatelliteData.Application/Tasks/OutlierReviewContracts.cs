@@ -6,7 +6,16 @@ public sealed record OutlierReviewSummaryDto(
     int AutoCount,
     int PendingCount,
     int ConfirmedCount,
-    int JitterCount);
+    int JitterCount,
+    IReadOnlyDictionary<string, int> StatusCounts,
+    IReadOnlyList<OutlierMarkOptionDto> MarkOptions);
+
+public sealed record OutlierMarkOptionDto(
+    string MarkCode,
+    string MarkLabel,
+    bool IsOutlier,
+    int SortOrder,
+    bool Enabled);
 
 public sealed record OutlierReviewItemDto(
     Guid ReviewId,

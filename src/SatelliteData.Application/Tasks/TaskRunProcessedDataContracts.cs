@@ -52,3 +52,13 @@ public sealed record TaskOutlierSegmentsDto(
     int Total,
     string SegmentKind,
     bool ReviewCompleted);
+
+public sealed record TaskValidRangeItemDto(
+    string RangeStart,
+    string RangeEnd,
+    double DurationSeconds);
+
+public sealed record TaskValidRangesDto(
+    Guid RunId,
+    IReadOnlyList<TaskValidRangeItemDto> Items,
+    int Total);
