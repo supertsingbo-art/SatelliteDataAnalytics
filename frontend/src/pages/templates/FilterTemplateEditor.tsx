@@ -896,10 +896,11 @@ export function FilterTemplateEditor() {
                                 .split(',')
                                 .map((x) => x.trim())
                                 .filter(Boolean);
-                              updateParameterRow(row.rowId, { value: parts.map((x) => Number(x)) });
+                              // 保留原始文本，避免输入过程把 "-" / "1." 强转后丢失。
+                              updateParameterRow(row.rowId, { value: parts });
                             } else {
-                              const num = Number(text);
-                              updateParameterRow(row.rowId, { value: Number.isNaN(num) ? text : num });
+                              // 由后端在计算时解析 number/string；前端不在输入阶段强转。
+                              updateParameterRow(row.rowId, { value: text });
                             }
                           }}
                         />
