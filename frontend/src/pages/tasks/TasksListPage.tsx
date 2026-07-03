@@ -149,6 +149,9 @@ function reviewedCount(summary: OutlierReviewSummary | null): number {
 
 type DataViewMode = 'all' | 'outlier-points' | 'outlier-segments' | 'valid-ranges';
 
+const DATA_DRAWER_TABLE_SCROLL_Y = 'calc(100vh - 330px)';
+const DATA_DRAWER_PAGE_SIZE = 100;
+
 export function TasksListPage() {
   const openTemplateEditor = (templateId: string, version: number) => {
     window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
@@ -211,7 +214,7 @@ export function TasksListPage() {
   const [dataTitle, setDataTitle] = useState('');
   const [dataRunId, setDataRunId] = useState<string | null>(null);
   const [dataPage, setDataPage] = useState(1);
-  const [dataPageSize, setDataPageSize] = useState(50);
+  const [dataPageSize, setDataPageSize] = useState(DATA_DRAWER_PAGE_SIZE);
   const [dataViewMode, setDataViewMode] = useState<DataViewMode>('all');
   const [reviewSummary, setReviewSummary] = useState<OutlierReviewSummary | null>(null);
   const [reviewList, setReviewList] = useState<OutlierReviewList | null>(null);
@@ -427,7 +430,7 @@ export function TasksListPage() {
     setDataTitle(row.job_id ?? row.run_id);
     setDataRunId(row.run_id);
     setDataPage(1);
-    setDataPageSize(50);
+    setDataPageSize(DATA_DRAWER_PAGE_SIZE);
     setDataViewMode('all');
     setDataOpen(true);
     setProcessedData(null);
@@ -437,7 +440,7 @@ export function TasksListPage() {
     setOutlierSegments(null);
     setValidRanges(null);
     void loadReviewSummary(row.run_id);
-    await loadProcessedData(row.run_id, 1, 50);
+    await loadProcessedData(row.run_id, 1, DATA_DRAWER_PAGE_SIZE);
   };
 
   const handleDataViewModeChange = (mode: DataViewMode) => {
@@ -1000,6 +1003,11 @@ export function TasksListPage() {
           setValidRanges(null);
         }}
         width="90%"
+        styles={{
+          body: {
+            paddingBottom: 16
+          }
+        }}
       >
         <Space direction="vertical" style={{ width: '100%', marginBottom: 12 }} size="small">
           <Segmented
@@ -1106,13 +1114,13 @@ export function TasksListPage() {
             rowKey="key"
             dataSource={dataTableRows}
             columns={dataColumns}
-            scroll={{ x: 'max-content', y: 480 }}
+            scroll={{ x: 'max-content', y: DATA_DRAWER_TABLE_SCROLL_Y }}
             pagination={{
               current: dataPage,
               pageSize: dataPageSize,
               total: dataTotal,
               showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100, 200],
+              pageSizeOptions: [50, 100, 200, 500],
               showTotal: (total) => `共 ${total} 个时间点`,
               onChange: (page, pageSize) => handleDataPageChange(page, pageSize)
             }}
@@ -1125,7 +1133,7 @@ export function TasksListPage() {
             rowKey="key"
             dataSource={reviewTableRows}
             columns={reviewColumns}
-            scroll={{ x: 'max-content', y: 480 }}
+            scroll={{ x: 'max-content', y: DATA_DRAWER_TABLE_SCROLL_Y }}
             rowSelection={{
               selectedRowKeys: selectedReviewKeys,
               onChange: (keys) => setSelectedReviewKeys(keys as string[]),
@@ -1136,7 +1144,7 @@ export function TasksListPage() {
               pageSize: dataPageSize,
               total: dataTotal,
               showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100, 200],
+              pageSizeOptions: [50, 100, 200, 500],
               showTotal: (total) => `共 ${total} 条复核记录`,
               onChange: (page, pageSize) => handleDataPageChange(page, pageSize)
             }}
@@ -1149,11 +1157,11 @@ export function TasksListPage() {
             rowKey="key"
             dataSource={segmentTableRows}
             columns={segmentColumns}
-            scroll={{ x: 'max-content', y: 480 }}
+            scroll={{ x: 'max-content', y: DATA_DRAWER_TABLE_SCROLL_Y }}
             pagination={{
-              pageSize: 50,
+              defaultPageSize: DATA_DRAWER_PAGE_SIZE,
               showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100, 200],
+              pageSizeOptions: [50, 100, 200, 500],
               showTotal: (total) => `共 ${total} 段`,
               hideOnSinglePage: true
             }}
@@ -1166,11 +1174,11 @@ export function TasksListPage() {
             rowKey="key"
             dataSource={validRangeRows}
             columns={validRangeColumns}
-            scroll={{ x: 'max-content', y: 480 }}
+            scroll={{ x: 'max-content', y: DATA_DRAWER_TABLE_SCROLL_Y }}
             pagination={{
-              pageSize: 50,
+              defaultPageSize: DATA_DRAWER_PAGE_SIZE,
               showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100, 200],
+              pageSizeOptions: [50, 100, 200, 500],
               showTotal: (total) => `共 ${total} 段`,
               hideOnSinglePage: true
             }}

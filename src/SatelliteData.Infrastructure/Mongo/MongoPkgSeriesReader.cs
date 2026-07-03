@@ -35,7 +35,7 @@ public sealed class MongoPkgSeriesReader : IMongoPkgSeriesReader
                 foreach (var doc in cursor.Current)
                 {
                     var ts = doc.TryGetValue("dt", out var t)
-                        ? MongoDateTimeMapper.ToLocalOffset(t)
+                        ? MongoDateTimeMapper.ToUtcOffset(t)
                         : default;
                     double v = 0;
                     if (doc.TryGetValue("pv", out var pv))

@@ -372,7 +372,7 @@ public sealed class PreprocessPipeline(
                         ["satellite_no"] = run.SatelliteNo,
                         ["test_batch_id"] = warehouseBatchLabel,
                         ["param_id"] = spec.ParamId,
-                        ["ts"] = points[i].Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
+                        ["ts"] = points[i].Ts.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
                         ["raw_value"] = points[i].Value,
                         ["processed_value"] = points[i].Value,
                         ["is_outlier"] = flags[i],

@@ -59,7 +59,7 @@ public sealed class MongoInstructionSeriesReader : IMongoInstructionSeriesReader
                         continue;
                     }
 
-                    var executeTime = MongoDateTimeMapper.ToLocalOffset(etVal);
+                    var executeTime = MongoDateTimeMapper.ToUtcOffset(etVal);
                     result.Add(new InstructionHistoryPoint(
                         lookup.CommandId,
                         cmdId,

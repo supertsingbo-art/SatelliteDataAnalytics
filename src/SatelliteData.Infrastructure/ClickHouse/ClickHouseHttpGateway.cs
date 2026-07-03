@@ -100,8 +100,8 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken)
     {
-        var ws = windowStart.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
-        var we = windowEnd.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var ws = ToUtcTimestampLiteral(windowStart);
+        var we = ToUtcTimestampLiteral(windowEnd);
         var sql = $"""
             SELECT ts, processed_value
             FROM hq_param_point
@@ -159,8 +159,8 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
     {
         if (paramIds.Count == 0) return [];
 
-        var ws = windowStart.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
-        var we = windowEnd.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var ws = ToUtcTimestampLiteral(windowStart);
+        var we = ToUtcTimestampLiteral(windowEnd);
         var inList = string.Join(", ", paramIds.Select(id => $"'{Escape(id)}'"));
         var limit = Math.Clamp(maxRows, 1, 50_000);
         var sql = $"""
@@ -341,7 +341,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         DateTimeOffset ts,
         CancellationToken cancellationToken)
     {
-        var tsStr = ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var tsStr = ToUtcTimestampLiteral(ts);
         var sql = $"""
             SELECT tasook_no, satellite_no, test_batch_id, param_id, ts, raw_value, processed_value,
                    is_outlier, is_confirmed_outlier, version
@@ -422,7 +422,7 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
             ["satellite_no"] = r.SatelliteNo,
             ["test_batch_id"] = r.TestBatchId,
             ["param_id"] = r.ParamId,
-            ["ts"] = r.Ts.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
+            ["ts"] = ToUtcTimestampLiteral(r.Ts),
             ["raw_value"] = r.RawValue,
             ["processed_value"] = r.ProcessedValue,
             ["is_outlier"] = r.IsOutlier,
@@ -440,8 +440,8 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd)
     {
-        var ws = windowStart.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
-        var we = windowEnd.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var ws = ToUtcTimestampLiteral(windowStart);
+        var we = ToUtcTimestampLiteral(windowEnd);
         var inList = string.Join(", ", paramIds.Select(id => $"'{Escape(id)}'"));
         return $"""
             tasook_no = '{Escape(tasookNo)}'
@@ -589,6 +589,9 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
     }
 
     private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("'", "\\'");
+
+    private static string ToUtcTimestampLiteral(DateTimeOffset value) =>
+        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
     private static void ParseConnectionString(string cs, out string host, out int port, out string user, out string password)
     {
