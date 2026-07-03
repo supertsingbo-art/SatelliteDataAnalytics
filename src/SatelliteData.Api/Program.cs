@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Hangfire;
 using Hangfire.Dashboard;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using SatelliteData.Api.Controllers;
 using SatelliteData.Api.Middlewares;
@@ -34,6 +35,11 @@ builder.Services.AddSwaggerGen(options =>
 //builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+await DatabaseInitializer.EnsurePostgresDatabaseAsync(
+    builder.Configuration,
+    app.Services.GetRequiredService<ILogger<Program>>(),
+    default).ConfigureAwait(false);
 
 app.UseSwagger();
 app.UseSwaggerUI(options =>

@@ -657,6 +657,9 @@ public sealed class PgAssetCacheRepository : IAssetCacheRepository
                 return;
             }
 
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_connectionString, _logger, cancellationToken)
+                .ConfigureAwait(false);
+
             await using var conn = new NpgsqlConnection(_connectionString);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(SchemaSql, conn);

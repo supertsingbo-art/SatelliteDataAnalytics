@@ -8,5 +8,5 @@ public sealed class DatabaseConnectionOptions
         "Host=localhost;Port=8123;Username=default;Password=1234;";
 
     public string Postgres { get; init; } =
-        "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=demo_db";
+        "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=SatelliteDataAnalyticsMetaDB";
 }

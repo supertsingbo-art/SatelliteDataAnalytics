@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using SatelliteData.Application.Pipeline;
@@ -213,6 +214,8 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(SchemaSql, conn);
@@ -555,6 +558,8 @@ public sealed class PgPreprocessScheduleRepository : IPreprocessScheduleReposito
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(SchemaSql, conn);
@@ -747,6 +752,8 @@ public sealed class PgPreprocessOutlierSegmentRepository : IPreprocessOutlierSeg
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(SchemaSql, conn);
@@ -921,6 +928,8 @@ public sealed class PgPreprocessOutlierPointReviewRepository : IPreprocessOutlie
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(SchemaSql, conn);
@@ -1202,6 +1211,8 @@ public sealed class PgTaskEventRepository : ITaskEventRepository
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(Sql, conn);
@@ -1283,6 +1294,8 @@ public sealed class PgHqParamMetadataRepository : IHqParamMetadataRepository
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(Sql, conn);
@@ -1450,6 +1463,8 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(SchemaSql, conn);
@@ -1675,6 +1690,8 @@ public sealed class PgClientCallbackRepository : IClientCallbackRepository
         try
         {
             if (_ready) return;
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(_cs, NullLogger.Instance, cancellationToken)
+                .ConfigureAwait(false);
             await using var conn = new NpgsqlConnection(_cs);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var cmd = new NpgsqlCommand(Sql, conn);

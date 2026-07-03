@@ -441,6 +441,9 @@ internal static class PgSatelliteGroupSchema
                 builder.Timeout = 15;
             }
 
+            await PgDatabaseBootstrap.EnsureDatabaseExistsAsync(connectionString, logger, cancellationToken)
+                .ConfigureAwait(false);
+
             await using var conn = new NpgsqlConnection(builder.ConnectionString);
             await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using (var schema = new NpgsqlCommand(SchemaSql, conn) { CommandTimeout = 60 })
