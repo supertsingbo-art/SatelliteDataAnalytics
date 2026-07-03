@@ -551,7 +551,7 @@ public sealed class PreprocessPipeline(
         CancellationToken cancellationToken)
     {
         IReadOnlyList<TimeRange> paramRanges = [new TimeRange(window.Start, window.End)];
-        if (conditionConfig.Parameters.Count > 0)
+        if (conditionConfig.ParametersEnabled && conditionConfig.Parameters.Count > 0)
         {
             var lookups = new List<ParameterHistoryLookup>();
             foreach (var parameter in conditionConfig.Parameters)
@@ -588,7 +588,8 @@ public sealed class PreprocessPipeline(
         }
 
         IReadOnlyList<TimeRange> instructionRanges = [new TimeRange(window.Start, window.End)];
-        if (conditionConfig.StartCommands.Count > 0 || conditionConfig.EndCommands.Count > 0)
+        if (conditionConfig.InstructionsEnabled
+            && (conditionConfig.StartCommands.Count > 0 || conditionConfig.EndCommands.Count > 0))
         {
             var commands = (await assetCache.GetCommandsAsync(referenceTasookNo, referenceSatelliteNo, cancellationToken))
                 .ToDictionary(x => x.CommandId, x => x, StringComparer.Ordinal);

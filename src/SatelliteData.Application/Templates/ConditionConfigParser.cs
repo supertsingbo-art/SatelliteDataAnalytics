@@ -21,7 +21,9 @@ public sealed record FilterConditionConfig(
     IReadOnlyList<ParameterConditionItem> Parameters,
     string Expression,
     int StartRangeSeconds = 0,
-    int EndRangeSeconds = 0);
+    int EndRangeSeconds = 0,
+    bool InstructionsEnabled = true,
+    bool ParametersEnabled = true);
 
 public static class ConditionConfigParser
 {
@@ -36,6 +38,8 @@ public static class ConditionConfigParser
         var instructions = cc.TryGetProperty("instructions", out var ins) && ins.ValueKind == JsonValueKind.Object
             ? ins
             : default;
+        var instructionsEnabled = ReadBoolean(instructions, "enabled", true);
+        var parametersEnabled = ReadBoolean(cc, "parametersEnabled", true);
         var startRelation = ReadRelation(instructions, "startRelation", "OR");
         var endRelation = ReadRelation(instructions, "endRelation", "OR");
         var startRangeSeconds = ReadNonNegativeInt(instructions, "startRangeSeconds");
@@ -55,8 +59,22 @@ public static class ConditionConfigParser
             parameters,
             expression.Trim(),
             startRangeSeconds,
-            endRangeSeconds);
+            endRangeSeconds,
+            instructionsEnabled,
+            parametersEnabled);
         return true;
+    }
+
+    private static bool ReadBoolean(JsonElement parent, string property, bool fallback)
+    {
+        if (parent.ValueKind == JsonValueKind.Object
+            && parent.TryGetProperty(property, out var node)
+            && (node.ValueKind is JsonValueKind.True or JsonValueKind.False))
+        {
+            return node.GetBoolean();
+        }
+
+        return fallback;
     }
 
     private static string ReadRelation(JsonElement parent, string property, string fallback)

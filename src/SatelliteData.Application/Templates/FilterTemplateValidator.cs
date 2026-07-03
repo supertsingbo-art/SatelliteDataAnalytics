@@ -53,6 +53,7 @@ public static class FilterTemplateValidator
     private static void ValidateConditionConfig(JsonElement conditionConfig)
     {
         ValidateInstructionConfig(conditionConfig);
+        ValidateBoolean(conditionConfig, "parametersEnabled", "conditionConfig.parametersEnabled");
 
         var conditionIds = new HashSet<string>(StringComparer.Ordinal);
         if (conditionConfig.TryGetProperty("parameters", out var parameters))
@@ -151,6 +152,7 @@ public static class FilterTemplateValidator
             throw Invalid("conditionConfig.instructions 必须是对象");
         }
 
+        ValidateBoolean(ins, "enabled", "conditionConfig.instructions.enabled");
         ValidateInstructionRelation(ins, "startRelation");
         ValidateInstructionRelation(ins, "endRelation");
         ValidateInstructionRange(ins, "startRangeSeconds");
@@ -440,6 +442,19 @@ public static class FilterTemplateValidator
         if (node.ValueKind != JsonValueKind.Number || node.GetInt32() < 0)
         {
             throw Invalid($"{property} 必须是非负整数");
+        }
+    }
+
+    private static void ValidateBoolean(JsonElement parent, string property, string fieldName)
+    {
+        if (!parent.TryGetProperty(property, out var node))
+        {
+            return;
+        }
+
+        if (node.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
+        {
+            throw Invalid($"{fieldName} 必须是布尔值");
         }
     }
 

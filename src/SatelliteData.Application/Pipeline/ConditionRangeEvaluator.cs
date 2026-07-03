@@ -14,6 +14,11 @@ public sealed class ConditionRangeEvaluator(ILogger<ConditionRangeEvaluator> log
         EffectiveWindow taskWindow,
         IReadOnlyDictionary<string, IReadOnlyList<RawSeriesPoint>> conditionSeriesByParamId)
     {
+        if (!config.ParametersEnabled)
+        {
+            return [new TimeRange(taskWindow.Start, taskWindow.End)];
+        }
+
         var symbolRanges = new Dictionary<string, IReadOnlyList<TimeRange>>(StringComparer.Ordinal);
         foreach (var condition in config.Parameters)
         {
@@ -101,6 +106,11 @@ public sealed class ConditionRangeEvaluator(ILogger<ConditionRangeEvaluator> log
         EffectiveWindow taskWindow,
         IReadOnlyList<InstructionHistoryPoint> history)
     {
+        if (!config.InstructionsEnabled)
+        {
+            return [new TimeRange(taskWindow.Start, taskWindow.End)];
+        }
+
         if (config.StartCommands.Count == 0 && config.EndCommands.Count == 0)
         {
             return [new TimeRange(taskWindow.Start, taskWindow.End)];

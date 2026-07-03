@@ -142,11 +142,13 @@ public sealed class DevPipelineTemplateSeeder(
               "timeWindow": { "mode": "TEST_BATCH", "bufferBeforeSeconds": 0, "bufferAfterSeconds": 0 },
               "conditionConfig": {
                 "instructions": {
+                  "enabled": true,
                   "startRelation": "OR",
                   "endRelation": "OR",
                   "startCommands": [],
                   "endCommands": []
                 },
+                "parametersEnabled": true,
                 "parameters": [],
                 "expression": ""
               },

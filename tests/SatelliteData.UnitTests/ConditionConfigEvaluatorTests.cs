@@ -141,5 +141,55 @@ public class ConditionConfigEvaluatorTests
         Assert.Equal(Window.End, ranges[0].End);
     }
 
+    [Fact]
+    public void EvaluateInstructionRanges_Disabled_IgnoresInstructionConditions()
+    {
+        var config = new FilterConditionConfig(
+            StartCommands:
+            [
+                new InstructionConditionItem("S1", "1001", 0)
+            ],
+            EndCommands:
+            [
+                new InstructionConditionItem("E1", "1002", 0)
+            ],
+            StartRelation: "OR",
+            EndRelation: "OR",
+            Parameters: [],
+            Expression: string.Empty,
+            InstructionsEnabled: false);
+
+        var ranges = _evaluator.EvaluateInstructionRanges(config, Window, Array.Empty<InstructionHistoryPoint>());
+
+        Assert.Single(ranges);
+        Assert.Equal(Window.Start, ranges[0].Start);
+        Assert.Equal(Window.End, ranges[0].End);
+    }
+
+    [Fact]
+    public void EvaluateParameterRanges_Disabled_IgnoresParameterConditions()
+    {
+        var config = new FilterConditionConfig(
+            StartCommands: [],
+            EndCommands: [],
+            StartRelation: "OR",
+            EndRelation: "OR",
+            Parameters:
+            [
+                new ParameterConditionItem("P1", "A", ">", Json("5"))
+            ],
+            Expression: "P1",
+            ParametersEnabled: false);
+
+        var ranges = _evaluator.EvaluateParameterRanges(
+            config,
+            Window,
+            new Dictionary<string, IReadOnlyList<RawSeriesPoint>>(StringComparer.Ordinal));
+
+        Assert.Single(ranges);
+        Assert.Equal(Window.Start, ranges[0].Start);
+        Assert.Equal(Window.End, ranges[0].End);
+    }
+
     private static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement.Clone();
 }

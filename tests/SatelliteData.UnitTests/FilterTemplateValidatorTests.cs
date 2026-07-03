@@ -104,4 +104,37 @@ public class FilterTemplateValidatorTests
         Assert.Equal(TemplateErrorCodes.FilterTemplateConfigInvalid, ex.ErrorCode);
         Assert.Contains("conditionConfig 必须存在", ex.Message);
     }
+
+    [Fact]
+    public void Validate_AllowsConditionEnableFlags()
+    {
+        var config = JsonDocument.Parse(
+            """
+            {
+              "scope": {
+                "groupId": "d95de6dd-a5b1-4e70-b957-796cb47008dc",
+                "referenceTasookNo": "TASK_A",
+                "referenceSatelliteNo": "SAT_01"
+              },
+              "timeWindow": {
+                "mode": "TEST_BATCH"
+              },
+              "conditionConfig": {
+                "instructions": {
+                  "enabled": false,
+                  "startCommands": [],
+                  "endCommands": []
+                },
+                "parametersEnabled": false,
+                "parameters": [],
+                "expression": ""
+              },
+              "targetParams": [
+                { "paramId": "2001", "outlier": { "method": "SIGMA", "sigma": 3 } }
+              ]
+            }
+            """).RootElement;
+
+        FilterTemplateValidator.Validate(config);
+    }
 }

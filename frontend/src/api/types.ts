@@ -280,6 +280,7 @@ export interface ParameterConditionItem {
 
 export interface ConditionConfig {
   instructions?: {
+    enabled?: boolean;
     startRelation?: 'AND' | 'OR';
     endRelation?: 'AND' | 'OR';
     startRangeSeconds?: number;
@@ -287,6 +288,7 @@ export interface ConditionConfig {
     startCommands?: InstructionConditionItem[];
     endCommands?: InstructionConditionItem[];
   };
+  parametersEnabled?: boolean;
   parameters?: ParameterConditionItem[];
   expression?: string;
 }

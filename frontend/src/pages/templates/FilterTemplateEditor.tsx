@@ -11,6 +11,7 @@ import {
   Select,
   Space,
   Spin,
+  Switch,
   Table,
   Tag,
   TreeSelect,
@@ -208,6 +209,8 @@ export function FilterTemplateEditor() {
   const [endRelation, setEndRelation] = useState<'AND' | 'OR'>('OR');
   const [startRangeSeconds, setStartRangeSeconds] = useState(0);
   const [endRangeSeconds, setEndRangeSeconds] = useState(0);
+  const [instructionEnabled, setInstructionEnabled] = useState(true);
+  const [parameterEnabled, setParameterEnabled] = useState(true);
   const [expression, setExpression] = useState('');
 
   const [targets, setTargets] = useState<FilterTargetParam[]>([]);
@@ -258,6 +261,8 @@ export function FilterTemplateEditor() {
             setEndRelation(cc.instructions?.endRelation ?? 'OR');
             setStartRangeSeconds(cc.instructions?.startRangeSeconds ?? 0);
             setEndRangeSeconds(cc.instructions?.endRangeSeconds ?? 0);
+            setInstructionEnabled(cc.instructions?.enabled ?? true);
+            setParameterEnabled(cc.parametersEnabled ?? true);
             setStartCommands(
               (cc.instructions?.startCommands ?? []).map((item) => ({
                 rowId: cryptoRandomId(),
@@ -283,6 +288,8 @@ export function FilterTemplateEditor() {
             setEndRelation('OR');
             setStartRangeSeconds(0);
             setEndRangeSeconds(0);
+            setInstructionEnabled(true);
+            setParameterEnabled(true);
             setExpression('');
             message.warning('当前模板缺少 conditionConfig，已按新规则清空条件，请重新配置后保存。');
           }
@@ -314,6 +321,8 @@ export function FilterTemplateEditor() {
           setEndRelation('OR');
           setStartRangeSeconds(0);
           setEndRangeSeconds(0);
+          setInstructionEnabled(true);
+          setParameterEnabled(true);
           setStartCommands([]);
           setEndCommands([]);
           setParameterRows([]);
@@ -457,6 +466,7 @@ export function FilterTemplateEditor() {
       },
       conditionConfig: {
         instructions: {
+          enabled: instructionEnabled,
           startRelation,
           endRelation,
           startRangeSeconds,
@@ -464,6 +474,7 @@ export function FilterTemplateEditor() {
           startCommands: cleanedStart,
           endCommands: cleanedEnd
         },
+        parametersEnabled: parameterEnabled,
         parameters: cleanedParams,
         expression: expressionText || undefined
       },
@@ -628,190 +639,211 @@ export function FilterTemplateEditor() {
             </Text>
 
             <Spin spinning={optionsLoading} tip="正在加载参考星参数/指令缓存…">
-              <Row gutter={[12, 12]}>
-                <Col xs={24} xl={12}>
-                  <Card type="inner" size="small" title="1.1 起始指令条件" style={{ height: '100%' }}>
-                <Space style={{ marginBottom: 8 }}>
-                  <Text>指令关系：</Text>
-                  <Select
-                    value={startRelation}
-                    onChange={setStartRelation}
-                    options={[
-                      { value: 'OR', label: 'OR' },
-                      { value: 'AND', label: 'AND' }
-                    ]}
-                    style={{ width: 100 }}
-                  />
-                  <Text>时间范围(秒)：</Text>
-                  <InputNumber
-                    min={0}
-                    value={startRangeSeconds}
-                    onChange={(value) => setStartRangeSeconds(value ?? 0)}
-                    style={{ width: 140 }}
-                  />
-                </Space>
-                <Table<InstructionConditionRow>
-                  size="small"
-                  rowKey="rowId"
-                  pagination={false}
-                  dataSource={startCommands}
-                  columns={[
-                    {
-                      title: '条件ID',
-                      width: 120,
-                      render: (_, row) => (
-                        <Input
-                          value={row.conditionId}
-                          onChange={(e) => updateInstructionRow('start', row.rowId, { conditionId: e.target.value })}
+              <Card
+                type="inner"
+                size="small"
+                title="1.1 指令条件"
+                style={{ marginBottom: 12 }}
+                extra={
+                  <Space size={6}>
+                    <Text type="secondary">启用</Text>
+                    <Switch checked={instructionEnabled} onChange={setInstructionEnabled} />
+                  </Space>
+                }
+              >
+                <Row gutter={[12, 12]}>
+                  <Col xs={24} xl={12}>
+                    <Card type="inner" size="small" title="起始指令条件" style={{ height: '100%' }}>
+                      <Space style={{ marginBottom: 8 }}>
+                        <Text>指令关系：</Text>
+                        <Select
+                          value={startRelation}
+                          onChange={setStartRelation}
+                          options={[
+                            { value: 'OR', label: 'OR' },
+                            { value: 'AND', label: 'AND' }
+                          ]}
+                          style={{ width: 100 }}
                         />
-                      )
-                    },
-                    {
-                      title: '指令',
-                      render: (_, row) => (
-                        <CommandCacheSelect
-                          value={row.commandId}
-                          commands={commandOptions}
-                          loading={optionsLoading}
-                          onChange={(value) => updateInstructionRow('start', row.rowId, { commandId: value })}
-                        />
-                      )
-                    },
-                    {
-                      title: 'channelId',
-                      width: 120,
-                      render: (_, row) => (
+                        <Text>时间范围(秒)：</Text>
                         <InputNumber
                           min={0}
-                          value={row.channelId}
-                          onChange={(value) => updateInstructionRow('start', row.rowId, { channelId: value ?? 0 })}
+                          value={startRangeSeconds}
+                          onChange={(value) => setStartRangeSeconds(value ?? 0)}
+                          style={{ width: 140 }}
                         />
-                      )
-                    },
-                    {
-                      title: '操作',
-                      width: 80,
-                      render: (_, row) => (
-                        <Button danger type="link" onClick={() => removeInstructionRow('start', row.rowId)}>
-                          删除
-                        </Button>
-                      )
-                    }
-                  ]}
-                />
-                <Button
-                  type="dashed"
-                  style={{ marginTop: 10 }}
-                  onClick={() =>
-                    setStartCommands((curr) => [
-                      ...curr,
-                      {
-                        rowId: cryptoRandomId(),
-                        conditionId: `S${curr.length + 1}`,
-                        commandId: '',
-                        channelId: 0
-                      }
-                    ])
-                  }
-                >
-                  + 添加起始指令
-                </Button>
-                  </Card>
-                </Col>
-                <Col xs={24} xl={12}>
-                  <Card type="inner" size="small" title="1.2 结束指令条件" style={{ height: '100%' }}>
-                <Space style={{ marginBottom: 8 }}>
-                  <Text>指令关系：</Text>
-                  <Select
-                    value={endRelation}
-                    onChange={setEndRelation}
-                    options={[
-                      { value: 'OR', label: 'OR' },
-                      { value: 'AND', label: 'AND' }
-                    ]}
-                    style={{ width: 100 }}
-                  />
-                  <Text>时间范围(秒)：</Text>
-                  <InputNumber
-                    min={0}
-                    value={endRangeSeconds}
-                    onChange={(value) => setEndRangeSeconds(value ?? 0)}
-                    style={{ width: 140 }}
-                  />
-                </Space>
-                <Table<InstructionConditionRow>
-                  size="small"
-                  rowKey="rowId"
-                  pagination={false}
-                  dataSource={endCommands}
-                  columns={[
-                    {
-                      title: '条件ID',
-                      width: 120,
-                      render: (_, row) => (
-                        <Input
-                          value={row.conditionId}
-                          onChange={(e) => updateInstructionRow('end', row.rowId, { conditionId: e.target.value })}
+                      </Space>
+                      <Table<InstructionConditionRow>
+                        size="small"
+                        rowKey="rowId"
+                        pagination={false}
+                        dataSource={startCommands}
+                        columns={[
+                          {
+                            title: '条件ID',
+                            width: 120,
+                            render: (_, row) => (
+                              <Input
+                                value={row.conditionId}
+                                onChange={(e) => updateInstructionRow('start', row.rowId, { conditionId: e.target.value })}
+                              />
+                            )
+                          },
+                          {
+                            title: '指令',
+                            render: (_, row) => (
+                              <CommandCacheSelect
+                                value={row.commandId}
+                                commands={commandOptions}
+                                loading={optionsLoading}
+                                onChange={(value) => updateInstructionRow('start', row.rowId, { commandId: value })}
+                              />
+                            )
+                          },
+                          {
+                            title: 'channelId',
+                            width: 120,
+                            render: (_, row) => (
+                              <InputNumber
+                                min={0}
+                                value={row.channelId}
+                                onChange={(value) => updateInstructionRow('start', row.rowId, { channelId: value ?? 0 })}
+                              />
+                            )
+                          },
+                          {
+                            title: '操作',
+                            width: 80,
+                            render: (_, row) => (
+                              <Button danger type="link" onClick={() => removeInstructionRow('start', row.rowId)}>
+                                删除
+                              </Button>
+                            )
+                          }
+                        ]}
+                      />
+                      <Button
+                        type="dashed"
+                        style={{ marginTop: 10 }}
+                        onClick={() =>
+                          setStartCommands((curr) => [
+                            ...curr,
+                            {
+                              rowId: cryptoRandomId(),
+                              conditionId: `S${curr.length + 1}`,
+                              commandId: '',
+                              channelId: 0
+                            }
+                          ])
+                        }
+                      >
+                        + 添加起始指令
+                      </Button>
+                    </Card>
+                  </Col>
+                  <Col xs={24} xl={12}>
+                    <Card type="inner" size="small" title="结束指令条件" style={{ height: '100%' }}>
+                      <Space style={{ marginBottom: 8 }}>
+                        <Text>指令关系：</Text>
+                        <Select
+                          value={endRelation}
+                          onChange={setEndRelation}
+                          options={[
+                            { value: 'OR', label: 'OR' },
+                            { value: 'AND', label: 'AND' }
+                          ]}
+                          style={{ width: 100 }}
                         />
-                      )
-                    },
-                    {
-                      title: '指令',
-                      render: (_, row) => (
-                        <CommandCacheSelect
-                          value={row.commandId}
-                          commands={commandOptions}
-                          loading={optionsLoading}
-                          onChange={(value) => updateInstructionRow('end', row.rowId, { commandId: value })}
-                        />
-                      )
-                    },
-                    {
-                      title: 'channelId',
-                      width: 120,
-                      render: (_, row) => (
+                        <Text>时间范围(秒)：</Text>
                         <InputNumber
                           min={0}
-                          value={row.channelId}
-                          onChange={(value) => updateInstructionRow('end', row.rowId, { channelId: value ?? 0 })}
+                          value={endRangeSeconds}
+                          onChange={(value) => setEndRangeSeconds(value ?? 0)}
+                          style={{ width: 140 }}
                         />
-                      )
-                    },
-                    {
-                      title: '操作',
-                      width: 80,
-                      render: (_, row) => (
-                        <Button danger type="link" onClick={() => removeInstructionRow('end', row.rowId)}>
-                          删除
-                        </Button>
-                      )
-                    }
-                  ]}
-                />
-                <Button
-                  type="dashed"
-                  style={{ marginTop: 10 }}
-                  onClick={() =>
-                    setEndCommands((curr) => [
-                      ...curr,
-                      {
-                        rowId: cryptoRandomId(),
-                        conditionId: `E${curr.length + 1}`,
-                        commandId: '',
-                        channelId: 0
-                      }
-                    ])
-                  }
-                >
-                  + 添加结束指令
-                </Button>
-                  </Card>
-                </Col>
-              </Row>
+                      </Space>
+                      <Table<InstructionConditionRow>
+                        size="small"
+                        rowKey="rowId"
+                        pagination={false}
+                        dataSource={endCommands}
+                        columns={[
+                          {
+                            title: '条件ID',
+                            width: 120,
+                            render: (_, row) => (
+                              <Input
+                                value={row.conditionId}
+                                onChange={(e) => updateInstructionRow('end', row.rowId, { conditionId: e.target.value })}
+                              />
+                            )
+                          },
+                          {
+                            title: '指令',
+                            render: (_, row) => (
+                              <CommandCacheSelect
+                                value={row.commandId}
+                                commands={commandOptions}
+                                loading={optionsLoading}
+                                onChange={(value) => updateInstructionRow('end', row.rowId, { commandId: value })}
+                              />
+                            )
+                          },
+                          {
+                            title: 'channelId',
+                            width: 120,
+                            render: (_, row) => (
+                              <InputNumber
+                                min={0}
+                                value={row.channelId}
+                                onChange={(value) => updateInstructionRow('end', row.rowId, { channelId: value ?? 0 })}
+                              />
+                            )
+                          },
+                          {
+                            title: '操作',
+                            width: 80,
+                            render: (_, row) => (
+                              <Button danger type="link" onClick={() => removeInstructionRow('end', row.rowId)}>
+                                删除
+                              </Button>
+                            )
+                          }
+                        ]}
+                      />
+                      <Button
+                        type="dashed"
+                        style={{ marginTop: 10 }}
+                        onClick={() =>
+                          setEndCommands((curr) => [
+                            ...curr,
+                            {
+                              rowId: cryptoRandomId(),
+                              conditionId: `E${curr.length + 1}`,
+                              commandId: '',
+                              channelId: 0
+                            }
+                          ])
+                        }
+                      >
+                        + 添加结束指令
+                      </Button>
+                    </Card>
+                  </Col>
+                </Row>
+              </Card>
 
-              <Row style={{ marginTop: 12 }}>
-                <Col span={24}>
-                  <Card type="inner" size="small" title="1.3 参数条件 + 表达式">
+              <Card
+                type="inner"
+                size="small"
+                title="1.2 参数条件 + 表达式"
+                extra={
+                  <Space size={6}>
+                    <Text type="secondary">启用</Text>
+                    <Switch checked={parameterEnabled} onChange={setParameterEnabled} />
+                  </Space>
+                }
+              >
                 <Table<ParameterConditionRow>
                   size="small"
                   rowKey="rowId"
@@ -860,7 +892,10 @@ export function FilterTemplateEditor() {
                           onChange={(e) => {
                             const text = e.target.value;
                             if (row.operator === 'between') {
-                              const parts = text.split(',').map((x) => x.trim()).filter(Boolean);
+                              const parts = text
+                                .split(',')
+                                .map((x) => x.trim())
+                                .filter(Boolean);
                               updateParameterRow(row.rowId, { value: parts.map((x) => Number(x)) });
                             } else {
                               const num = Number(text);
@@ -900,7 +935,9 @@ export function FilterTemplateEditor() {
                     + 添加参数条件
                   </Button>
                   <Button
-                    onClick={() => setExpression(buildDefaultExpression(parameterRows.map((r) => r.conditionId.trim()).filter(Boolean)))}
+                    onClick={() =>
+                      setExpression(buildDefaultExpression(parameterRows.map((r) => r.conditionId.trim()).filter(Boolean)))
+                    }
                   >
                     自动生成 AND 表达式
                   </Button>
@@ -928,9 +965,7 @@ export function FilterTemplateEditor() {
                     语法检查
                   </Button>
                 </Space>
-                  </Card>
-                </Col>
-              </Row>
+              </Card>
             </Spin>
 
             <Row gutter={16} style={{ marginTop: 16 }}>
