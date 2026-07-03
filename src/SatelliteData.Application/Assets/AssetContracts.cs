@@ -142,7 +142,8 @@ public interface IAssetCacheRepository
 }
 
 /// <summary>
-/// 海量数据接口。仅服务于 6.1.2 同步流程的 Step 1 / 2 / 2b / 4。
+/// 海量数据接口（Web API v2）。仅服务于 6.1.2 同步流程的 Step 1 / 2 / 2b / 4。
+/// v2 卫星主键为 <c>taskNo + satNo</c>，已不再使用 <c>dbStage</c>；
 /// Step 3「测试阶段」由 <see cref="ISatelliteAssetProvider"/>（卫星测试流程规划服务）提供。
 /// </summary>
 public interface IMassDataAssetProvider
@@ -152,19 +153,16 @@ public interface IMassDataAssetProvider
     Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken);
 
     Task<MongoConnectionInfo?> GetMongoInfoAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken);
 }
 

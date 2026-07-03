@@ -5,7 +5,7 @@ namespace SatelliteData.Application.Assets;
 
 /// <summary>
 /// 资产同步编排服务。严格按照 6.1.2 流程执行：
-/// Step 1：拉取全量卫星列表，确定 (taskNo, satNo, dbStage) 三元组并 upsert <c>satellite_cache</c>；
+/// Step 1：拉取全量卫星列表，确定 (taskNo, satNo) 二元组并 upsert <c>satellite_cache</c>（<c>db_stage</c> 由配置默认值填充，供 Step 3 卫星测试流程规划服务使用）；
 /// Step 2：每星拉取参数元数据 → upsert <c>param_cache</c>，并更新 <c>satellite_cache.cached_parameter_count</c>；
 /// Step 2b：每星拉取指令元数据 → upsert <c>command_cache</c>，并更新 <c>satellite_cache.cached_command_count</c>；
 /// Step 3：每星拉取测试阶段 → upsert <c>test_batch_cache</c>；
@@ -156,7 +156,7 @@ public sealed class AssetSyncService(
 
         try
         {
-            var parameters = await massDataProvider.GetParametersAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
+            var parameters = await massDataProvider.GetParametersAsync(tasookNo, satelliteNo, cancellationToken);
             await cacheRepository.UpsertParametersAsync(parameters, cancellationToken);
             paramCount = parameters.Count;
             parametersOk = true;
@@ -170,7 +170,7 @@ public sealed class AssetSyncService(
 
         try
         {
-            var commands = await massDataProvider.GetCommandsAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
+            var commands = await massDataProvider.GetCommandsAsync(tasookNo, satelliteNo, cancellationToken);
             await cacheRepository.UpsertCommandsAsync(tasookNo, satelliteNo, commands, cancellationToken);
             commandCount = commands.Count;
             commandsOk = true;
@@ -197,7 +197,7 @@ public sealed class AssetSyncService(
 
         try
         {
-            var mongoInfo = await massDataProvider.GetMongoInfoAsync(tasookNo, satelliteNo, dbStage, cancellationToken);
+            var mongoInfo = await massDataProvider.GetMongoInfoAsync(tasookNo, satelliteNo, cancellationToken);
             var latest = await cacheRepository.GetSatelliteAsync(tasookNo, satelliteNo, cancellationToken) ?? satellite;
             if (mongoInfo is not null)
             {

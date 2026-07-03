@@ -7,6 +7,10 @@ using SatelliteData.Domain.Assets;
 
 namespace SatelliteData.Infrastructure.HttpClients;
 
+/// <summary>
+/// 海量数据接口 Web API v2 客户端。v2 卫星主键为 <c>taskNo + satNo</c>（不含 <c>dbStage</c>）。
+/// 仅封装资产同步用到的 4 个接口：<c>satellites</c>、<c>basic/parameters</c>、<c>basic/commands</c>、<c>satellite/config</c>。
+/// </summary>
 public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProviderOptions> options) : IMassDataAssetProvider
 {
     private readonly AssetProviderOptions _options = options.Value;
@@ -20,26 +24,27 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         var now = DateTimeOffset.UtcNow;
 
-        return root.GetArrayItems("items", "datas", "satellites")
+        return root.GetArrayItems("datas", "items", "satellites")
             .Select(item =>
             {
-                var tasookNo = item.GetStringOrNull("tasookNo", "taskNo", "taskno") ?? "";
-                var tasookName = item.GetStringOrNull("tasookName", "taskName", "taskname");
-                var satelliteNo = item.GetStringOrNull("satelliteNo", "satNo", "satno") ?? "";
+                var tasookNo = item.GetStringOrNull("taskNo", "tasookNo", "taskno") ?? "";
+                var tasookName = item.GetStringOrNull("taskName", "tasookName", "taskname");
+                var satelliteNo = item.GetStringOrNull("satNo", "satelliteNo", "satno") ?? "";
+                // v2 列表不再返回 dbStage；统一回退到配置默认值（供后续卫星测试流程规划服务使用）
                 var dbStage = item.GetStringOrNull("dbStage", "stage") ?? _options.DefaultDbStage;
                 return new SatelliteCache(
                     tasookNo,
                     tasookName,
                     satelliteNo,
-                    item.GetStringOrNull("satelliteName", "satName", "satname", "name") ?? satelliteNo,
-                    item.GetStringOrNull("satelliteType", "satType", "type"),
+                    item.GetStringOrNull("satName", "satelliteName", "satname", "name") ?? satelliteNo,
+                    item.GetStringOrNull("satType", "satelliteType", "type"),
                     dbStage,
                     null,
                     item.GetStringOrNull("sourceVersion", "version") ?? dbStage,
                     now,
                     CachedParameterCount: 0,
                     CachedCommandCount: 0,
-                    IsEnabled: true,
+                    IsEnabled: item.GetBoolOrNull("enabled") ?? true,
                     item.Clone());
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.TasookNo) && !string.IsNullOrWhiteSpace(item.SatelliteNo))
@@ -49,16 +54,15 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
     public async Task<IReadOnlyCollection<ParamCache>> GetParametersAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken)
     {
-        var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
+        var request = CreateLookupRequest(tasookNo, satelliteNo);
         using var response = await httpClient.PostAsJsonAsync($"{ApiV2Prefix}/basic/parameters", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? dbStage ?? _options.DefaultDbStage;
+        var sourceVersion = root.GetStringOrNull("sourceVersion", "version") ?? _options.DefaultDbStage;
 
         return root.GetArrayItems("datas", "items", "parameters", "paras")
             .Select(item => MassDataParameterMapper.Map(item, tasookNo, satelliteNo, sourceVersion, now))
@@ -70,16 +74,15 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
     public async Task<IReadOnlyCollection<CommandCache>> GetCommandsAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken)
     {
-        var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
+        var request = CreateLookupRequest(tasookNo, satelliteNo);
         using var response = await httpClient.PostAsJsonAsync($"{ApiV2Prefix}/basic/commands", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var sourceVersion = root.GetStringOrNull("sourceVersion", "version", "dbStage") ?? dbStage ?? _options.DefaultDbStage;
+        var sourceVersion = root.GetStringOrNull("sourceVersion", "version") ?? _options.DefaultDbStage;
 
         return root.GetArrayItems("datas", "items", "commands", "cmds", "instructions")
             .Select(item => MassDataCommandMapper.Map(item, tasookNo, satelliteNo, sourceVersion, now))
@@ -91,15 +94,15 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
     public async Task<MongoConnectionInfo?> GetMongoInfoAsync(
         string tasookNo,
         string satelliteNo,
-        string? dbStage,
         CancellationToken cancellationToken)
     {
-        var request = CreateLookupRequest(tasookNo, satelliteNo, dbStage);
+        var request = CreateLookupRequest(tasookNo, satelliteNo);
         using var response = await httpClient.PostAsJsonAsync($"{ApiV2Prefix}/satellite/config", request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var root = await ReadJsonRootAsync(response, cancellationToken);
-        var rawUri = root.GetStringOrNull("mongoUri", "mongoQueryConn", "mongoqueryconn", "cfgConn");
+        // v2 satellite/config 返回 basicConn / mongoQueryConn / cfgConn 等；按优先级选取历史查询库连接串
+        var rawUri = root.GetStringOrNull("mongoQueryConn", "basicConn", "mongoUri", "cfgConn");
         if (string.IsNullOrWhiteSpace(rawUri))
         {
             return null;
@@ -119,13 +122,13 @@ public sealed class MassDataApiClient(HttpClient httpClient, IOptions<AssetProvi
             root.GetStringOrNull("authRef", "mongoAuthRef"));
     }
 
-    private object CreateLookupRequest(string tasookNo, string satelliteNo, string? dbStage)
+    private static object CreateLookupRequest(string tasookNo, string satelliteNo)
     {
+        // v2 卫星主键仅 taskNo + satNo，不再发送 dbStage
         return new
         {
             taskNo = tasookNo,
-            satNo = satelliteNo,
-            dbStage = string.IsNullOrWhiteSpace(dbStage) ? _options.DefaultDbStage : dbStage
+            satNo = satelliteNo
         };
     }
 

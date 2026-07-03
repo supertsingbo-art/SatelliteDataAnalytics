@@ -72,6 +72,41 @@ internal static class JsonElementExtensions
         return null;
     }
 
+    public static bool? GetBoolOrNull(this JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!element.TryGetProperty(name, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.True)
+            {
+                return true;
+            }
+
+            if (value.ValueKind == JsonValueKind.False)
+            {
+                return false;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number &&
+                value.TryGetInt32(out var number))
+            {
+                return number != 0;
+            }
+
+            if (value.ValueKind == JsonValueKind.String &&
+                bool.TryParse(value.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
     public static DateTimeOffset? GetDateTimeOffsetOrNull(this JsonElement element, params string[] names)
     {
         foreach (var name in names)
