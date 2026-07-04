@@ -17,6 +17,7 @@ public sealed class TasksController(
     TaskRunLifecycleService taskLifecycleService,
     TaskRunProcessedDataService taskProcessedDataService,
     OutlierReviewService outlierReviewService,
+    PreprocessConflictReader conflictReader,
     ITaskRunRepository taskRuns,
     IPreprocessScheduleRepository scheduleRepository,
     IFilterTemplateRepository filterTemplates,
@@ -46,7 +47,9 @@ public sealed class TasksController(
         [property: JsonPropertyName("current_step")] string? CurrentStep,
         [property: JsonPropertyName("scheduled_at")] DateTimeOffset? ScheduledAt,
         [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
-        [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime);
+        [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime,
+        [property: JsonPropertyName("error_code")] string? ErrorCode,
+        [property: JsonPropertyName("error_msg")] string? ErrorMsg);
 
     public sealed record TaskExecutionRecordResponse(
         [property: JsonPropertyName("run_id")] Guid RunId,
@@ -58,7 +61,8 @@ public sealed class TasksController(
         [property: JsonPropertyName("window_start")] DateTimeOffset? WindowStart,
         [property: JsonPropertyName("window_end")] DateTimeOffset? WindowEnd,
         [property: JsonPropertyName("error_code")] string? ErrorCode,
-        [property: JsonPropertyName("error_msg")] string? ErrorMsg);
+        [property: JsonPropertyName("error_msg")] string? ErrorMsg,
+        [property: JsonPropertyName("conflict_details")] IReadOnlyList<PreprocessConflictDetailDto>? ConflictDetails);
 
     public sealed record ExecuteTaskResponse(
         [property: JsonPropertyName("display_status")] string DisplayStatus,
@@ -791,7 +795,8 @@ public sealed class TasksController(
             r.ScheduleId,
             schedule?.DailyTime.ToString("HH:mm:ss"),
             schedule?.IntervalDays,
-            schedule?.EffectiveFrom);
+            schedule?.EffectiveFrom,
+            await conflictReader.TryGetConflictDetailsAsync(r, cancellationToken).ConfigureAwait(false));
     }
 
     private static string? ExecutionModeToApi(PreprocessExecutionMode? mode) =>
@@ -828,7 +833,9 @@ public sealed class TasksController(
             i.CurrentStep,
             i.ScheduledAt,
             i.CreatedAt,
-            i.EndTime);
+            i.EndTime,
+            i.ErrorCode,
+            i.ErrorMsg);
 
     private static TaskExecutionRecordResponse ToExecutionRecord(TaskExecutionRecordDto r) =>
         new(
@@ -841,7 +848,8 @@ public sealed class TasksController(
             r.WindowStart,
             r.WindowEnd,
             r.ErrorCode,
-            r.ErrorMsg);
+            r.ErrorMsg,
+            r.ConflictDetails);
 
     private static ExecuteTaskResponse ToExecuteResponse(ExecuteTaskResultDto r) =>
         new(r.DisplayStatus, r.RunId, r.ScheduleId, r.JobId, r.Status);

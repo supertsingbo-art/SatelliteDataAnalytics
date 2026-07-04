@@ -26,7 +26,9 @@ public sealed record TaskListItemDto(
     string? CurrentStep,
     DateTimeOffset? ScheduledAt,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? EndTime);
+    DateTimeOffset? EndTime,
+    string? ErrorCode,
+    string? ErrorMsg);
 
 public sealed record TaskExecutionRecordDto(
     Guid RunId,
@@ -38,7 +40,8 @@ public sealed record TaskExecutionRecordDto(
     DateTimeOffset? WindowStart,
     DateTimeOffset? WindowEnd,
     string? ErrorCode,
-    string? ErrorMsg);
+    string? ErrorMsg,
+    IReadOnlyList<PreprocessConflictDetailDto>? ConflictDetails);
 
 public sealed record ExecuteTaskResultDto(
     string DisplayStatus,

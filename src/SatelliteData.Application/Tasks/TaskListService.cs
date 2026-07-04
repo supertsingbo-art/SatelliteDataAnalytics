@@ -4,7 +4,8 @@ namespace SatelliteData.Application.Tasks;
 
 public sealed class TaskListService(
     ITaskRunRepository taskRuns,
-    IPreprocessScheduleRepository schedules)
+    IPreprocessScheduleRepository schedules,
+    PreprocessConflictReader conflictReader)
 {
     public async Task<IReadOnlyList<TaskListItemDto>> ListAsync(int pageSize, CancellationToken cancellationToken)
     {
@@ -44,7 +45,7 @@ public sealed class TaskListService(
         }
 
         var now = DateTimeOffset.UtcNow;
-        return [ToExecutionRecord(run, now)];
+        return [await ToExecutionRecordAsync(run, now, cancellationToken).ConfigureAwait(false)];
     }
 
     public async Task<IReadOnlyList<TaskExecutionRecordDto>> ListExecutionsForScheduleAsync(
@@ -53,7 +54,13 @@ public sealed class TaskListService(
     {
         var runs = await taskRuns.ListByScheduleIdAsync(scheduleId, cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
-        return runs.Select(r => ToExecutionRecord(r, now)).ToArray();
+        var records = new List<TaskExecutionRecordDto>();
+        foreach (var run in runs)
+        {
+            records.Add(await ToExecutionRecordAsync(run, now, cancellationToken).ConfigureAwait(false));
+        }
+
+        return records;
     }
 
     private static TaskListItemDto ToRunItem(TaskRun run, DateTimeOffset now) =>
@@ -81,7 +88,9 @@ public sealed class TaskListService(
             run.CurrentStep,
             run.ScheduledAt,
             run.CreatedAt,
-            run.EndTime);
+            run.EndTime,
+            run.ErrorCode,
+            run.ErrorMsg);
 
     private static TaskListItemDto ToScheduleItem(
         PreprocessSchedule schedule,
@@ -113,10 +122,18 @@ public sealed class TaskListService(
             latest?.CurrentStep ?? "schedule",
             null,
             schedule.CreatedAt,
-            latest?.EndTime);
+            latest?.EndTime,
+            latest?.ErrorCode,
+            latest?.ErrorMsg);
 
-    private static TaskExecutionRecordDto ToExecutionRecord(TaskRun run, DateTimeOffset now) =>
-        new(
+    private async Task<TaskExecutionRecordDto> ToExecutionRecordAsync(
+        TaskRun run,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var conflictDetails = await conflictReader.TryGetConflictDetailsAsync(run, cancellationToken)
+            .ConfigureAwait(false);
+        return new TaskExecutionRecordDto(
             run.RunId,
             run.JobId,
             run.Status.ToString(),
@@ -126,5 +143,7 @@ public sealed class TaskListService(
             run.WindowStart,
             run.WindowEnd,
             run.ErrorCode,
-            run.ErrorMsg);
+            run.ErrorMsg,
+            conflictDetails);
+    }
 }

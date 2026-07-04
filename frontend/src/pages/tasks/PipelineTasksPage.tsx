@@ -1,4 +1,4 @@
-import { Button, Card, Collapse, Form, Input, Space, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Input, Typography, message } from 'antd';
 import { Link, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { tasksApi } from '@/api/tasks';
@@ -31,64 +31,68 @@ export function PipelineTasksPage() {
         ClickHouse 可用。从任务列表「详情」进入可查看完整任务信息并自动刷新进度。
       </Paragraph>
 
-      {viewRunId && <TaskDetailCard detail={detail} loading={loading} />}
+      {viewRunId && (
+        <>
+          <TaskDetailCard detail={detail} loading={loading} />
+          <div style={{ marginTop: 8 }}>
+            <Button onClick={() => void refresh()} loading={loading}>
+              刷新状态
+            </Button>
+          </div>
+        </>
+      )}
 
-      <Collapse
-        defaultActiveKey={viewRunId ? [] : ['create']}
-        items={[
-          {
-            key: 'create',
-            label: viewRunId ? '新建任务（展开填写）' : '新建任务',
-            children: (
-              <Form
-                form={form}
-                layout="vertical"
-                initialValues={{
-                  tasookNo: 'TASK-A100',
-                  satelliteNo: 'SAT-001'
-                }}
-                onFinish={async (v) => {
-                  try {
-                    const res = await tasksApi.createPipeline({
-                      tasookNo: v.tasookNo,
-                      satelliteNo: v.satelliteNo,
-                      testBatchName: v.testBatchName || null,
-                      windowStart: v.timeRange?.[0] ? dayjs(v.timeRange[0]).toISOString() : null,
-                      windowEnd: v.timeRange?.[1] ? dayjs(v.timeRange[1]).toISOString() : null
-                    });
-                    if (!res.runId) return;
-                    message.success(`已创建任务 ${res.runId}`);
-                    setPolling(true);
-                    setSearchParams({ runId: res.runId });
-                  } catch {
-                    /* axios 已提示 */
-                  }
-                }}
-              >
-                <Form.Item name="tasookNo" label="型号代号 tasook_no" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="satelliteNo" label="卫星代号 satellite_no" rules={[{ required: true }]}>
-                  <Input />
-                </Form.Item>
-                <TaskWindowFields form={form} />
-                <Form.Item>
-                  <Space>
+      {!viewRunId && (
+        <Collapse
+          defaultActiveKey={['create']}
+          items={[
+            {
+              key: 'create',
+              label: '新建任务',
+              children: (
+                <Form
+                  form={form}
+                  layout="vertical"
+                  initialValues={{
+                    tasookNo: 'TASK-A100',
+                    satelliteNo: 'SAT-001'
+                  }}
+                  onFinish={async (v) => {
+                    try {
+                      const res = await tasksApi.createPipeline({
+                        tasookNo: v.tasookNo,
+                        satelliteNo: v.satelliteNo,
+                        testBatchName: v.testBatchName || null,
+                        windowStart: v.timeRange?.[0] ? dayjs(v.timeRange[0]).toISOString() : null,
+                        windowEnd: v.timeRange?.[1] ? dayjs(v.timeRange[1]).toISOString() : null
+                      });
+                      if (!res.runId) return;
+                      message.success(`已创建任务 ${res.runId}`);
+                      setPolling(true);
+                      setSearchParams({ runId: res.runId });
+                    } catch {
+                      /* axios 已提示 */
+                    }
+                  }}
+                >
+                  <Form.Item name="tasookNo" label="型号代号 tasook_no" rules={[{ required: true }]}>
+                    <Input />
+                  </Form.Item>
+                  <Form.Item name="satelliteNo" label="卫星代号 satellite_no" rules={[{ required: true }]}>
+                    <Input />
+                  </Form.Item>
+                  <TaskWindowFields form={form} />
+                  <Form.Item>
                     <Button type="primary" htmlType="submit">
                       创建 PIPELINE
                     </Button>
-                    {viewRunId && (
-                      <Button onClick={() => void refresh()} loading={loading}>
-                        刷新状态
-                      </Button>
-                    )}
-                  </Space>
-                </Form.Item>
-              </Form>
-            )
-          }
-        ]}
-      />
+                  </Form.Item>
+                </Form>
+              )
+            }
+          ]}
+        />
+      )}
     </Card>
   );
 }

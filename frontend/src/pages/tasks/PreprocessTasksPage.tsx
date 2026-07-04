@@ -1,4 +1,4 @@
-import { Button, Card, Collapse, Form, Space, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Typography, message } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tasksApi } from '@/api/tasks';
 import {
@@ -44,107 +44,111 @@ export function PreprocessTasksPage() {
         支持三种处理类型：立即执行、指定时间执行一次、每天定时（数据窗为前一日同刻至当日设定时刻）。
       </Paragraph>
 
-      {viewRunId && <TaskDetailCard detail={detail} loading={loading} />}
+      {viewRunId && (
+        <>
+          <TaskDetailCard detail={detail} loading={loading} />
+          <div style={{ marginTop: 8 }}>
+            <Button onClick={() => void refresh()} loading={loading}>
+              刷新状态
+            </Button>
+          </div>
+        </>
+      )}
 
-      <Collapse
-        defaultActiveKey={viewRunId ? [] : ['create']}
-        items={[
-          {
-            key: 'create',
-            label: viewRunId ? '新建任务（展开填写）' : '新建任务',
-            children: (
-              <Form
-                form={form}
-                layout="vertical"
-                initialValues={{ executionMode: 'IMMEDIATE', intervalDays: 1 }}
-                onFinish={async (v) => {
-                  try {
-                    const executionMode = (v.executionMode ?? 'IMMEDIATE') as PreprocessExecutionMode;
-                    const { filterTemplateId, filterTemplateVersion } = parseFilterTemplateKey(
-                      v.filterTemplateKey
-                    );
-                    if (!filterTemplateId || filterTemplateVersion == null) {
-                      message.warning('请选择筛选模板');
-                      return;
-                    }
-
-                    let windowStart: string | null = null;
-                    let windowEnd: string | null = null;
-                    let testBatchName: string | null = null;
-
-                    if (executionMode === 'IMMEDIATE' || executionMode === 'ONCE_SCHEDULED') {
-                      const win = timeRangeToWindowIso(v.timeRange);
-                      windowStart = win.windowStart;
-                      windowEnd = win.windowEnd;
-                      if (!windowStart || !windowEnd) {
-                        message.warning('请选择开始与结束日期');
+      {!viewRunId && (
+        <Collapse
+          defaultActiveKey={['create']}
+          items={[
+            {
+              key: 'create',
+              label: '新建任务',
+              children: (
+                <Form
+                  form={form}
+                  layout="vertical"
+                  initialValues={{ executionMode: 'IMMEDIATE', intervalDays: 1 }}
+                  onFinish={async (v) => {
+                    try {
+                      const executionMode = (v.executionMode ?? 'IMMEDIATE') as PreprocessExecutionMode;
+                      const { filterTemplateId, filterTemplateVersion } = parseFilterTemplateKey(
+                        v.filterTemplateKey
+                      );
+                      if (!filterTemplateId || filterTemplateVersion == null) {
+                        message.warning('请选择筛选模板');
                         return;
                       }
-                      const phasePick = v.phasePick as string;
-                      testBatchName =
-                        phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
-                    }
 
-                    const res = await tasksApi.createPreprocess({
-                      executionMode,
-                      tasookNo: v.tasookNo,
-                      satelliteNo: v.satelliteNo,
-                      testBatchName,
-                      windowStart,
-                      windowEnd,
-                      scheduledAt:
-                        executionMode === 'ONCE_SCHEDULED'
-                          ? combineScheduledRunAt(v.scheduledRunAt)
-                          : null,
-                      dailyTime:
-                        executionMode === 'DAILY_RECURRING' ? formatDailyTime(v.dailyTime) : null,
-                      intervalDays:
-                        executionMode === 'DAILY_RECURRING' ? Number(v.intervalDays) : null,
-                      effectiveFrom:
-                        executionMode === 'DAILY_RECURRING'
-                          ? formatEffectiveFrom(v.scheduleEffectiveFrom)
-                          : null,
-                      filterTemplateId,
-                      filterTemplateVersion
-                    });
+                      let windowStart: string | null = null;
+                      let windowEnd: string | null = null;
+                      let testBatchName: string | null = null;
 
-                    if (res.scheduleId) {
-                      message.success(`已创建每天定时计划 ${res.scheduleId}`);
-                    } else if (res.runId) {
-                      if (executionMode === 'IMMEDIATE') {
-                        message.success('已创建，请到任务列表点击「执行」');
-                      } else {
-                        message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
+                      if (executionMode === 'IMMEDIATE' || executionMode === 'ONCE_SCHEDULED') {
+                        const win = timeRangeToWindowIso(v.timeRange);
+                        windowStart = win.windowStart;
+                        windowEnd = win.windowEnd;
+                        if (!windowStart || !windowEnd) {
+                          message.warning('请选择开始与结束日期');
+                          return;
+                        }
+                        const phasePick = v.phasePick as string;
+                        testBatchName =
+                          phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
                       }
-                      setPolling(executionMode !== 'IMMEDIATE');
-                      setSearchParams({ runId: res.runId });
-                      navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, {
-                        replace: true
+
+                      const res = await tasksApi.createPreprocess({
+                        executionMode,
+                        tasookNo: v.tasookNo,
+                        satelliteNo: v.satelliteNo,
+                        testBatchName,
+                        windowStart,
+                        windowEnd,
+                        scheduledAt:
+                          executionMode === 'ONCE_SCHEDULED'
+                            ? combineScheduledRunAt(v.scheduledRunAt)
+                            : null,
+                        dailyTime:
+                          executionMode === 'DAILY_RECURRING' ? formatDailyTime(v.dailyTime) : null,
+                        intervalDays:
+                          executionMode === 'DAILY_RECURRING' ? Number(v.intervalDays) : null,
+                        effectiveFrom:
+                          executionMode === 'DAILY_RECURRING'
+                            ? formatEffectiveFrom(v.scheduleEffectiveFrom)
+                            : null,
+                        filterTemplateId,
+                        filterTemplateVersion
                       });
+
+                      if (res.scheduleId) {
+                        message.success(`已创建每天定时计划 ${res.scheduleId}`);
+                      } else if (res.runId) {
+                        if (executionMode === 'IMMEDIATE') {
+                          message.success('已创建，请到任务列表点击「执行」');
+                        } else {
+                          message.success(`已创建 PREPROCESS 任务 ${res.runId}`);
+                        }
+                        setPolling(executionMode !== 'IMMEDIATE');
+                        setSearchParams({ runId: res.runId });
+                        navigate(`/tasks/preprocess?runId=${encodeURIComponent(res.runId)}`, {
+                          replace: true
+                        });
+                      }
+                    } catch {
+                      /* axios 已提示 */
                     }
-                  } catch {
-                    /* axios 已提示 */
-                  }
-                }}
-              >
-                <PreprocessFormFields form={form} />
-                <Form.Item>
-                  <Space>
+                  }}
+                >
+                  <PreprocessFormFields form={form} />
+                  <Form.Item>
                     <Button type="primary" htmlType="submit">
                       创建预处理入仓任务
                     </Button>
-                    {viewRunId && (
-                      <Button onClick={() => void refresh()} loading={loading}>
-                        刷新状态
-                      </Button>
-                    )}
-                  </Space>
-                </Form.Item>
-              </Form>
-            )
-          }
-        ]}
-      />
+                  </Form.Item>
+                </Form>
+              )
+            }
+          ]}
+        />
+      )}
     </Card>
   );
 }

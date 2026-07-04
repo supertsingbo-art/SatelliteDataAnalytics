@@ -1256,6 +1256,44 @@ public sealed class PgTaskEventRepository : ITaskEventRepository
         cmd.Parameters.AddWithValue("id", runId);
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task<TaskEvent?> GetLatestFailedEventAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            """
+            SELECT event_id, run_id, event_type, event_status, payload_json::text, error_code, error_msg, created_at
+            FROM task_event
+            WHERE run_id = @run_id AND event_type = 'task.failed'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            conn);
+        cmd.Parameters.AddWithValue("run_id", runId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new TaskEvent(
+            reader.GetGuid(reader.GetOrdinal("event_id")),
+            reader.GetGuid(reader.GetOrdinal("run_id")),
+            reader.GetString(reader.GetOrdinal("event_type")),
+            reader.GetString(reader.GetOrdinal("event_status")),
+            reader.IsDBNull(reader.GetOrdinal("payload_json"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("payload_json")),
+            reader.IsDBNull(reader.GetOrdinal("error_code"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("error_code")),
+            reader.IsDBNull(reader.GetOrdinal("error_msg"))
+                ? null
+                : reader.GetString(reader.GetOrdinal("error_msg")),
+            reader.GetFieldValue<DateTimeOffset>(reader.GetOrdinal("created_at")));
+    }
 }
 
 public sealed class PgHqParamMetadataRepository : IHqParamMetadataRepository

@@ -461,6 +461,17 @@ export interface JobStatus {
 }
 
 /** GET /api/v1/tasks/{runId} 任务详情 */
+export interface PreprocessConflictDetail {
+  param_id: string;
+  param_label?: string | null;
+  conflict_status: string;
+  conflict_run_id: string;
+  conflict_job_id?: string | null;
+  conflict_filter_template_id: string;
+  conflict_filter_template_version: number;
+  conflict_filter_template_name?: string | null;
+}
+
 export interface TaskRunDetail {
   run_id: string;
   job_id: string;
@@ -485,6 +496,7 @@ export interface TaskRunDetail {
   created_at: string;
   error_code: string | null;
   error_msg: string | null;
+  conflict_details?: PreprocessConflictDetail[] | null;
   execution_mode: string | null;
   scheduled_at: string | null;
   schedule_id: string | null;
@@ -521,6 +533,8 @@ export interface TaskListItemV2 {
   scheduled_at: string | null;
   created_at: string;
   end_time: string | null;
+  error_code?: string | null;
+  error_msg?: string | null;
 }
 
 export interface TaskExecutionRecord {
@@ -534,6 +548,7 @@ export interface TaskExecutionRecord {
   window_end: string | null;
   error_code: string | null;
   error_msg: string | null;
+  conflict_details?: PreprocessConflictDetail[] | null;
 }
 
 /** @deprecated 使用 TaskListItemV2 */

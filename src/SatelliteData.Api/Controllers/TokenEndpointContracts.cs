@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SatelliteData.Application.Tasks;
 
 namespace SatelliteData.Api.Controllers;
 
@@ -81,4 +82,5 @@ public sealed record TaskRunDetailResponse(
     [property: JsonPropertyName("schedule_id")] Guid? ScheduleId,
     [property: JsonPropertyName("schedule_daily_time")] string? ScheduleDailyTime,
     [property: JsonPropertyName("schedule_interval_days")] int? ScheduleIntervalDays,
-    [property: JsonPropertyName("schedule_effective_from")] DateOnly? ScheduleEffectiveFrom);
+    [property: JsonPropertyName("schedule_effective_from")] DateOnly? ScheduleEffectiveFrom,
+    [property: JsonPropertyName("conflict_details")] IReadOnlyList<PreprocessConflictDetailDto>? ConflictDetails);

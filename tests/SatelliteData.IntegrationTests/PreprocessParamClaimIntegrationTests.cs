@@ -177,7 +177,7 @@ public sealed class PreprocessParamClaimIntegrationTests
               "durationSeconds": 0,
               "targetParams": [
                 {
-                  "paramId": "P1001",
+                  "paramId": "1001",
                   "outlier": { "method": "SIGMA", "sigma": 3 }
                 }
               ]
@@ -222,7 +222,7 @@ public sealed class PreprocessParamClaimIntegrationTests
                     "SAT-001",
                     1001,
                     "P1001",
-                    "P1001",
+                    "电压监测",
                     "double",
                     null,
                     null,
@@ -268,13 +268,59 @@ public sealed class PreprocessParamClaimIntegrationTests
 
         var conflictTemplateId = Guid.NewGuid();
         var conflictRunId = Guid.NewGuid();
+        await filterTemplates.SaveAsync(
+            new FilterTemplate(
+                conflictTemplateId,
+                2,
+                "占用模板",
+                TemplateStatus.Published,
+                Guid.NewGuid(),
+                config,
+                null,
+                null,
+                now,
+                null,
+                now,
+                now),
+            CancellationToken.None);
+        await taskRuns.InsertAsync(
+            new TaskRun(
+                conflictRunId,
+                null,
+                "PRE-OCCUPY-001",
+                TaskJobType.Preprocess,
+                TaskTriggerType.Api,
+                TaskRunStatus.Succeeded,
+                "idem-conflict",
+                "TASK-A",
+                "SAT-001",
+                "自定义时间段",
+                now,
+                now.AddMinutes(10),
+                conflictTemplateId,
+                2,
+                null,
+                null,
+                null,
+                null,
+                100m,
+                "done",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                now),
+            CancellationToken.None);
+
         var occupy = await paramClaims.TryAcquireAsync(
             conflictRunId,
             "TASK-A",
             "SAT-001",
             conflictTemplateId,
             2,
-            [new PreprocessParamClaimRequest("P1001", now, now.AddMinutes(10))],
+            [new PreprocessParamClaimRequest("1001", now, now.AddMinutes(10))],
             CancellationToken.None);
         Assert.True(occupy.Acquired);
         await paramClaims.MarkCommittedByRunIdAsync(conflictRunId, CancellationToken.None);
@@ -285,7 +331,24 @@ public sealed class PreprocessParamClaimIntegrationTests
         Assert.NotNull(failed);
         Assert.Equal(TaskRunStatus.Failed, failed!.Status);
         Assert.Equal("PRE_006", failed.ErrorCode);
-        Assert.Contains("P1001", failed.ErrorMsg);
+        Assert.Contains("P1001 电压监测", failed.ErrorMsg);
+        Assert.Contains("占用模板", failed.ErrorMsg);
+        Assert.Contains("PRE-OCCUPY-001", failed.ErrorMsg);
+
+        var failedEvent = await taskEvents.GetLatestFailedEventAsync(runId, CancellationToken.None);
+        Assert.NotNull(failedEvent);
+        Assert.False(string.IsNullOrWhiteSpace(failedEvent!.PayloadJson));
+        var payload = JsonSerializer.Deserialize<PreprocessConflictPayloadDto>(
+            failedEvent.PayloadJson!,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        Assert.NotNull(payload);
+        Assert.Equal("PRE_006", payload!.Code);
+        Assert.NotEmpty(payload.Conflicts);
+        var conflict = payload.Conflicts[0];
+        Assert.Equal("1001", conflict.ParamId);
+        Assert.Equal("P1001 电压监测", conflict.ParamLabel);
+        Assert.Equal("占用模板", conflict.ConflictFilterTemplateName);
+        Assert.Equal("PRE-OCCUPY-001", conflict.ConflictJobId);
     }
 
     private static JsonElement ParseJson(string json)

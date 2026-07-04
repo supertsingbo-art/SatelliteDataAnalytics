@@ -330,10 +330,10 @@ public sealed class PreprocessPipeline(
                     }
                     else
                     {
-                        await FailAsync(
+                        await FailWithParamConflictsAsync(
                             run,
-                            "PRE_006",
-                            BuildClaimConflictMessage(acquireResult, conflictOptions),
+                            acquireResult,
+                            conflictOptions,
                             cancellationToken);
                         return;
                     }
@@ -351,10 +351,10 @@ public sealed class PreprocessPipeline(
                     }
                     else
                     {
-                        await FailAsync(
+                        await FailWithParamConflictsAsync(
                             run,
-                            "PRE_006",
-                            BuildClaimConflictMessage(acquireResult, conflictOptions),
+                            acquireResult,
+                            conflictOptions,
                             cancellationToken);
                         return;
                     }
@@ -679,23 +679,107 @@ public sealed class PreprocessPipeline(
         return result;
     }
 
-    private static string BuildClaimConflictMessage(
-        PreprocessParamClaimAcquireResult result,
+    private async Task FailWithParamConflictsAsync(
+        TaskRun run,
+        PreprocessParamClaimAcquireResult acquireResult,
+        PreprocessConflictHandlingOptions options,
+        CancellationToken cancellationToken)
+    {
+        var details = await BuildConflictDetailsAsync(run, acquireResult.Conflicts, cancellationToken)
+            .ConfigureAwait(false);
+        var message = BuildReadableConflictMessage(details, options);
+        await FailAsync(run, "PRE_006", message, cancellationToken, details, options).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<PreprocessConflictDetailDto>> BuildConflictDetailsAsync(
+        TaskRun run,
+        IReadOnlyList<PreprocessParamClaimConflict> conflicts,
+        CancellationToken cancellationToken)
+    {
+        if (conflicts.Count == 0)
+        {
+            return [];
+        }
+
+        var parameters = (await assetCache.GetParametersAsync(run.TasookNo, run.SatelliteNo, cancellationToken)
+            .ConfigureAwait(false)).ToDictionary(p => p.ParamId, StringComparer.Ordinal);
+
+        var templateNames = new Dictionary<(Guid Id, int Version), string?>();
+        var conflictJobIds = new Dictionary<Guid, string?>();
+
+        var result = new List<PreprocessConflictDetailDto>();
+        foreach (var conflict in conflicts
+                     .OrderBy(c => c.ParamId, StringComparer.Ordinal)
+                     .ThenBy(c => c.ConflictStatus, StringComparer.Ordinal))
+        {
+            parameters.TryGetValue(conflict.ParamId, out var paramMeta);
+            var templateKey = (conflict.ConflictFilterTemplateId, conflict.ConflictFilterTemplateVersion);
+            if (!templateNames.TryGetValue(templateKey, out var templateName))
+            {
+                var template = await filterTemplates
+                    .GetVersionAsync(
+                        conflict.ConflictFilterTemplateId,
+                        conflict.ConflictFilterTemplateVersion,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                templateName = template?.TemplateName;
+                templateNames[templateKey] = templateName;
+            }
+
+            if (!conflictJobIds.TryGetValue(conflict.ConflictRunId, out var conflictJobId))
+            {
+                var conflictRun = await taskRuns
+                    .GetByRunIdAsync(conflict.ConflictRunId, cancellationToken)
+                    .ConfigureAwait(false);
+                conflictJobId = conflictRun?.JobId;
+                conflictJobIds[conflict.ConflictRunId] = conflictJobId;
+            }
+
+            result.Add(new PreprocessConflictDetailDto(
+                conflict.ParamId,
+                paramMeta?.DisplayLabel,
+                conflict.ConflictStatus,
+                conflict.ConflictRunId,
+                conflictJobId,
+                conflict.ConflictFilterTemplateId,
+                conflict.ConflictFilterTemplateVersion,
+                templateName));
+        }
+
+        return result;
+    }
+
+    private static string BuildReadableConflictMessage(
+        IReadOnlyList<PreprocessConflictDetailDto> details,
         PreprocessConflictHandlingOptions options)
     {
-        if (result.Conflicts.Count == 0)
+        if (details.Count == 0)
         {
             return "参数冲突: 未找到可解析的冲突明细";
         }
 
-        var conflicts = result.Conflicts
-            .OrderBy(c => c.ParamId, StringComparer.Ordinal)
-            .ThenBy(c => c.ConflictStatus, StringComparer.Ordinal)
-            .Select(c =>
-                $"param_id={c.ParamId},status={c.ConflictStatus},冲突模板={c.ConflictFilterTemplateId}/v{c.ConflictFilterTemplateVersion},冲突任务={c.ConflictRunId}")
-            .ToArray();
-        return $"参数冲突: {string.Join(" | ", conflicts)}。当前策略(active={options.OnActiveConflict}, committed={options.OnCommittedConflict})";
+        var segments = details.Select(d =>
+        {
+            var paramDisplay = string.IsNullOrWhiteSpace(d.ParamLabel) ? d.ParamId : $"{d.ParamLabel} ({d.ParamId})";
+            var statusDisplay = FormatConflictStatus(d.ConflictStatus);
+            var templateDisplay = string.IsNullOrWhiteSpace(d.ConflictFilterTemplateName)
+                ? $"模板 v{d.ConflictFilterTemplateVersion}"
+                : $"{d.ConflictFilterTemplateName} v{d.ConflictFilterTemplateVersion}";
+            var jobDisplay = string.IsNullOrWhiteSpace(d.ConflictJobId)
+                ? "未知任务"
+                : d.ConflictJobId!;
+            return $"{paramDisplay} [{statusDisplay}] 与 {templateDisplay}（任务 {jobDisplay}）冲突";
+        });
+
+        return $"参数冲突: {string.Join(" | ", segments)}。当前策略(active={options.OnActiveConflict}, committed={options.OnCommittedConflict})";
     }
+
+    private static string FormatConflictStatus(string status) =>
+        string.Equals(status, "ACTIVE", StringComparison.OrdinalIgnoreCase)
+            ? "执行中"
+            : string.Equals(status, "COMMITTED", StringComparison.OrdinalIgnoreCase)
+                ? "已完成"
+                : status;
 
     private sealed record TargetExecutionPlan(
         TargetParamSpec Target,
@@ -870,7 +954,13 @@ public sealed class PreprocessPipeline(
         return (t.Trim(), s.Trim());
     }
 
-    private async Task FailAsync(TaskRun run, string code, string message, CancellationToken cancellationToken)
+    private async Task FailAsync(
+        TaskRun run,
+        string code,
+        string message,
+        CancellationToken cancellationToken,
+        IReadOnlyList<PreprocessConflictDetailDto>? conflictDetails = null,
+        PreprocessConflictHandlingOptions? conflictOptions = null)
     {
         if (await TaskRunCancellation.IsCancelledAsync(taskRuns, run.RunId, cancellationToken).ConfigureAwait(false))
         {
@@ -897,13 +987,21 @@ public sealed class PreprocessPipeline(
         }
 
         await scheduleService.UpdateScheduleFromRunAsync(failed, cancellationToken);
+        var payloadJson = conflictDetails is { Count: > 0 }
+            ? JsonSerializer.Serialize(new PreprocessConflictPayloadDto(
+                code,
+                message,
+                conflictDetails,
+                conflictOptions?.OnActiveConflict.ToString(),
+                conflictOptions?.OnCommittedConflict.ToString()))
+            : JsonSerializer.Serialize(new { code, message });
         await taskEvents.AppendAsync(
             new TaskEvent(
                 Guid.NewGuid(),
                 run.RunId,
                 "task.failed",
                 "Failed",
-                JsonSerializer.Serialize(new { code, message }),
+                payloadJson,
                 code,
                 message,
                 end),

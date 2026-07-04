@@ -7,6 +7,7 @@ import {
   Drawer,
   Modal,
   Popconfirm,
+  Popover,
   Progress,
   Segmented,
   Space,
@@ -33,8 +34,13 @@ import type {
   TaskProcessedData,
   TaskProcessedDataCell,
   TaskProcessedDataColumn,
-  TaskValidRangeItem
+  TaskValidRangeItem,
+  PreprocessConflictDetail
 } from '@/api/types';
+import {
+  PreprocessConflictPanel,
+  formatConflictStatus
+} from '@/pages/tasks/components/PreprocessConflictPanel';
 
 const { Paragraph, Text } = Typography;
 
@@ -102,65 +108,6 @@ function statusSummaryText(row: TaskListItemV2): string {
   return parts.join(' · ');
 }
 
-interface Pre006ConflictInfo {
-  paramIds: string[];
-  templateId?: string;
-  templateVersion?: number;
-  runId?: string;
-  details: Array<{
-    paramId: string;
-    status: 'ACTIVE' | 'COMMITTED' | string;
-    templateId?: string;
-    templateVersion?: number;
-    runId?: string;
-  }>;
-}
-
-function parsePre006ConflictInfo(messageText: string): Pre006ConflictInfo {
-  const details: Pre006ConflictInfo['details'] = [];
-  const re = /param_id=([^,|，]+),status=([^,|，]+),冲突模板=([0-9a-fA-F-]{36})\/v(\d+),冲突任务=([0-9a-fA-F-]{36})/g;
-  for (;;) {
-    const m = re.exec(messageText);
-    if (!m) break;
-    details.push({
-      paramId: m[1].trim(),
-      status: m[2].trim().toUpperCase(),
-      templateId: m[3],
-      templateVersion: Number(m[4]),
-      runId: m[5]
-    });
-  }
-
-  const paramIds = details.length > 0
-    ? Array.from(new Set(details.map((x) => x.paramId)))
-    : (() => {
-        const oldParamIds: string[] = [];
-        const paramMatch = messageText.match(
-          /param_id=([\s\S]*?)(?:,\s*冲突模板=|,\s*冲突任务=|，\s*冲突模板=|，\s*冲突任务=|$)/
-        );
-        if (paramMatch?.[1]) {
-          oldParamIds.push(
-            ...paramMatch[1]
-              .split(/[,，]/)
-              .map((item) => item.trim())
-              .filter(Boolean)
-          );
-        }
-
-        return oldParamIds;
-      })();
-
-  const templateMatch = messageText.match(/冲突模板=([0-9a-fA-F-]{36})\/v(\d+)/);
-  const runMatch = messageText.match(/冲突任务=([0-9a-fA-F-]{36})/);
-  return {
-    paramIds,
-    templateId: templateMatch?.[1],
-    templateVersion: templateMatch?.[2] ? Number(templateMatch[2]) : undefined,
-    runId: runMatch?.[1],
-    details
-  };
-}
-
 function normalizeStatus(status?: string | null): string {
   return (status ?? '').trim().toUpperCase();
 }
@@ -185,17 +132,45 @@ export function TasksListPage() {
     window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
   };
 
+  const openConflictModal = (row: TaskListItemV2) => {
+    void (async () => {
+      let details: PreprocessConflictDetail[] | null = null;
+      if (row.run_id) {
+        try {
+          const detail = await tasksApi.get(row.run_id);
+          details = detail.conflict_details ?? null;
+        } catch {
+          // 列表项仅有 error_msg 时仍可展示摘要
+        }
+      }
+
+      Modal.warning({
+        title: '参数时间段冲突',
+        okText: '知道了',
+        width: 560,
+        content: (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <PreprocessConflictPanel
+              errorMsg={row.error_msg}
+              conflictDetails={details}
+              onOpenTemplate={openTemplateEditor}
+            />
+            {row.run_id && (
+              <Link to={taskDetailPath(row.job_type, row.run_id)}>查看任务详情</Link>
+            )}
+          </Space>
+        )
+      });
+    })();
+  };
+
   const showPre006Conflict = (
     rawMessage: string,
     retryWithPolicy?: (policy: 'OVERWRITE' | 'SKIP') => Promise<void>
   ) => {
-    const conflict = parsePre006ConflictInfo(rawMessage);
-    const activeParams = conflict.details
-      .filter((x) => x.status === 'ACTIVE')
-      .map((x) => x.paramId);
-    const committedParams = conflict.details
-      .filter((x) => x.status === 'COMMITTED')
-      .map((x) => x.paramId);
+    const conflictPanel = (
+      <PreprocessConflictPanel errorMsg={rawMessage} onOpenTemplate={openTemplateEditor} compact />
+    );
 
     if (retryWithPolicy) {
       Modal.confirm({
@@ -209,24 +184,15 @@ export function TasksListPage() {
           await retryWithPolicy('SKIP');
         },
         content: (
-          <Space direction="vertical" size={4}>
+          <Space direction="vertical" size={8}>
             <Text>检测到参数时间段冲突，请按下列规则选择处理策略：</Text>
             <Text>
-              1) <Text strong>执行中冲突（状态：执行中）</Text>：只能跳过，不支持覆盖。
+              1) <Text strong>执行中冲突（状态：{formatConflictStatus('ACTIVE')}）</Text>：只能跳过，不支持覆盖。
             </Text>
             <Text>
-              2) <Text strong>已完成冲突（状态：已完成）</Text>：可覆盖或跳过。
+              2) <Text strong>已完成冲突（状态：{formatConflictStatus('COMMITTED')}）</Text>：可覆盖或跳过。
             </Text>
-            {activeParams.length > 0 && (
-              <Text>
-                执行中冲突参数：<Text code>{Array.from(new Set(activeParams)).join(', ')}</Text>
-              </Text>
-            )}
-            {committedParams.length > 0 && (
-              <Text>
-                已完成冲突参数：<Text code>{Array.from(new Set(committedParams)).join(', ')}</Text>
-              </Text>
-            )}
+            {conflictPanel}
             <Text type="secondary">关闭弹窗表示暂不处理（可等待，或先取消冲突任务后再重试）。</Text>
           </Space>
         )
@@ -237,40 +203,8 @@ export function TasksListPage() {
     Modal.warning({
       title: '参数时间段冲突',
       okText: '知道了',
-      content: (
-        <Space direction="vertical" size={4}>
-          <Text>
-            同一参数在同一时间段内只能有一份记录。当前任务与其他模板执行结果发生冲突，请先调整模板后重试。
-          </Text>
-          {conflict.paramIds.length > 0 && (
-            <Text>
-              冲突参数：<Text code>{conflict.paramIds.join(', ')}</Text>
-            </Text>
-          )}
-          {conflict.templateId && (
-            <Text>
-              冲突模板：<Text code>{conflict.templateId}</Text> / v{conflict.templateVersion ?? 1}
-            </Text>
-          )}
-          {conflict.runId && (
-            <Text>
-              冲突任务：<Text code>{conflict.runId}</Text>
-            </Text>
-          )}
-          {conflict.templateId && (
-            <Button
-              type="link"
-              style={{ paddingInline: 0 }}
-              onClick={() => {
-                if (!conflict.templateId) return;
-                openTemplateEditor(conflict.templateId, conflict.templateVersion ?? 1);
-              }}
-            >
-              去修改冲突模板
-            </Button>
-          )}
-        </Space>
-      )
+      width: 560,
+      content: conflictPanel
     });
   };
 
@@ -949,6 +883,11 @@ export function TasksListPage() {
                     </Button>
                   </Badge>
                 )}
+                {r.error_code === 'PRE_006' && r.run_id && !r.can_view_data && (
+                  <Button size="small" danger onClick={() => openConflictModal(r)}>
+                    参数冲突
+                  </Button>
+                )}
                 {r.run_id && <Link to={taskDetailPath(r.job_type, r.run_id)}>详情</Link>}
                 <Button
                   type="link"
@@ -1067,14 +1006,38 @@ export function TasksListPage() {
             {
               title: '结果',
               key: 'result',
-              render: (_, rec) =>
-                rec.error_code ? (
-                  <span style={{ color: '#cf1322' }}>
-                    {rec.error_code}: {rec.error_msg}
-                  </span>
-                ) : (
-                  rec.status
-                )
+              render: (_, rec) => {
+                if (rec.error_code === 'PRE_006') {
+                  return (
+                    <Popover
+                      title="参数冲突"
+                      trigger="click"
+                      content={
+                        <PreprocessConflictPanel
+                          errorMsg={rec.error_msg}
+                          conflictDetails={rec.conflict_details}
+                          onOpenTemplate={openTemplateEditor}
+                          compact
+                        />
+                      }
+                    >
+                      <Button type="link" danger size="small" style={{ padding: 0 }}>
+                        参数冲突
+                      </Button>
+                    </Popover>
+                  );
+                }
+
+                if (rec.error_code) {
+                  return (
+                    <span style={{ color: '#cf1322' }}>
+                      {rec.error_code}: {rec.error_msg}
+                    </span>
+                  );
+                }
+
+                return rec.status;
+              }
             }
           ]}
         />

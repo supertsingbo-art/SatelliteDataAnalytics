@@ -167,6 +167,19 @@ public sealed class InMemoryTaskEventRepository : ITaskEventRepository
             return Task.CompletedTask;
         }
     }
+
+    public Task<TaskEvent?> GetLatestFailedEventAsync(Guid runId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var evt = _events
+                .Where(e => e.RunId == runId && string.Equals(e.EventType, "task.failed", StringComparison.Ordinal))
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefault();
+            return Task.FromResult(evt);
+        }
+    }
 }
 
 public sealed class InMemoryHqParamMetadataRepository : IHqParamMetadataRepository

@@ -1,5 +1,6 @@
 import { Card, Descriptions, Progress, Spin, Typography } from 'antd';
 import type { TaskRunDetail } from '@/api/types';
+import { PreprocessConflictPanel } from '@/pages/tasks/components/PreprocessConflictPanel';
 
 const terminalStatuses = new Set(['Succeeded', 'Failed', 'Timeout', 'Cancelled']);
 
@@ -127,10 +128,25 @@ export function TaskDetailCard({ detail, loading, title = '任务详情' }: Prop
         <Typography.Text type="secondary">进度 </Typography.Text>
         <Progress percent={Number(detail.progress_percent)} status={progressStatus} />
       </div>
-      {detail.error_code && (
-        <Typography.Text type="danger" style={{ display: 'block', marginTop: 8 }}>
-          {detail.error_code}: {detail.error_msg}
-        </Typography.Text>
+      {detail.error_code === 'PRE_006' ? (
+        <div style={{ marginTop: 12 }}>
+          <Typography.Text type="danger" style={{ display: 'block', marginBottom: 8 }}>
+            参数时间段冲突（PRE_006）
+          </Typography.Text>
+          <PreprocessConflictPanel
+            errorMsg={detail.error_msg}
+            conflictDetails={detail.conflict_details}
+            onOpenTemplate={(templateId, version) => {
+              window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
+            }}
+          />
+        </div>
+      ) : (
+        detail.error_code && (
+          <Typography.Text type="danger" style={{ display: 'block', marginTop: 8 }}>
+            {detail.error_code}: {detail.error_msg}
+          </Typography.Text>
+        )
       )}
     </Card>
   );
