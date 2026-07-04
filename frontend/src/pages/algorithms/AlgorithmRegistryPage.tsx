@@ -18,7 +18,8 @@ const CATEGORY_LABEL: Record<AlgorithmCategory, string> = {
   Align: '时序对齐',
   Cluster: '聚类分析',
   Compare: '比对节点',
-  Output: '输出与判定'
+  Output: '输出与判定',
+  DataOutput: '数据输出'
 };
 
 export function AlgorithmRegistryPage() {
@@ -64,7 +65,7 @@ export function AlgorithmRegistryPage() {
     >
       <Paragraph type="secondary" style={{ marginBottom: 12 }}>
         算法仓库注册表是 React Flow 编辑器组件库的唯一数据来源；只展示状态为 Published 且为该 algorithmCode 最新版本的算法包。
-        平台预置 12 个内建算法（max / min / mean / variance / stddev / envelope / rms / fft / psd / dominant_freq / threshold_judge / three_sigma_judge）；
+        平台预置 13 个内建算法（含 max / min / mean / variance / stddev / envelope / rms / fft / psd / dominant_freq / save_result / threshold_judge / three_sigma_judge）；
         Python / JavaScript 自定义算法须通过沙箱审核后才会自动出现。
       </Paragraph>
       <Table<AlgorithmRegistryEntry>

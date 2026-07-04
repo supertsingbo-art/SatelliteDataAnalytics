@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS algorithm_package (
     CONSTRAINT uk_algorithm_package_code_version UNIQUE (algorithm_code, version),
     CONSTRAINT ck_algorithm_package_status CHECK (status IN ('Draft','SandboxValidating','Published','Rejected','Archived')),
     CONSTRAINT ck_algorithm_package_runtime CHECK (runtime IN ('BUILTIN','PYTHON','JS')),
-    CONSTRAINT ck_algorithm_package_category CHECK (algorithm_category IN ('source','stats','spectrum','align','cluster','compare','output'))
+    CONSTRAINT ck_algorithm_package_category CHECK (algorithm_category IN ('source','stats','spectrum','align','cluster','compare','output','dataoutput'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_algorithm_package_code ON algorithm_package(algorithm_code);
@@ -257,7 +257,8 @@ VALUES
     ('00000000-0000-0000-0001-000000000009'::uuid, 'builtin', 'algorithm/psd/1.0.0', 'application/json', 0, now()),
     ('00000000-0000-0000-0001-00000000000a'::uuid, 'builtin', 'algorithm/dominant_freq/1.0.0', 'application/json', 0, now()),
     ('00000000-0000-0000-0001-00000000000b'::uuid, 'builtin', 'algorithm/threshold_judge/1.0.0', 'application/json', 0, now()),
-    ('00000000-0000-0000-0001-00000000000c'::uuid, 'builtin', 'algorithm/three_sigma_judge/1.0.0', 'application/json', 0, now())
+    ('00000000-0000-0000-0001-00000000000c'::uuid, 'builtin', 'algorithm/three_sigma_judge/1.0.0', 'application/json', 0, now()),
+    ('00000000-0000-0000-0001-00000000000d'::uuid, 'builtin', 'algorithm/save_result/1.0.0', 'application/json', 0, now())
 ON CONFLICT (object_id) DO NOTHING;
 
 INSERT INTO algorithm_package (
@@ -287,7 +288,9 @@ INSERT INTO algorithm_package (
     ('10000000-0000-0000-0001-00000000000b'::uuid, 'threshold_judge', '阈值判定', 'output', '1.0.0', 'BUILTIN', '__builtin__', '00000000-0000-0000-0001-00000000000b'::uuid,
         '{}', '{"series":"TimeSeries"}', '{"result":"algo_result"}', '{}', '{"cpu":1,"memoryMb":512,"timeoutSeconds":600}', 'Published', now(), now(), now()),
     ('10000000-0000-0000-0001-00000000000c'::uuid, 'three_sigma_judge', '3σ判定', 'output', '1.0.0', 'BUILTIN', '__builtin__', '00000000-0000-0000-0001-00000000000c'::uuid,
-        '{}', '{"series":"TimeSeries"}', '{"result":"algo_result"}', '{"k":3}', '{"cpu":1,"memoryMb":512,"timeoutSeconds":600}', 'Published', now(), now(), now())
+        '{}', '{"series":"TimeSeries"}', '{"result":"algo_result"}', '{"k":3}', '{"cpu":1,"memoryMb":512,"timeoutSeconds":600}', 'Published', now(), now(), now()),
+    ('10000000-0000-0000-0001-00000000000d'::uuid, 'save_result', '结果落库', 'dataoutput', '1.0.0', 'BUILTIN', '__builtin__', '00000000-0000-0000-0001-00000000000d'::uuid,
+        '{}', '{"series":"TimeSeries"}', '{"value":"Scalar"}', '{"includeDetail":true}', '{"cpu":1,"memoryMb":512,"timeoutSeconds":600}', 'Published', now(), now(), now())
 ON CONFLICT (package_id) DO NOTHING;
 
 INSERT INTO client_callbacks (callback_id, client_id, callback_name, callback_url, secret_ref, event_types, max_retry_count, enabled, created_at)

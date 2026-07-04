@@ -5,7 +5,7 @@ namespace SatelliteData.Application.Templates;
 
 /// <summary>
 /// 算法模板 DAG 校验器。实现 6.2.4.5 / 6.5.3 的全部静态校验规则：
-/// 节点至少 1 个、≥1 个数据输入节点、≥1 个输出节点、无环、运行时白名单、引用算法包必须 Published。
+/// 节点至少 1 个、≥1 个数据输入节点、≥1 个数据输出节点、无环、运行时白名单、引用算法包必须 Published。
 /// </summary>
 public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registryService)
 {
@@ -35,13 +35,16 @@ public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registry
             issues.Add(new("DAG_002", "DAG 必须至少包含 1 个数据输入节点（category='source'）", null));
         }
 
-        // 规则 3：≥1 个输出节点（category in {compare, output}）
-        var outputNodes = nodes.Where(n =>
-            string.Equals(n.Category, "compare", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(n.Category, "output", StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (outputNodes.Length == 0)
+        // 规则 3：≥1 个数据输出节点（category='dataoutput' 或 algorithmCode='save_result'）
+        var dataOutputNodes = nodes.Where(n =>
+            string.Equals(n.Category, "dataoutput", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(n.AlgorithmCode, "save_result", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (dataOutputNodes.Length == 0)
         {
-            issues.Add(new("DAG_003", "DAG 必须至少包含 1 个输出节点（category in {compare, output}）", null));
+            issues.Add(new(
+                "DAG_009",
+                "DAG 必须至少包含 1 个数据输出节点（结果落库 save_result，category='dataoutput'）",
+                null));
         }
 
         // 规则 3b：save_result 节点必须有且仅有 1 条入边

@@ -63,15 +63,16 @@ const CATEGORY_GROUPS: {
   { category: 'Spectrum', title: '3. 频域处理（第二阶）' },
   { category: 'Align', title: '4. 时序对齐（第三阶）', hint: '占位，运行端二阶段开放' },
   { category: 'Cluster', title: '5. 聚类分析（第四阶）' },
-  { category: 'Compare', title: '6. 输出与比对', hint: '「结果落库」保存计算值；阈值/3σ 判定保存判定标记' },
-  { category: 'Output', title: '6. 输出与比对' }
+  { category: 'Compare', title: '6. 输出与比对', hint: '阈值/3σ 判定保存判定标记（可选）' },
+  { category: 'Output', title: '6. 输出与比对' },
+  { category: 'DataOutput', title: '7. 数据输出', hint: '将上游计算结果写入 algo_result；发布模板时至少 1 个' }
 ];
 
 const SOURCE_NODE_KEY = '__data_source__';
 
 interface NodeMeta {
   nodeRef: string;
-  category: 'source' | 'stats' | 'spectrum' | 'align' | 'cluster' | 'compare' | 'output';
+  category: 'source' | 'stats' | 'spectrum' | 'align' | 'cluster' | 'compare' | 'output' | 'dataoutput';
   algorithmCode?: string;
   displayName: string;
   runtime?: 'BUILTIN' | 'PYTHON' | 'JS';
@@ -597,8 +598,8 @@ function EditorInner() {
                 boxShadow: '0 1px 2px rgba(15,23,42,0.04)'
               }}
             >
-              DAG 校验：必须 ≥1 个数据输入节点、≥1 个输出节点（结果落库或判定）、无环；
-              多个算法结果请分别连线到各自的「结果落库」节点。选中节点后按 Delete 键，或在右侧属性面板删除。
+              DAG 校验：必须 ≥1 个数据输入节点、≥1 个数据输出节点（结果落库）、无环；
+              第 6 类判定节点可选。多个结果请分别连线到各自的「结果落库」节点。选中节点后按 Delete 键，或在右侧属性面板删除。
               发布时序列化保存 react_flow_json 与 config_json。编辑期不查询 ClickHouse。
             </div>
 
@@ -1163,6 +1164,8 @@ function lowerCategory(cat: AlgorithmCategory): NodeMeta['category'] {
       return 'compare';
     case 'Output':
       return 'output';
+    case 'DataOutput':
+      return 'dataoutput';
   }
 }
 
@@ -1188,6 +1191,8 @@ function categoryEmoji(cat: AlgorithmCategory): string {
       return '🎯';
     case 'Output':
       return '📝';
+    case 'DataOutput':
+      return '💾';
   }
 }
 

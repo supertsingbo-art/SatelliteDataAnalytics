@@ -34,6 +34,7 @@ internal static class PgEnumCodec
         AlgorithmCategory.Cluster => "cluster",
         AlgorithmCategory.Compare => "compare",
         AlgorithmCategory.Output => "output",
+        AlgorithmCategory.DataOutput => "dataoutput",
         _ => throw new ArgumentOutOfRangeException(nameof(category))
     };
 
@@ -46,6 +47,7 @@ internal static class PgEnumCodec
         "cluster" => AlgorithmCategory.Cluster,
         "compare" => AlgorithmCategory.Compare,
         "output" => AlgorithmCategory.Output,
+        "dataoutput" => AlgorithmCategory.DataOutput,
         _ => Enum.Parse<AlgorithmCategory>(value, ignoreCase: true)
     };
 

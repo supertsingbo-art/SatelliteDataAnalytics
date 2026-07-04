@@ -18,7 +18,7 @@ public enum AlgorithmRuntime
 }
 
 /// <summary>
-/// 算法分类，对应 React Flow 组件库的固定 6 个分类容器（详见 6.2.4.3）。
+/// 算法分类，对应 React Flow 组件库分类容器（详见 6.2.4.3）。
 /// </summary>
 public enum AlgorithmCategory
 {
@@ -28,7 +28,9 @@ public enum AlgorithmCategory
     Align = 3,
     Cluster = 4,
     Compare = 5,
-    Output = 6
+    Output = 6,
+    /// <summary>数据输出（与 Source 对称），如结果落库 save_result。</summary>
+    DataOutput = 7
 }
 
 /// <summary>

@@ -413,7 +413,8 @@ export type AlgorithmCategory =
   | 'Align'
   | 'Cluster'
   | 'Compare'
-  | 'Output';
+  | 'Output'
+  | 'DataOutput';
 
 export interface AlgorithmRegistryEntry {
   algorithmCode: string;

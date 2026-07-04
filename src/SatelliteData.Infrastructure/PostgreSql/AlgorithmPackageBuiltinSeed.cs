@@ -6,6 +6,23 @@ namespace SatelliteData.Infrastructure.PostgreSql;
 /// <summary>6.5.4.5 预置 BUILTIN 算法包（内存与 PostgreSQL 共用）。</summary>
 internal static class AlgorithmPackageBuiltinSeed
 {
+    private static readonly (Guid PackageId, Guid ObjectId)[] StableIds =
+    [
+        (Guid.Parse("10000000-0000-0000-0001-000000000001"), Guid.Parse("00000000-0000-0000-0001-000000000001")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000002"), Guid.Parse("00000000-0000-0000-0001-000000000002")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000003"), Guid.Parse("00000000-0000-0000-0001-000000000003")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000004"), Guid.Parse("00000000-0000-0000-0001-000000000004")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000005"), Guid.Parse("00000000-0000-0000-0001-000000000005")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000006"), Guid.Parse("00000000-0000-0000-0001-000000000006")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000007"), Guid.Parse("00000000-0000-0000-0001-000000000007")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000008"), Guid.Parse("00000000-0000-0000-0001-000000000008")),
+        (Guid.Parse("10000000-0000-0000-0001-000000000009"), Guid.Parse("00000000-0000-0000-0001-000000000009")),
+        (Guid.Parse("10000000-0000-0000-0001-00000000000a"), Guid.Parse("00000000-0000-0000-0001-00000000000a")),
+        (Guid.Parse("10000000-0000-0000-0001-00000000000b"), Guid.Parse("00000000-0000-0000-0001-00000000000b")),
+        (Guid.Parse("10000000-0000-0000-0001-00000000000c"), Guid.Parse("00000000-0000-0000-0001-00000000000c")),
+        (Guid.Parse("10000000-0000-0000-0001-00000000000d"), Guid.Parse("00000000-0000-0000-0001-00000000000d"))
+    ];
+
     public static IReadOnlyList<AlgorithmPackage> CreatePackages()
     {
         var now = DateTimeOffset.UtcNow;
@@ -21,7 +38,7 @@ internal static class AlgorithmPackageBuiltinSeed
             ("fft", "快速傅里叶变换", AlgorithmCategory.Spectrum, "{\"type\":\"object\",\"properties\":{\"sampleRate\":{\"type\":\"integer\"},\"window\":{\"enum\":[\"hann\",\"hamming\",\"rect\"],\"default\":\"hann\"}}}", "MathNet.Numerics 离散 FT；要求等间距采样（O(n log n)）"),
             ("psd", "功率谱密度", AlgorithmCategory.Spectrum, "{\"type\":\"object\",\"properties\":{\"nperseg\":{\"type\":\"integer\"},\"overlap\":{\"type\":\"number\",\"default\":0.5}}}", "Welch 法（O(n log n)）"),
             ("dominant_freq", "主频提取", AlgorithmCategory.Spectrum, "{\"type\":\"object\",\"properties\":{\"topK\":{\"type\":\"integer\",\"default\":1}}}", "输入 Spectrum，取幅值最大的频率（O(m)）"),
-            ("save_result", "结果落库", AlgorithmCategory.Output, "{\"type\":\"object\",\"properties\":{\"metricName\":{\"type\":\"string\"},\"includeDetail\":{\"type\":\"boolean\",\"default\":true}}}", "将上游算法结果写入 algo_result，支持标量/序列/频谱"),
+            ("save_result", "结果落库", AlgorithmCategory.DataOutput, "{\"type\":\"object\",\"properties\":{\"metricName\":{\"type\":\"string\"},\"includeDetail\":{\"type\":\"boolean\",\"default\":true}}}", "将上游算法结果写入 algo_result，支持标量/序列/频谱"),
             ("threshold_judge", "阈值判定", AlgorithmCategory.Output, "{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"number\"},\"max\":{\"type\":\"number\"}}}", "对每个值应用 [min, max] 判定，写 algo_result.detail_json（O(n)）"),
             ("three_sigma_judge", "3σ 判定", AlgorithmCategory.Output, "{\"type\":\"object\",\"properties\":{\"k\":{\"type\":\"number\",\"default\":3.0}}}", "计算窗口内 mean/std，超过 k·σ 标记异常（O(n)）"),
         };
@@ -32,12 +49,13 @@ internal static class AlgorithmPackageBuiltinSeed
         var emptyManifest = JsonDocument.Parse("{}").RootElement.Clone();
 
         var list = new List<AlgorithmPackage>(seeds.Length);
-        foreach (var seed in seeds)
+        for (var i = 0; i < seeds.Length; i++)
         {
+            var seed = seeds[i];
+            var ids = StableIds[i];
             var paramsSchema = JsonDocument.Parse(seed.ParamsSchema).RootElement.Clone();
-            var packageId = Guid.NewGuid();
             list.Add(new AlgorithmPackage(
-                PackageId: packageId,
+                PackageId: ids.PackageId,
                 AlgorithmCode: seed.Code,
                 DisplayName: seed.DisplayName,
                 Version: "1.0.0",
@@ -54,7 +72,7 @@ internal static class AlgorithmPackageBuiltinSeed
                 CreatedAt: now,
                 UpdatedAt: now,
                 PublishedAt: now,
-                ObjectId: packageId,
+                ObjectId: ids.ObjectId,
                 Entrypoint: "__builtin__",
                 ManifestJson: emptyManifest.Clone()));
         }

@@ -125,6 +125,17 @@ internal static class PgMetaSchema
                 await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            await using (var migrate = new NpgsqlCommand(
+                """
+                ALTER TABLE algorithm_package DROP CONSTRAINT IF EXISTS ck_algorithm_package_category;
+                ALTER TABLE algorithm_package ADD CONSTRAINT ck_algorithm_package_category
+                  CHECK (algorithm_category IN ('source','stats','spectrum','align','cluster','compare','output','dataoutput'));
+                """,
+                conn))
+            {
+                await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             _ready = true;
         }
         catch (Exception ex)
@@ -163,17 +174,51 @@ internal static class PgMetaSchema
 
     public static async Task SeedBuiltinAlgorithmPackagesAsync(NpgsqlConnection conn, CancellationToken cancellationToken)
     {
-        await using var countCmd = new NpgsqlCommand("SELECT COUNT(*)::int FROM algorithm_package", conn);
-        var count = (int)(await countCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
-        if (count > 0)
-        {
-            return;
-        }
-
         foreach (var package in AlgorithmPackageBuiltinSeed.CreatePackages())
         {
-            await InsertAlgorithmPackageAsync(conn, package, cancellationToken).ConfigureAwait(false);
+            await UpsertAlgorithmPackageAsync(conn, package, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public static async Task UpsertAlgorithmPackageAsync(
+        NpgsqlConnection conn,
+        AlgorithmPackage package,
+        CancellationToken cancellationToken)
+    {
+        await using var cmd = new NpgsqlCommand(
+            """
+            INSERT INTO algorithm_package (
+                package_id, algorithm_code, algorithm_name, algorithm_category, version, runtime,
+                entrypoint, object_id, manifest_json, inputs_schema_json, outputs_schema_json,
+                params_schema_json, resources_json, status, description, last_error, created_by, created_at,
+                updated_by, updated_at, published_at)
+            VALUES (
+                @package_id, @algorithm_code, @algorithm_name, @algorithm_category, @version, @runtime,
+                @entrypoint, @object_id, @manifest_json, @inputs_schema_json, @outputs_schema_json,
+                @params_schema_json, @resources_json, @status, @description, @last_error, @created_by, @created_at,
+                @updated_by, @updated_at, @published_at)
+            ON CONFLICT (algorithm_code, version) DO UPDATE SET
+                package_id = EXCLUDED.package_id,
+                algorithm_name = EXCLUDED.algorithm_name,
+                algorithm_category = EXCLUDED.algorithm_category,
+                runtime = EXCLUDED.runtime,
+                entrypoint = EXCLUDED.entrypoint,
+                object_id = EXCLUDED.object_id,
+                manifest_json = EXCLUDED.manifest_json,
+                inputs_schema_json = EXCLUDED.inputs_schema_json,
+                outputs_schema_json = EXCLUDED.outputs_schema_json,
+                params_schema_json = EXCLUDED.params_schema_json,
+                resources_json = EXCLUDED.resources_json,
+                status = EXCLUDED.status,
+                description = EXCLUDED.description,
+                last_error = EXCLUDED.last_error,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = EXCLUDED.updated_at,
+                published_at = EXCLUDED.published_at
+            """,
+            conn);
+        BindAlgorithmPackage(cmd, package);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task InsertAlgorithmPackageAsync(
