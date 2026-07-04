@@ -907,17 +907,16 @@ function PropertiesPanel({
                 }))}
               />
             </Form.Item>
-            <Form.Item label="参数列表">
+            <Form.Item label="参数列表" extra="每个数据输入节点仅支持 1 个参数">
               <Select
-                mode="multiple"
-                value={meta.source!.paramIds}
+                value={meta.source!.paramIds[0] ?? undefined}
                 onChange={(value) =>
-                  onChange({ source: { ...meta.source!, paramIds: value as string[] } })
+                  onChange({ source: { ...meta.source!, paramIds: value ? [String(value)] : [] } })
                 }
                 showSearch
                 virtual
                 listHeight={360}
-                placeholder="从 param_cache 选择参数，可输入代号/描述过滤"
+                placeholder="从 param_cache 选择 1 个参数，可输入代号/描述过滤"
                 filterOption={(input, option) => {
                   const q = input.trim().toLowerCase();
                   if (!q) return true;

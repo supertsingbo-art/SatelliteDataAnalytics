@@ -98,10 +98,20 @@ public sealed class AlgorithmExecutionPipeline(
             var cat = node.Type.ToLowerInvariant();
             if (cat == "source")
             {
-                var paramId = ReadParamId(node.Data);
-                if (string.IsNullOrEmpty(paramId))
+                if (!AlgorithmTemplateConfigParser.TryResolveSourceParamId(
+                        node.Data,
+                        nodeId,
+                        template.ConfigJson,
+                        out var paramId,
+                        out var failure))
                 {
-                    await FailAsync(run, "ALG_004", $"source 节点缺少 paramId：{nodeId}", cancellationToken);
+                    var message = failure switch
+                    {
+                        SourceParamResolveFailure.Multiple =>
+                            $"source 节点 paramIds 必须恰好 1 个：{nodeId}",
+                        _ => $"source 节点缺少 paramId：{nodeId}"
+                    };
+                    await FailAsync(run, "ALG_004", message, cancellationToken);
                     return;
                 }
 
@@ -365,13 +375,6 @@ public sealed class AlgorithmExecutionPipeline(
         if (nodeData.ValueKind != JsonValueKind.Object) return false;
         if (nodeData.TryGetProperty("params", out p) && p.ValueKind == JsonValueKind.Object) return true;
         return nodeData.TryGetProperty("paramsValues", out p) && p.ValueKind == JsonValueKind.Object;
-    }
-
-    private static string ReadParamId(JsonElement data)
-    {
-        if (data.ValueKind != JsonValueKind.Object) return "";
-        if (data.TryGetProperty("paramId", out var p) && p.ValueKind == JsonValueKind.String) return p.GetString() ?? "";
-        return "";
     }
 
     private async Task FailAsync(TaskRun run, string code, string message, CancellationToken cancellationToken)

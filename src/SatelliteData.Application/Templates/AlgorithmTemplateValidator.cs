@@ -35,6 +35,25 @@ public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registry
             issues.Add(new("DAG_002", "DAG 必须至少包含 1 个数据输入节点（category='source'）", null));
         }
 
+        // 规则 2b：每个数据输入节点必须配置恰好 1 个 paramId
+        foreach (var source in sourceNodes)
+        {
+            if (!AlgorithmTemplateConfigParser.TryValidateSourceParam(source.Data, source.Id, configJson, out var failure))
+            {
+                issues.Add(failure switch
+                {
+                    SourceParamResolveFailure.Multiple => new(
+                        "DAG_011",
+                        $"数据输入节点 {source.Id} 只能配置 1 个参数",
+                        source.Id),
+                    _ => new(
+                        "DAG_010",
+                        $"数据输入节点 {source.Id} 未配置参数",
+                        source.Id)
+                });
+            }
+        }
+
         // 规则 3：≥1 个数据输出节点（category='dataoutput' 或 algorithmCode='save_result'）
         var dataOutputNodes = nodes.Where(n =>
             string.Equals(n.Category, "dataoutput", StringComparison.OrdinalIgnoreCase)
@@ -123,8 +142,10 @@ public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registry
 
             string? algoCode = null;
             string? runtime = null;
-            if (node.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+            JsonElement data = default;
+            if (node.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.Object)
             {
+                data = dataEl;
                 if (data.TryGetProperty("algorithmCode", out var ac) && ac.ValueKind == JsonValueKind.String)
                 {
                     algoCode = ac.GetString();
@@ -135,7 +156,7 @@ public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registry
                 }
             }
 
-            result.Add(new NodeRef(id, category ?? "", algoCode, runtime));
+            result.Add(new NodeRef(id, category ?? "", algoCode, runtime, data));
         }
         return result;
     }
@@ -213,7 +234,7 @@ public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registry
         return false;
     }
 
-    private sealed record NodeRef(string Id, string Category, string? AlgorithmCode, string? Runtime);
+    private sealed record NodeRef(string Id, string Category, string? AlgorithmCode, string? Runtime, JsonElement Data);
 
     private sealed record EdgeRef(string Id, string Source, string Target);
 }
