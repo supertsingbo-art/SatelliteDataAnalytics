@@ -37,6 +37,17 @@ public sealed record AlgorithmTemplateListRequest(
     int PageNo = 1,
     int PageSize = 20);
 
+public sealed record AlgorithmTemplateDeleteImpact(
+    Guid TemplateId,
+    string TemplateName,
+    int VersionCount,
+    int TaskRunCount,
+    int RunningTaskRunCount,
+    IReadOnlyList<Guid> TaskRunIds)
+{
+    public bool HasReferences => TaskRunCount > 0;
+}
+
 public sealed record AlgorithmTemplateValidationResult(
     bool Valid,
     int NodeCount,
@@ -73,4 +84,6 @@ public interface IAlgorithmTemplateRepository
     Task SaveAsync(AlgorithmTemplate template, CancellationToken cancellationToken);
 
     Task DeleteAsync(Guid templateId, int version, CancellationToken cancellationToken);
+
+    Task DeleteAllByTemplateIdAsync(Guid templateId, CancellationToken cancellationToken);
 }

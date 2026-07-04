@@ -1,9 +1,16 @@
-import { Button, Card, Collapse, Form, Input, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Typography, message } from 'antd';
 import { Link, useSearchParams } from 'react-router-dom';
-import dayjs from 'dayjs';
 import { tasksApi } from '@/api/tasks';
-import { TaskWindowFields } from '@/pages/tasks/components/TaskWindowFields';
 import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
+import {
+  PipelineFormFields,
+  parseAlgorithmTemplateKey
+} from '@/pages/tasks/components/PipelineFormFields';
+import {
+  CUSTOM_PHASE,
+  CUSTOM_TIME_DISPLAY_NAME
+} from '@/pages/tasks/components/PreprocessWindowFields';
+import { timeRangeToWindowIso } from '@/pages/tasks/components/PreprocessFormFields';
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
 
 const { Paragraph } = Typography;
@@ -27,8 +34,8 @@ export function PipelineTasksPage() {
       }
     >
       <Paragraph type="secondary">
-        调用内部 <code>/api/v1/tasks/pipeline</code> 创建任务；默认使用开发种子筛选/算法模板。需后端 Hangfire 与
-        ClickHouse 可用。从任务列表「详情」进入可查看完整任务信息并自动刷新进度。
+        调用内部 <code>/api/v1/tasks/pipeline</code> 创建任务；须选择已发布算法模板，筛选模板仍使用系统默认。
+        需后端 Hangfire 与 ClickHouse 可用。从任务列表「详情」进入可查看完整任务信息并自动刷新进度。
       </Paragraph>
 
       {viewRunId && (
@@ -53,18 +60,34 @@ export function PipelineTasksPage() {
                 <Form
                   form={form}
                   layout="vertical"
-                  initialValues={{
-                    tasookNo: 'TASK-A100',
-                    satelliteNo: 'SAT-001'
-                  }}
                   onFinish={async (v) => {
                     try {
+                      const { algorithmTemplateId, algorithmTemplateVersion } = parseAlgorithmTemplateKey(
+                        v.algorithmTemplateKey
+                      );
+                      if (!algorithmTemplateId || algorithmTemplateVersion == null) {
+                        message.warning('请选择算法模板');
+                        return;
+                      }
+
+                      const win = timeRangeToWindowIso(v.timeRange);
+                      if (!win.windowStart || !win.windowEnd) {
+                        message.warning('请选择开始与结束日期');
+                        return;
+                      }
+
+                      const phasePick = v.phasePick as string;
+                      const testBatchName =
+                        phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
+
                       const res = await tasksApi.createPipeline({
                         tasookNo: v.tasookNo,
                         satelliteNo: v.satelliteNo,
-                        testBatchName: v.testBatchName || null,
-                        windowStart: v.timeRange?.[0] ? dayjs(v.timeRange[0]).toISOString() : null,
-                        windowEnd: v.timeRange?.[1] ? dayjs(v.timeRange[1]).toISOString() : null
+                        testBatchName,
+                        windowStart: win.windowStart,
+                        windowEnd: win.windowEnd,
+                        algorithmTemplateId,
+                        algorithmTemplateVersion
                       });
                       if (!res.runId) return;
                       message.success(`已创建任务 ${res.runId}`);
@@ -75,13 +98,7 @@ export function PipelineTasksPage() {
                     }
                   }}
                 >
-                  <Form.Item name="tasookNo" label="型号代号 tasook_no" rules={[{ required: true }]}>
-                    <Input />
-                  </Form.Item>
-                  <Form.Item name="satelliteNo" label="卫星代号 satellite_no" rules={[{ required: true }]}>
-                    <Input />
-                  </Form.Item>
-                  <TaskWindowFields form={form} />
+                  <PipelineFormFields form={form} />
                   <Form.Item>
                     <Button type="primary" htmlType="submit">
                       创建 PIPELINE

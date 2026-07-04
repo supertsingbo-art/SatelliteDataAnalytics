@@ -44,6 +44,20 @@ public sealed class AlgorithmTemplateValidator(AlgorithmRegistryService registry
             issues.Add(new("DAG_003", "DAG 必须至少包含 1 个输出节点（category in {compare, output}）", null));
         }
 
+        // 规则 3b：save_result 节点必须有且仅有 1 条入边
+        foreach (var sink in nodes.Where(n =>
+                     string.Equals(n.AlgorithmCode, "save_result", StringComparison.OrdinalIgnoreCase)))
+        {
+            var inCount = edges.Count(e => string.Equals(e.Target, sink.Id, StringComparison.Ordinal));
+            if (inCount != 1)
+            {
+                issues.Add(new(
+                    "DAG_008",
+                    $"结果落库节点 {sink.Id} 必须有且仅有 1 条入边（当前 {inCount} 条）",
+                    sink.Id));
+            }
+        }
+
         // 规则 4：无环
         if (HasCycle(nodes, edges, out var cycleNodeId))
         {

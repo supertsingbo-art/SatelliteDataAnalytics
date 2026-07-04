@@ -140,22 +140,13 @@ public sealed class AlgorithmExecutionPipeline(
             if (!outputs.TryGetValue(nodeId, out var o)) continue;
             if (node.Type.Equals("source", StringComparison.OrdinalIgnoreCase)) continue;
 
-            if (o.Scalar.HasValue)
+            preds.TryGetValue(nodeId, out var predId);
+            nodeMap.TryGetValue(predId ?? "", out var upstream);
+
+            if (string.Equals(node.AlgorithmCode, "save_result", StringComparison.OrdinalIgnoreCase))
             {
-                algoRows.Add(JsonSerializer.Serialize(new Dictionary<string, object?>
-                {
-                    ["run_id"] = runId.ToString(),
-                    ["node_id"] = nodeId,
-                    ["algorithm_code"] = node.AlgorithmCode ?? "",
-                    ["tasook_no"] = run.TasookNo,
-                    ["satellite_no"] = run.SatelliteNo,
-                    ["test_batch_id"] = batchId,
-                    ["window_start"] = (run.WindowStart ?? winStart).ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
-                    ["window_end"] = (run.WindowEnd ?? winEnd).ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),
-                    ["metric_name"] = "scalar",
-                    ["metric_value"] = o.Scalar.Value,
-                    ["detail_json"] = "{}"
-                }));
+                AppendSaveResultRow(algoRows, run, nodeId, node, upstream, o, batchId, winStart, winEnd);
+                continue;
             }
 
             var isJudge = string.Equals(node.AlgorithmCode, "threshold_judge", StringComparison.OrdinalIgnoreCase)
@@ -184,6 +175,7 @@ public sealed class AlgorithmExecutionPipeline(
         {
             await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
                 .ConfigureAwait(false);
+            await clickHouse.EnsureAlgoResultTableAsync(cancellationToken).ConfigureAwait(false);
             await clickHouse.InsertJsonEachRowAsync("algo_result", algoRows, cancellationToken);
         }
 
@@ -224,6 +216,155 @@ public sealed class AlgorithmExecutionPipeline(
 
         logger.LogInformation("Algorithm finished for run {RunId}", runId);
         scheduler.EnqueueWebhook(runId);
+    }
+
+    private static void AppendSaveResultRow(
+        List<string> algoRows,
+        TaskRun run,
+        string nodeId,
+        FlowNodeRef node,
+        FlowNodeRef? upstream,
+        NodeOutput output,
+        string batchId,
+        DateTimeOffset winStart,
+        DateTimeOffset winEnd)
+    {
+        var metricName = ReadMetricName(node.Data, upstream);
+        var includeDetail = ReadIncludeDetail(node.Data);
+        var windowStart = (run.WindowStart ?? winStart).ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var windowEnd = (run.WindowEnd ?? winEnd).ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+
+        if (output.Scalar.HasValue)
+        {
+            algoRows.Add(JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["run_id"] = run.RunId.ToString(),
+                ["node_id"] = nodeId,
+                ["algorithm_code"] = upstream?.AlgorithmCode ?? node.AlgorithmCode ?? "",
+                ["tasook_no"] = run.TasookNo,
+                ["satellite_no"] = run.SatelliteNo,
+                ["test_batch_id"] = batchId,
+                ["window_start"] = windowStart,
+                ["window_end"] = windowEnd,
+                ["metric_name"] = metricName,
+                ["metric_value"] = output.Scalar.Value,
+                ["detail_json"] = "{}"
+            }));
+            return;
+        }
+
+        if (output.Series is { Count: > 0 } seriesPoints)
+        {
+            var detail = includeDetail
+                ? JsonSerializer.Serialize(seriesPoints.Select(p => new { ts = p.Ts, value = p.V }))
+                : "{}";
+            algoRows.Add(JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["run_id"] = run.RunId.ToString(),
+                ["node_id"] = nodeId,
+                ["algorithm_code"] = upstream?.AlgorithmCode ?? node.AlgorithmCode ?? "",
+                ["tasook_no"] = run.TasookNo,
+                ["satellite_no"] = run.SatelliteNo,
+                ["test_batch_id"] = batchId,
+                ["window_start"] = windowStart,
+                ["window_end"] = windowEnd,
+                ["metric_name"] = metricName,
+                ["metric_value"] = seriesPoints.Average(x => x.V),
+                ["detail_json"] = detail
+            }));
+            return;
+        }
+
+        if (output.Spectrum is { Magnitudes.Length: > 0 } spectrum)
+        {
+            var peakIdx = 0;
+            var peakMag = spectrum.Magnitudes[0];
+            for (var i = 1; i < spectrum.Magnitudes.Length; i++)
+            {
+                if (spectrum.Magnitudes[i] > peakMag)
+                {
+                    peakMag = spectrum.Magnitudes[i];
+                    peakIdx = i;
+                }
+            }
+
+            var peakFreq = spectrum.Frequencies.Length > peakIdx ? spectrum.Frequencies[peakIdx] : 0d;
+            var detail = includeDetail
+                ? JsonSerializer.Serialize(new
+                {
+                    frequencies = spectrum.Frequencies,
+                    magnitudes = spectrum.Magnitudes,
+                    peakFrequency = peakFreq,
+                    peakMagnitude = peakMag
+                })
+                : JsonSerializer.Serialize(new { peakFrequency = peakFreq, peakMagnitude = peakMag });
+
+            algoRows.Add(JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["run_id"] = run.RunId.ToString(),
+                ["node_id"] = nodeId,
+                ["algorithm_code"] = upstream?.AlgorithmCode ?? node.AlgorithmCode ?? "",
+                ["tasook_no"] = run.TasookNo,
+                ["satellite_no"] = run.SatelliteNo,
+                ["test_batch_id"] = batchId,
+                ["window_start"] = windowStart,
+                ["window_end"] = windowEnd,
+                ["metric_name"] = metricName,
+                ["metric_value"] = peakMag,
+                ["detail_json"] = detail
+            }));
+        }
+    }
+
+    private static string ReadMetricName(JsonElement nodeData, FlowNodeRef? upstream)
+    {
+        if (TryReadParams(nodeData, out var p)
+            && p.TryGetProperty("metricName", out var mn)
+            && mn.ValueKind == JsonValueKind.String)
+        {
+            var name = mn.GetString()?.Trim();
+            if (!string.IsNullOrEmpty(name))
+            {
+                return name;
+            }
+        }
+
+        if (upstream?.Data.ValueKind == JsonValueKind.Object
+            && upstream.Data.TryGetProperty("displayName", out var dn)
+            && dn.ValueKind == JsonValueKind.String)
+        {
+            var display = dn.GetString()?.Trim();
+            if (!string.IsNullOrEmpty(display))
+            {
+                return display;
+            }
+        }
+
+        return upstream?.AlgorithmCode ?? "result";
+    }
+
+    private static bool ReadIncludeDetail(JsonElement nodeData)
+    {
+        if (!TryReadParams(nodeData, out var p)
+            || !p.TryGetProperty("includeDetail", out var flag))
+        {
+            return true;
+        }
+
+        return flag.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => true
+        };
+    }
+
+    private static bool TryReadParams(JsonElement nodeData, out JsonElement p)
+    {
+        p = default;
+        if (nodeData.ValueKind != JsonValueKind.Object) return false;
+        if (nodeData.TryGetProperty("params", out p) && p.ValueKind == JsonValueKind.Object) return true;
+        return nodeData.TryGetProperty("paramsValues", out p) && p.ValueKind == JsonValueKind.Object;
     }
 
     private static string ReadParamId(JsonElement data)

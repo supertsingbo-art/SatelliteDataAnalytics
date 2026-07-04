@@ -99,6 +99,19 @@ public sealed class InMemoryTaskRunRepository : ITaskRunRepository
         }
     }
 
+    public Task<IReadOnlyList<TaskRun>> ListByAlgorithmTemplateIdAsync(Guid algorithmTemplateId, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        lock (_gate)
+        {
+            var arr = _byId.Values
+                .Where(r => r.AlgorithmTemplateId == algorithmTemplateId)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<TaskRun>>(arr);
+        }
+    }
+
     public Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
     {
         _ = cancellationToken;

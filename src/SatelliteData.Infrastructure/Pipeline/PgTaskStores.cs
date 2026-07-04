@@ -386,6 +386,25 @@ public sealed class PgTaskRunRepository : ITaskRunRepository
         return list;
     }
 
+    public async Task<IReadOnlyList<TaskRun>> ListByAlgorithmTemplateIdAsync(Guid algorithmTemplateId, CancellationToken cancellationToken)
+    {
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT * FROM task_run WHERE algorithm_template_id=@tid ORDER BY created_at DESC",
+            conn);
+        cmd.Parameters.AddWithValue("tid", algorithmTemplateId);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var list = new List<TaskRun>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            list.Add(Read(reader));
+        }
+
+        return list;
+    }
+
     public async Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);

@@ -123,6 +123,18 @@ public sealed class PgAlgorithmTemplateRepository : IAlgorithmTemplateRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task DeleteAllByTemplateIdAsync(Guid templateId, CancellationToken cancellationToken)
+    {
+        await PgMetaSchema.EnsureAsync(_connectionString, _logger, cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM algorithm_template WHERE template_id = @template_id",
+            conn);
+        cmd.Parameters.AddWithValue("template_id", templateId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<IReadOnlyCollection<AlgorithmTemplate>> ReadAllAsync(
         NpgsqlCommand cmd,
         CancellationToken cancellationToken)

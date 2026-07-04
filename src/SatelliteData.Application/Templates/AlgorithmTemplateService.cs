@@ -9,7 +9,9 @@ namespace SatelliteData.Application.Templates;
 public sealed class AlgorithmTemplateService(
     IAlgorithmTemplateRepository templateRepository,
     AlgorithmTemplateValidator validator,
-    TaskOrchestrator taskOrchestrator)
+    ITaskRunRepository taskRuns,
+    TaskOrchestrator taskOrchestrator,
+    TaskRunLifecycleService taskRunLifecycleService)
 {
     public async Task<PagedResult<AlgorithmTemplateView>> ListAsync(
         AlgorithmTemplateListRequest request,
@@ -221,11 +223,12 @@ public sealed class AlgorithmTemplateService(
                 ?? throw new TemplateGovernanceException(TemplateErrorCodes.AlgorithmTemplateNotFound, "模板无可克隆版本");
         }
 
-        var maxVersion = await templateRepository.GetMaxVersionAsync(templateId, cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var clone = source with
         {
-            Version = maxVersion + 1,
+            TemplateId = Guid.NewGuid(),
+            Version = 1,
+            TemplateName = BuildCloneTemplateName(source.TemplateName),
             Status = TemplateStatus.Draft,
             CreatedBy = operatorId,
             CreatedAt = now,
@@ -235,6 +238,67 @@ public sealed class AlgorithmTemplateService(
         };
         await templateRepository.SaveAsync(clone, cancellationToken);
         return new AlgorithmTemplateDetail(ToView(clone), clone.ReactFlowJson, clone.ConfigJson);
+    }
+
+    public async Task<AlgorithmTemplateDeleteImpact> GetDeleteImpactAsync(
+        Guid templateId,
+        CancellationToken cancellationToken)
+    {
+        var versions = await templateRepository.GetByTemplateIdAsync(templateId, cancellationToken);
+        if (versions.Count == 0)
+        {
+            throw new TemplateGovernanceException(TemplateErrorCodes.AlgorithmTemplateNotFound, "算法模板不存在");
+        }
+
+        var taskRunsOfTemplate = await taskRuns.ListByAlgorithmTemplateIdAsync(templateId, cancellationToken);
+        var latestVersion = versions.OrderByDescending(v => v.Version).First();
+        var runningCount = taskRunsOfTemplate.Count(r => r.Status is TaskRunStatus.Queued or TaskRunStatus.Running);
+
+        return new AlgorithmTemplateDeleteImpact(
+            templateId,
+            latestVersion.TemplateName,
+            versions.Count,
+            taskRunsOfTemplate.Count,
+            runningCount,
+            taskRunsOfTemplate.Select(r => r.RunId).ToArray());
+    }
+
+    public async Task DeleteTemplateAsync(
+        Guid templateId,
+        bool cascade,
+        CancellationToken cancellationToken)
+    {
+        var impact = await GetDeleteImpactAsync(templateId, cancellationToken);
+        if (impact.HasReferences && !cascade)
+        {
+            throw new TemplateGovernanceException(
+                TemplateErrorCodes.AlgorithmTemplateInvalidState,
+                $"模板存在引用：任务 {impact.TaskRunCount} 个（运行中/排队 {impact.RunningTaskRunCount} 个）。请确认级联删除。");
+        }
+
+        if (impact.HasReferences)
+        {
+            var runs = await taskRuns.ListByAlgorithmTemplateIdAsync(templateId, cancellationToken);
+            foreach (var run in runs.Where(r => r.Status is TaskRunStatus.Queued or TaskRunStatus.Running))
+            {
+                try
+                {
+                    await taskOrchestrator.CancelAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (TaskValidationException ex) when (
+                    ex.ErrorCode is TaskErrorCodes.NotCancellable or TaskErrorCodes.NotFound)
+                {
+                    // 任务状态在并发更新，按最终删除流程兜底。
+                }
+            }
+
+            foreach (var run in runs)
+            {
+                await taskRunLifecycleService.DeleteRunForceAsync(run.RunId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        await templateRepository.DeleteAllByTemplateIdAsync(templateId, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(
@@ -305,5 +369,16 @@ public sealed class AlgorithmTemplateService(
             template.CreatedAt,
             template.UpdatedAt,
             template.PublishedAt);
+    }
+
+    private static string BuildCloneTemplateName(string sourceName)
+    {
+        var name = sourceName.Trim();
+        if (name.Length == 0)
+        {
+            return "未命名模板 (副本)";
+        }
+
+        return name.EndsWith("(副本)", StringComparison.Ordinal) ? $"{name}-{DateTime.UtcNow:HHmmss}" : $"{name} (副本)";
     }
 }

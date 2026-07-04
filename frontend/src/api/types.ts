@@ -328,6 +328,16 @@ export interface FilterTemplateConfigJson {
   targetParams: FilterTargetParam[];
 }
 
+export interface AlgorithmTemplateDeleteImpact {
+  templateId: string;
+  templateName: string;
+  versionCount: number;
+  taskRunCount: number;
+  runningTaskRunCount: number;
+  taskRunIds: string[];
+  hasReferences: boolean;
+}
+
 export interface AlgorithmTemplateView {
   templateId: string;
   version: number;
@@ -528,6 +538,7 @@ export interface TaskListItemV2 {
   can_delete?: boolean;
   can_re_execute?: boolean;
   can_view_data?: boolean;
+  can_view_algorithm_results?: boolean;
   outlier_pending_count?: number;
   outlier_review_status?: string | null;
   /** 合并后的状态文案（取消为 cancelled） */
@@ -558,6 +569,23 @@ export interface TaskExecutionRecord {
   error_code: string | null;
   error_msg: string | null;
   conflict_details?: PreprocessConflictDetail[] | null;
+}
+
+export interface TaskAlgorithmResultItem {
+  node_id: string;
+  algorithm_code: string;
+  metric_name: string;
+  metric_value: number;
+  detail_json: string;
+  window_start: string;
+  window_end: string;
+  created_at: string;
+}
+
+export interface TaskAlgorithmResults {
+  run_id: string;
+  total: number;
+  items: TaskAlgorithmResultItem[];
 }
 
 /** @deprecated 使用 TaskListItemV2 */

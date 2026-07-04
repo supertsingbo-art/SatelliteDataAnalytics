@@ -21,6 +21,7 @@ internal static class AlgorithmPackageBuiltinSeed
             ("fft", "快速傅里叶变换", AlgorithmCategory.Spectrum, "{\"type\":\"object\",\"properties\":{\"sampleRate\":{\"type\":\"integer\"},\"window\":{\"enum\":[\"hann\",\"hamming\",\"rect\"],\"default\":\"hann\"}}}", "MathNet.Numerics 离散 FT；要求等间距采样（O(n log n)）"),
             ("psd", "功率谱密度", AlgorithmCategory.Spectrum, "{\"type\":\"object\",\"properties\":{\"nperseg\":{\"type\":\"integer\"},\"overlap\":{\"type\":\"number\",\"default\":0.5}}}", "Welch 法（O(n log n)）"),
             ("dominant_freq", "主频提取", AlgorithmCategory.Spectrum, "{\"type\":\"object\",\"properties\":{\"topK\":{\"type\":\"integer\",\"default\":1}}}", "输入 Spectrum，取幅值最大的频率（O(m)）"),
+            ("save_result", "结果落库", AlgorithmCategory.Output, "{\"type\":\"object\",\"properties\":{\"metricName\":{\"type\":\"string\"},\"includeDetail\":{\"type\":\"boolean\",\"default\":true}}}", "将上游算法结果写入 algo_result，支持标量/序列/频谱"),
             ("threshold_judge", "阈值判定", AlgorithmCategory.Output, "{\"type\":\"object\",\"properties\":{\"min\":{\"type\":\"number\"},\"max\":{\"type\":\"number\"}}}", "对每个值应用 [min, max] 判定，写 algo_result.detail_json（O(n)）"),
             ("three_sigma_judge", "3σ 判定", AlgorithmCategory.Output, "{\"type\":\"object\",\"properties\":{\"k\":{\"type\":\"number\",\"default\":3.0}}}", "计算窗口内 mean/std，超过 k·σ 标记异常（O(n)）"),
         };

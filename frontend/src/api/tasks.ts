@@ -12,6 +12,7 @@ import type {
   CompleteOutlierReviewResult,
   TaskProcessedData,
   TaskProcessedSeries,
+  TaskAlgorithmResults,
   PreprocessConflictPreflight,
   TaskRunDetail
 } from './types';
@@ -159,5 +160,7 @@ export const tasksApi = {
   ) =>
     request<OutlierReviewSummary>('patch', `${TASKS_BASE}/${runId}/outlier-reviews`, { items }),
   completeOutlierReview: (runId: string) =>
-    request<CompleteOutlierReviewResult>('post', `${TASKS_BASE}/${runId}/outlier-reviews/complete`)
+    request<CompleteOutlierReviewResult>('post', `${TASKS_BASE}/${runId}/outlier-reviews/complete`),
+  getAlgorithmResults: (runId: string) =>
+    request<TaskAlgorithmResults>('get', `/api/v1/algorithm-results/${runId}`)
 };

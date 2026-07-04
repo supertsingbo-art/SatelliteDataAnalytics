@@ -8,6 +8,8 @@ public interface IClickHouseGateway
 
     Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken);
 
+    Task EnsureAlgoResultTableAsync(CancellationToken cancellationToken);
+
     Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken);
 
     /// <summary>攒批写入 <c>hq_param_point</c>（累积到阈值或超时后由网关统一刷写）。</summary>
@@ -134,6 +136,10 @@ public interface IClickHouseGateway
         IReadOnlyList<PreprocessParamClaimRequest> claims,
         ulong keepVersionFromInclusive,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<AlgorithmResultRow>> QueryAlgorithmResultsAsync(
+        Guid runId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record AggregatedSeriesPoint(
@@ -161,3 +167,13 @@ public sealed record HqParamPointInsertRow(
     byte IsOutlier,
     byte IsConfirmedOutlier,
     ulong Version);
+
+public sealed record AlgorithmResultRow(
+    string NodeId,
+    string AlgorithmCode,
+    string MetricName,
+    double MetricValue,
+    string DetailJson,
+    DateTimeOffset WindowStart,
+    DateTimeOffset WindowEnd,
+    DateTimeOffset CreatedAt);

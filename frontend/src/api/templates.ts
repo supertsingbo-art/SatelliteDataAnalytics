@@ -3,6 +3,7 @@ import type { ApiResponse } from './client';
 import {
   AlgorithmPackageView,
   AlgorithmRegistryEntry,
+  AlgorithmTemplateDeleteImpact,
   AlgorithmTemplateDetail,
   AlgorithmTemplateValidationResult,
   AlgorithmTemplateView,
@@ -89,6 +90,10 @@ export const algoTemplatesApi = {
     request<AlgorithmTemplateView>('post', `${ALGO_BASE}/${templateId}/versions/${version}/archive`),
   clone: (templateId: string, sourceVersion?: number) =>
     request<AlgorithmTemplateDetail>('post', `${ALGO_BASE}/${templateId}/clone`, undefined, { sourceVersion }),
+  deleteImpact: (templateId: string) =>
+    request<AlgorithmTemplateDeleteImpact>('get', `${ALGO_BASE}/${templateId}/delete-impact`),
+  removeTemplate: (templateId: string, cascade = true) =>
+    request<{ deleted: boolean }>('delete', `${ALGO_BASE}/${templateId}`, undefined, { cascade }),
   remove: (templateId: string, version: number) =>
     request<{ deleted: boolean }>('delete', `${ALGO_BASE}/${templateId}/versions/${version}`),
   trialRun: (

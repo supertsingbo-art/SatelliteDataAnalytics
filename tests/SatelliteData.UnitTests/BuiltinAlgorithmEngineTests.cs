@@ -50,6 +50,23 @@ public sealed class BuiltinAlgorithmEngineTests
     }
 
     [Fact]
+    public void SaveResult_Passthrough_Scalar()
+    {
+        var input = new NodeOutput { Scalar = 12.5 };
+        var o = BuiltinAlgorithmEngine.Execute("save_result", input, EmptyData());
+        Assert.Equal(12.5, o!.Scalar);
+    }
+
+    [Fact]
+    public void SaveResult_Passthrough_Series()
+    {
+        var series = new List<(DateTimeOffset Ts, double V)> { (DateTimeOffset.UtcNow, 3) };
+        var input = new NodeOutput { Series = series };
+        var o = BuiltinAlgorithmEngine.Execute("save_result", input, EmptyData());
+        Assert.Single(o!.Series!);
+    }
+
+    [Fact]
     public void ThresholdJudge_Marks_Out_Of_Range()
     {
         using var doc = JsonDocument.Parse("{\"params\":{\"min\":0,\"max\":10}}");

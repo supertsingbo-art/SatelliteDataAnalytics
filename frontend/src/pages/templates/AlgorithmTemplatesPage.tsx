@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Input, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Card, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -39,7 +39,7 @@ export function AlgorithmTemplatesPage() {
 
   const onClone = async (record: AlgorithmTemplateView) => {
     const detail = await algoTemplatesApi.clone(record.templateId, record.version);
-    message.success('已克隆为新版本草稿');
+    message.success('已复制为新模板');
     navigate(`/templates/algorithms/${detail.view.templateId}/versions/${detail.view.version}`);
   };
 
@@ -56,9 +56,23 @@ export function AlgorithmTemplatesPage() {
   };
 
   const onDelete = async (record: AlgorithmTemplateView) => {
-    await algoTemplatesApi.remove(record.templateId, record.version);
-    message.success('草稿已删除');
-    reload();
+    const impact = await algoTemplatesApi.deleteImpact(record.templateId);
+    const warningText = impact.hasReferences
+      ? `该模板已被 ${impact.taskRunCount} 个任务引用（运行中/排队任务 ${impact.runningTaskRunCount} 个）。确认后将一并删除相关 PG 数据。`
+      : '该模板及其全部版本将被删除。';
+
+    Modal.confirm({
+      title: `确认删除模板「${impact.templateName}」？`,
+      content: warningText,
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      async onOk() {
+        await algoTemplatesApi.removeTemplate(record.templateId, true);
+        message.success('模板已删除');
+        await reload();
+      }
+    });
   };
 
   return (
@@ -100,6 +114,7 @@ export function AlgorithmTemplatesPage() {
     >
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
         算法模板由可视化 DAG 描述（react_flow_json）与运行时配置（config_json）共同组成；
+        同一 templateId 多版本共存，Published 后该版本不可修改，只能复制为新模板 Draft；
         发布前由静态校验器检查节点数、源节点、输出节点、无环、运行时白名单与算法包发布状态。
       </Text>
       <Table<AlgorithmTemplateView>
@@ -132,7 +147,7 @@ export function AlgorithmTemplatesPage() {
           },
           {
             title: '操作',
-            width: 360,
+            width: 320,
             render: (_, record) => (
               <Space size={6}>
                 <Button
@@ -151,9 +166,11 @@ export function AlgorithmTemplatesPage() {
                     </Button>
                   </Popconfirm>
                 )}
-                <Button size="small" type="link" onClick={() => onClone(record)}>
-                  克隆新版本
-                </Button>
+                <Popconfirm title="确认复制当前模板为新模板？" onConfirm={() => onClone(record)}>
+                  <Button size="small" type="link">
+                    复制为新模板
+                  </Button>
+                </Popconfirm>
                 {record.status !== 'Archived' && (
                   <Popconfirm title="归档后将不出现在任务创建可选列表" onConfirm={() => onArchive(record)}>
                     <Button size="small" type="link">
@@ -161,13 +178,9 @@ export function AlgorithmTemplatesPage() {
                     </Button>
                   </Popconfirm>
                 )}
-                {record.status === 'Draft' && (
-                  <Popconfirm title="确认删除该草稿版本？" onConfirm={() => onDelete(record)}>
-                    <Button size="small" type="link" danger>
-                      删除
-                    </Button>
-                  </Popconfirm>
-                )}
+                <Button size="small" type="link" danger onClick={() => onDelete(record)}>
+                  删除模板
+                </Button>
               </Space>
             )
           }

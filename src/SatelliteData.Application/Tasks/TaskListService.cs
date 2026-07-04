@@ -16,7 +16,7 @@ public sealed class TaskListService(
 
         var items = new List<TaskListItemDto>();
 
-        foreach (var run in runs.Where(r => r.JobType == TaskJobType.Preprocess))
+        foreach (var run in runs.Where(r => r.JobType is TaskJobType.Preprocess or TaskJobType.Pipeline))
         {
             items.Add(ToRunItem(run, now));
         }
@@ -76,6 +76,7 @@ public sealed class TaskListService(
             CanDelete: TaskRunStateHelper.CanDeleteRun(run),
             CanReExecute: TaskRunStateHelper.CanReExecuteRun(run),
             CanViewData: TaskRunStateHelper.CanViewProcessedData(run),
+            CanViewAlgorithmResults: TaskRunStateHelper.CanViewAlgorithmResults(run),
             OutlierPendingCount: run.OutlierPendingCount,
             OutlierReviewStatus: run.OutlierReviewStatus,
             StatusSummary: TaskRunStateHelper.BuildStatusSummary(run, TaskDisplayStatus.ForRun(run, now)),
@@ -108,6 +109,7 @@ public sealed class TaskListService(
             CanDelete: false,
             CanReExecute: false,
             CanViewData: latest is not null && TaskRunStateHelper.CanViewProcessedData(latest),
+            CanViewAlgorithmResults: latest is not null && TaskRunStateHelper.CanViewAlgorithmResults(latest),
             OutlierPendingCount: latest?.OutlierPendingCount ?? 0,
             OutlierReviewStatus: latest?.OutlierReviewStatus,
             StatusSummary: latest is not null

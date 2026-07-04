@@ -158,6 +158,39 @@ public sealed class AlgorithmTemplatesController(AlgorithmTemplateService templa
         }
     }
 
+    [HttpGet("{templateId:guid}/delete-impact")]
+    public async Task<ActionResult<ApiResponse<AlgorithmTemplateDeleteImpact>>> GetDeleteImpact(
+        Guid templateId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var impact = await templateService.GetDeleteImpactAsync(templateId, cancellationToken);
+            return Ok(ApiResponse<AlgorithmTemplateDeleteImpact>.Ok(impact, HttpContext));
+        }
+        catch (TemplateGovernanceException ex)
+        {
+            return MapError<AlgorithmTemplateDeleteImpact>(ex);
+        }
+    }
+
+    [HttpDelete("{templateId:guid}")]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteTemplate(
+        Guid templateId,
+        [FromQuery] bool cascade = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await templateService.DeleteTemplateAsync(templateId, cascade, cancellationToken);
+            return Ok(ApiResponse<object>.Ok(new { deleted = true }, HttpContext));
+        }
+        catch (TemplateGovernanceException ex)
+        {
+            return MapError<object>(ex);
+        }
+    }
+
     [HttpDelete("{templateId:guid}/versions/{version:int}")]
     public async Task<ActionResult<ApiResponse<object>>> Delete(
         Guid templateId,

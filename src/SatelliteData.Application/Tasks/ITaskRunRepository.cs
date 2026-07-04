@@ -20,6 +20,8 @@ public interface ITaskRunRepository
 
     Task<IReadOnlyList<TaskRun>> ListByFilterTemplateIdAsync(Guid filterTemplateId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<TaskRun>> ListByAlgorithmTemplateIdAsync(Guid algorithmTemplateId, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<TaskRun>> ListByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken);
 
     Task<TaskRun?> GetLatestByScheduleIdAsync(Guid scheduleId, CancellationToken cancellationToken);

@@ -46,6 +46,9 @@ public static class BuiltinAlgorithmEngine
             "dominant_freq" => ScalarOut(BuiltinSpectrum.DominantFreq(input?.Spectrum, ReadInt(nodeData, "topK", 1))),
             "threshold_judge" => SeriesOut(BuiltinOutput.ThresholdJudge(series, ReadDoubleOrNull(nodeData, "min"), ReadDoubleOrNull(nodeData, "max"))),
             "three_sigma_judge" => SeriesOut(BuiltinOutput.ThreeSigmaJudge(series, ReadDouble(nodeData, "k", 3))),
+            "save_result" => input is null
+                ? new NodeOutput()
+                : new NodeOutput { Series = input.Series, Scalar = input.Scalar, Spectrum = input.Spectrum },
             _ => null
         };
     }
@@ -90,7 +93,8 @@ public static class BuiltinAlgorithmEngine
     {
         p = default;
         if (nodeData.ValueKind != JsonValueKind.Object) return false;
-        return nodeData.TryGetProperty("params", out p) && p.ValueKind == JsonValueKind.Object;
+        if (nodeData.TryGetProperty("params", out p) && p.ValueKind == JsonValueKind.Object) return true;
+        return nodeData.TryGetProperty("paramsValues", out p) && p.ValueKind == JsonValueKind.Object;
     }
 }
 

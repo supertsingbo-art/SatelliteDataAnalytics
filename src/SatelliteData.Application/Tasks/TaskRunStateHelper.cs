@@ -22,6 +22,10 @@ public static class TaskRunStateHelper
         run.JobType == TaskJobType.Preprocess
         && run.Status == TaskRunStatus.Succeeded;
 
+    public static bool CanViewAlgorithmResults(TaskRun run) =>
+        run.Status == TaskRunStatus.Succeeded
+        && run.AlgorithmTemplateId is not null;
+
     /// <summary>合并展示状态、状态、当前步骤；取消任务显示 cancelled。</summary>
     public static string BuildStatusSummary(TaskRun run, string displayStatus)
     {

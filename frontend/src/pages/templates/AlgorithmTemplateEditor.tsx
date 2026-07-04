@@ -8,6 +8,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -62,7 +63,7 @@ const CATEGORY_GROUPS: {
   { category: 'Spectrum', title: '3. 频域处理（第二阶）' },
   { category: 'Align', title: '4. 时序对齐（第三阶）', hint: '占位，运行端二阶段开放' },
   { category: 'Cluster', title: '5. 聚类分析（第四阶）' },
-  { category: 'Compare', title: '6. 输出与比对' },
+  { category: 'Compare', title: '6. 输出与比对', hint: '「结果落库」保存计算值；阈值/3σ 判定保存判定标记' },
   { category: 'Output', title: '6. 输出与比对' }
 ];
 
@@ -123,6 +124,7 @@ function EditorInner() {
   const [description, setDescription] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string>('Draft');
   const [editable, setEditable] = useState(true);
+  const [versionOptions, setVersionOptions] = useState<{ value: number; label: string }[]>([]);
 
   const [nodes, setNodes] = useState<Node<NodeDataPayload>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -147,7 +149,16 @@ function EditorInner() {
         setSatellites(sat.items);
 
         if (!isNew && templateId && version) {
-          const detail = await algoTemplatesApi.detail(templateId, version);
+          const [detail, versions] = await Promise.all([
+            algoTemplatesApi.detail(templateId, version),
+            algoTemplatesApi.versions(templateId)
+          ]);
+          setVersionOptions(
+            versions.map((v) => ({
+              value: v.version,
+              label: `V${v.version} · ${v.status}`
+            }))
+          );
           setStatus(detail.view.status);
           setEditable(detail.view.status === 'Draft');
           setTemplateName(detail.view.templateName);
@@ -234,9 +245,38 @@ function EditorInner() {
       if (!editable && changes.some((c) => c.type === 'remove' || c.type === 'position')) {
         return;
       }
+      const removedIds = changes
+        .filter((c): c is NodeChange & { type: 'remove'; id: string } => c.type === 'remove')
+        .map((c) => c.id);
+      if (removedIds.length > 0) {
+        setEdges((curr) =>
+          curr.filter((e) => !removedIds.includes(e.source) && !removedIds.includes(e.target))
+        );
+        setSelectedNodeId((prev) => (prev && removedIds.includes(prev) ? null : prev));
+      }
       setNodes((curr) => applyNodeChanges(changes, curr) as Node<NodeDataPayload>[]);
     },
     [editable]
+  );
+
+  const removeNodesById = useCallback(
+    (nodeIds: string[]) => {
+      if (!editable || nodeIds.length === 0) return;
+      const idSet = new Set(nodeIds);
+      setNodes((curr) => curr.filter((n) => !idSet.has(n.id)));
+      setEdges((curr) => curr.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)));
+      setSelectedNodeId((prev) => (prev && idSet.has(prev) ? null : prev));
+    },
+    [editable]
+  );
+
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      const ids = new Set(deleted.map((n) => n.id));
+      setEdges((curr) => curr.filter((e) => !ids.has(e.source) && !ids.has(e.target)));
+      setSelectedNodeId((prev) => (prev && ids.has(prev) ? null : prev));
+    },
+    []
   );
 
   const onEdgesChange = useCallback(
@@ -337,7 +377,8 @@ function EditorInner() {
           algorithmCode: meta.algorithmCode,
           runtime: meta.runtime,
           displayName: meta.displayName,
-          paramsValues: meta.paramsValues
+          paramsValues: meta.paramsValues,
+          params: meta.paramsValues
         }
       };
     });
@@ -429,6 +470,11 @@ function EditorInner() {
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
+  const flowNodes = useMemo(
+    () => nodes.map((n) => ({ ...n, deletable: editable })),
+    [nodes, editable]
+  );
+
   const updateSelectedMeta = (patch: Partial<NodeMeta>) => {
     if (!selectedNode) return;
     setNodes((curr) =>
@@ -461,7 +507,18 @@ function EditorInner() {
               placeholder="算法模板名称"
             />
             <Tag>{status}</Tag>
-            {!isNew && version && <Tag color="blue">V{version}</Tag>}
+            {!isNew && version && versionOptions.length > 0 && (
+              <Select
+                size="small"
+                value={version}
+                style={{ width: 160 }}
+                options={versionOptions}
+                onChange={(nextVersion) =>
+                  navigate(`/templates/algorithms/${templateId}/versions/${nextVersion}`)
+                }
+              />
+            )}
+            {!isNew && version && versionOptions.length === 0 && <Tag color="blue">V{version}</Tag>}
           </Space>
         }
         extra={
@@ -486,7 +543,7 @@ function EditorInner() {
           <Alert
             type="warning"
             showIcon
-            message="该版本已发布或归档，画布、节点参数与连接均为只读。请在列表使用「克隆新版本」生成新的 Draft 后修改。"
+            message="该版本已发布或归档，画布、节点参数与连接均为只读。请在列表使用「复制为新模板」生成新的 Draft 后修改。"
           />
         )}
 
@@ -509,9 +566,11 @@ function EditorInner() {
               onDrop={handleDrop}
             >
               <ReactFlow
-                nodes={nodes}
+                nodes={flowNodes}
                 edges={edges}
+                deleteKeyCode={editable ? ['Delete', 'Backspace'] : null}
                 onNodesChange={onNodesChange}
+                onNodesDelete={onNodesDelete}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onNodeClick={(_e, n) => setSelectedNodeId(n.id)}
@@ -538,7 +597,8 @@ function EditorInner() {
                 boxShadow: '0 1px 2px rgba(15,23,42,0.04)'
               }}
             >
-              DAG 校验：必须 ≥1 个数据输入节点、≥1 个输出节点、无环、节点入参出参类型匹配；
+              DAG 校验：必须 ≥1 个数据输入节点、≥1 个输出节点（结果落库或判定）、无环；
+              多个算法结果请分别连线到各自的「结果落库」节点。选中节点后按 Delete 键，或在右侧属性面板删除。
               发布时序列化保存 react_flow_json 与 config_json。编辑期不查询 ClickHouse。
             </div>
 
@@ -577,6 +637,7 @@ function EditorInner() {
               registry={registry}
               satellites={satellites}
               onChange={updateSelectedMeta}
+              onDelete={() => selectedNodeId && removeNodesById([selectedNodeId])}
             />
           </Col>
         </Row>
@@ -724,13 +785,15 @@ function PropertiesPanel({
   editable,
   registry,
   satellites,
-  onChange
+  onChange,
+  onDelete
 }: {
   node: Node<NodeDataPayload> | null;
   editable: boolean;
   registry: AlgorithmRegistryEntry[];
   satellites: SatelliteListItem[];
   onChange: (patch: Partial<NodeMeta>) => void;
+  onDelete: () => void;
 }) {
   const [paramOptions, setParamOptions] = useState<ParamCache[]>([]);
   const [referenceSat, setReferenceSat] = useState<{ tasookNo: string; satelliteNo: string } | null>(null);
@@ -878,7 +941,32 @@ function PropertiesPanel({
           </>
         )}
 
-        {!isSource && (
+        {!isSource && meta.algorithmCode === 'save_result' && (
+          <>
+            <Form.Item
+              label="结果名称 metricName"
+              extra="写入 algo_result.metric_name；留空则使用上游算法名称"
+            >
+              <Input
+                value={(meta.paramsValues.metricName as string | undefined) ?? ''}
+                onChange={(e) =>
+                  onChange({ paramsValues: { ...meta.paramsValues, metricName: e.target.value } })
+                }
+                placeholder="如：电压均值、主频"
+              />
+            </Form.Item>
+            <Form.Item label="写入明细 includeDetail" valuePropName="checked">
+              <Switch
+                checked={meta.paramsValues.includeDetail !== false}
+                onChange={(checked) =>
+                  onChange({ paramsValues: { ...meta.paramsValues, includeDetail: checked } })
+                }
+              />
+            </Form.Item>
+          </>
+        )}
+
+        {!isSource && meta.algorithmCode !== 'save_result' && (
           <>
             <Title level={5} style={{ fontSize: 13, marginTop: 12 }}>
               算法参数（按 paramsSchema 渲染）
@@ -888,7 +976,17 @@ function PropertiesPanel({
             )}
             {paramsSchemaProps.map((p) => (
               <Form.Item key={p.name} label={`${p.name}${p.title ? ` · ${p.title}` : ''}`}>
-                {p.kind === 'enum' ? (
+                {p.kind === 'boolean' ? (
+                  <Switch
+                    checked={
+                      (meta.paramsValues[p.name] as boolean | undefined) ??
+                      (typeof p.defaultValue === 'boolean' ? p.defaultValue : false)
+                    }
+                    onChange={(checked) =>
+                      onChange({ paramsValues: { ...meta.paramsValues, [p.name]: checked } })
+                    }
+                  />
+                ) : p.kind === 'enum' ? (
                   <Select
                     value={(meta.paramsValues[p.name] as string | undefined) ?? p.defaultValue ?? p.options?.[0]}
                     onChange={(value) =>
@@ -918,6 +1016,15 @@ function PropertiesPanel({
               </Form.Item>
             ))}
           </>
+        )}
+        {editable && (
+          <Form.Item style={{ marginTop: 16 }}>
+            <Popconfirm title="确认删除该节点及其连线？" onConfirm={onDelete}>
+              <Button danger block>
+                删除节点
+              </Button>
+            </Popconfirm>
+          </Form.Item>
         )}
       </Form>
     </div>
@@ -1087,7 +1194,7 @@ function categoryEmoji(cat: AlgorithmCategory): string {
 interface SchemaPropertyEntry {
   name: string;
   title?: string;
-  kind: 'string' | 'integer' | 'number' | 'enum';
+  kind: 'string' | 'integer' | 'number' | 'enum' | 'boolean';
   defaultValue?: unknown;
   options?: unknown[];
 }
@@ -1105,6 +1212,8 @@ function parseSchemaProperties(schema: unknown): SchemaPropertyEntry[] {
     let kind: SchemaPropertyEntry['kind'] = 'string';
     if (enumValues && Array.isArray(enumValues)) {
       kind = 'enum';
+    } else if (propObj.type === 'boolean') {
+      kind = 'boolean';
     } else if (propObj.type === 'integer') {
       kind = 'integer';
     } else if (propObj.type === 'number') {
@@ -1129,6 +1238,8 @@ function extractDefaults(schema: unknown): Record<string, unknown> {
   for (const p of props) {
     if (p.defaultValue !== undefined) {
       out[p.name] = p.defaultValue;
+    } else if (p.kind === 'boolean') {
+      out[p.name] = false;
     } else if (p.kind === 'enum' && p.options && p.options.length > 0) {
       out[p.name] = p.options[0];
     }

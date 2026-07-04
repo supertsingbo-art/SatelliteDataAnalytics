@@ -39,6 +39,7 @@ import type {
 } from '@/api/types';
 import { PreprocessConflictPanel } from '@/pages/tasks/components/PreprocessConflictPanel';
 import { ProcessedDataChartPanel } from '@/pages/tasks/components/ProcessedDataChartPanel';
+import { AlgorithmResultsDrawer } from '@/pages/tasks/components/AlgorithmResultsDrawer';
 import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
 import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
 import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
@@ -226,6 +227,9 @@ export function TasksListPage() {
   const [selectedChartParamIds, setSelectedChartParamIds] = useState<string[]>([]);
   const [seriesData, setSeriesData] = useState<TaskProcessedSeries | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
+  const [algoResultsOpen, setAlgoResultsOpen] = useState(false);
+  const [algoResultsTitle, setAlgoResultsTitle] = useState('');
+  const [algoResultsRunId, setAlgoResultsRunId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const enabledReviewOptions = useMemo<OutlierMarkOption[]>(
@@ -503,6 +507,13 @@ export function TasksListPage() {
     setSeriesData(null);
     void loadReviewSummary(row.run_id);
     await loadProcessedData(row.run_id, 1, DATA_DRAWER_PAGE_SIZE);
+  };
+
+  const openAlgorithmResults = (row: TaskListItemV2) => {
+    if (!row.run_id) return;
+    setAlgoResultsTitle(row.job_id ?? row.run_id);
+    setAlgoResultsRunId(row.run_id);
+    setAlgoResultsOpen(true);
   };
 
   const handleDataViewModeChange = (mode: DataViewMode) => {
@@ -957,6 +968,11 @@ export function TasksListPage() {
                     </Button>
                   </Badge>
                 )}
+                {r.can_view_algorithm_results && r.run_id && (
+                  <Button size="small" onClick={() => openAlgorithmResults(r)}>
+                    算法结果
+                  </Button>
+                )}
                 {r.error_code === 'PRE_006' && r.run_id && !r.can_view_data && (
                   <Button size="small" danger onClick={() => openConflictModal(r)}>
                     参数冲突
@@ -1336,6 +1352,16 @@ export function TasksListPage() {
           />
         )}
       </Drawer>
+
+      <AlgorithmResultsDrawer
+        open={algoResultsOpen}
+        title={algoResultsTitle}
+        runId={algoResultsRunId}
+        onClose={() => {
+          setAlgoResultsOpen(false);
+          setAlgoResultsRunId(null);
+        }}
+      />
     </Card>
   );
 }

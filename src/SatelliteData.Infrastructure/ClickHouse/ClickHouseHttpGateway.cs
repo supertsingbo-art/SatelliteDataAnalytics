@@ -70,6 +70,32 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task EnsureAlgoResultTableAsync(CancellationToken cancellationToken)
+    {
+        await ExecuteNonQueryAsync(
+            """
+            CREATE TABLE IF NOT EXISTS algo_result
+            (
+                run_id UUID,
+                node_id String,
+                algorithm_code LowCardinality(String),
+                tasook_no LowCardinality(String),
+                satellite_no LowCardinality(String),
+                test_batch_id LowCardinality(String),
+                window_start DateTime64(3, 'UTC'),
+                window_end DateTime64(3, 'UTC'),
+                metric_name LowCardinality(String),
+                metric_value Float64,
+                detail_json String,
+                created_at DateTime64(3, 'UTC') DEFAULT now64(3)
+            )
+            ENGINE = MergeTree
+            PARTITION BY toYYYYMM(window_start)
+            ORDER BY (run_id, node_id, metric_name)
+            """,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken)
     {
         if (jsonRows.Count == 0) return;
@@ -611,6 +637,85 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
                 """;
             await ExecuteNonQueryAsync(sql, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<IReadOnlyList<AlgorithmResultRow>> QueryAlgorithmResultsAsync(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT
+              node_id,
+              algorithm_code,
+              metric_name,
+              metric_value,
+              detail_json,
+              window_start,
+              window_end,
+              created_at
+            FROM algo_result
+            WHERE run_id = '{runId}'
+            ORDER BY metric_name, node_id
+            FORMAT JSONEachRow
+            """;
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, _baseUri);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authValue);
+        req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+        var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("ClickHouse algo_result query failed {Status}: {Body}", resp.StatusCode, text);
+            return [];
+        }
+
+        var list = new List<AlgorithmResultRow>();
+        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            var nodeId = root.TryGetProperty("node_id", out var nodeEl) ? nodeEl.GetString() ?? "" : "";
+            var algorithmCode = root.TryGetProperty("algorithm_code", out var algoEl) ? algoEl.GetString() ?? "" : "";
+            var metricName = root.TryGetProperty("metric_name", out var nameEl) ? nameEl.GetString() ?? "" : "";
+            if (!root.TryGetProperty("metric_value", out var valueEl) || !valueEl.TryGetDouble(out var metricValue))
+            {
+                continue;
+            }
+
+            var detailJson = root.TryGetProperty("detail_json", out var detailEl) ? detailEl.GetString() ?? "" : "";
+            if (!TryParseTimestamp(root, "window_start", out var windowStart)
+                || !TryParseTimestamp(root, "window_end", out var windowEnd)
+                || !TryParseTimestamp(root, "created_at", out var createdAt))
+            {
+                continue;
+            }
+
+            list.Add(new AlgorithmResultRow(
+                nodeId,
+                algorithmCode,
+                metricName,
+                metricValue,
+                detailJson,
+                windowStart,
+                windowEnd,
+                createdAt));
+        }
+
+        return list;
+    }
+
+    private static bool TryParseTimestamp(JsonElement root, string property, out DateTimeOffset value)
+    {
+        value = default;
+        if (!root.TryGetProperty(property, out var el))
+        {
+            return false;
+        }
+
+        var text = el.GetString();
+        return !string.IsNullOrEmpty(text)
+            && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out value);
     }
 
     private static string BuildMatrixWhereClause(

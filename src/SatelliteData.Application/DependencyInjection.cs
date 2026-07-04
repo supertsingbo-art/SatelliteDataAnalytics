@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<TaskExecutionService>();
         services.AddScoped<TaskRunLifecycleService>();
         services.AddScoped<TaskRunProcessedDataService>();
+        services.AddScoped<AlgorithmResultQueryService>();
         services.AddScoped<OutlierReviewService>();
         services.AddScoped<OutlierMarkConfigService>();
         services.AddSingleton<ITaskRunConflictOptionStore, InMemoryTaskRunConflictOptionStore>();

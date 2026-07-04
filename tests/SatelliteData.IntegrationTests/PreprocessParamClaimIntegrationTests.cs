@@ -856,6 +856,8 @@ public sealed class PreprocessParamClaimIntegrationTests
 
         public Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
+        public Task EnsureAlgoResultTableAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         public Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
@@ -980,5 +982,10 @@ public sealed class PreprocessParamClaimIntegrationTests
             ulong keepVersionFromInclusive,
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task<IReadOnlyList<AlgorithmResultRow>> QueryAlgorithmResultsAsync(
+            Guid runId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AlgorithmResultRow>>(Array.Empty<AlgorithmResultRow>());
     }
 }

@@ -21,6 +21,7 @@ public static class TaskErrorCodes
     public const string NotDeletable = "TASK_NOT_DELETABLE";
     public const string NotReExecutable = "TASK_NOT_REEXECUTABLE";
     public const string NoProcessedData = "TASK_NO_PROCESSED_DATA";
+    public const string NoAlgorithmResults = "TASK_NO_ALGORITHM_RESULTS";
     public const string ValidationFailed = "TASK_VALIDATION_FAILED";
     public const string ExecutionModeInvalid = "TASK_EXECUTION_MODE_INVALID";
     public const string ScheduleTimeRequired = "TASK_SCHEDULE_TIME_REQUIRED";

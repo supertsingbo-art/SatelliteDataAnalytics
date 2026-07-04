@@ -150,6 +150,9 @@ public sealed class BatchedClickHouseGateway : IClickHouseGateway
     public Task EnsureHqParamPointTableAsync(CancellationToken cancellationToken) =>
         _inner.EnsureHqParamPointTableAsync(cancellationToken);
 
+    public Task EnsureAlgoResultTableAsync(CancellationToken cancellationToken) =>
+        _inner.EnsureAlgoResultTableAsync(cancellationToken);
+
     public Task<HqParamPointInsertRow?> QueryLatestPointAsync(
         string tasookNo,
         string satelliteNo,
@@ -266,4 +269,9 @@ public sealed class BatchedClickHouseGateway : IClickHouseGateway
         CancellationToken cancellationToken) =>
         _inner.QueryOutlierPointsForChartAsync(
             tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd, maxOutlierPoints, cancellationToken);
+
+    public Task<IReadOnlyList<AlgorithmResultRow>> QueryAlgorithmResultsAsync(
+        Guid runId,
+        CancellationToken cancellationToken) =>
+        _inner.QueryAlgorithmResultsAsync(runId, cancellationToken);
 }

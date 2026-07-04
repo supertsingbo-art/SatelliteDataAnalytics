@@ -66,4 +66,18 @@ public sealed class InMemoryAlgorithmTemplateRepository : IAlgorithmTemplateRepo
             return Task.CompletedTask;
         }
     }
+
+    public Task DeleteAllByTemplateIdAsync(Guid templateId, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var keys = _templates.Keys.Where(k => k.TemplateId == templateId).ToArray();
+            foreach (var key in keys)
+            {
+                _templates.Remove(key);
+            }
+
+            return Task.CompletedTask;
+        }
+    }
 }
