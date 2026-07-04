@@ -126,7 +126,8 @@ export function ProcessedDataChartPanel({
       smooth: false,
       lineStyle: { width: 1.5, color: LINE_COLORS[index % LINE_COLORS.length] },
       itemStyle: { color: LINE_COLORS[index % LINE_COLORS.length] },
-      data: s.points.map((p) => [parseTs(p.ts), p.value])
+      // value tuple: [ts, avg, min, max, count]
+      data: s.points.map((p) => [parseTs(p.ts), p.value, p.min_value, p.max_value, p.point_count])
     }));
 
     const outlierSeries = {
@@ -163,8 +164,10 @@ export function ProcessedDataChartPanel({
           for (const item of items) {
             const row = item as {
               seriesName?: string;
-              data?: [number, number] | { value?: [number, number]; paramLabel?: string; reviewStatus?: string };
-              value?: [number, number];
+              data?:
+                | [number, number, number, number, number]
+                | { value?: [number, number]; paramLabel?: string; reviewStatus?: string };
+              value?: [number, number, number, number, number];
             };
             if (row.seriesName === '离群点') {
               const payload = row.data as { value?: [number, number]; paramLabel?: string; reviewStatus?: string } | undefined;
@@ -175,9 +178,19 @@ export function ProcessedDataChartPanel({
               );
               continue;
             }
-            const val = Array.isArray(row.data) ? row.data[1] : row.value?.[1];
-            if (val == null) continue;
-            lines.push(`${row.seriesName}：${Number(val).toFixed(4)}`);
+            const tuple = Array.isArray(row.data)
+              ? row.data
+              : Array.isArray(row.value)
+                ? row.value
+                : undefined;
+            const avg = tuple?.[1];
+            if (avg == null) continue;
+            const min = tuple?.[2];
+            const max = tuple?.[3];
+            const count = tuple?.[4];
+            lines.push(
+              `${row.seriesName}：avg ${Number(avg).toFixed(4)}，min ${Number(min ?? avg).toFixed(4)}，max ${Number(max ?? avg).toFixed(4)}，count ${Number(count ?? 0)}`
+            );
           }
           return lines.join('<br/>');
         }

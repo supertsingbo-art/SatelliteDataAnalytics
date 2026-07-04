@@ -221,6 +221,7 @@ export function TasksListPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [outlierSegments, setOutlierSegments] = useState<TaskOutlierSegments | null>(null);
   const [validRanges, setValidRanges] = useState<TaskValidRanges | null>(null);
+  const [chartParamColumns, setChartParamColumns] = useState<TaskProcessedDataColumn[]>([]);
   const [selectedChartParamIds, setSelectedChartParamIds] = useState<string[]>([]);
   const [seriesData, setSeriesData] = useState<TaskProcessedSeries | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -389,6 +390,7 @@ export function TasksListPage() {
     try {
       const data = await tasksApi.getProcessedData(runId, { page, pageSize });
       setProcessedData(data);
+      setChartParamColumns(data.columns);
       setDataPage(data.page);
       setDataPageSize(data.page_size);
     } finally {
@@ -459,6 +461,17 @@ export function TasksListPage() {
           windowEnd
         });
         setSeriesData(data);
+        if (data.series.length > 0) {
+          setChartParamColumns((prev) => {
+            const next = new Map(prev.map((c) => [c.param_id, c] as const));
+            for (const s of data.series) {
+              if (!next.has(s.param_id)) {
+                next.set(s.param_id, { param_id: s.param_id, label: s.label });
+              }
+            }
+            return Array.from(next.values());
+          });
+        }
       } finally {
         setChartLoading(false);
       }
@@ -480,6 +493,7 @@ export function TasksListPage() {
     setReviewStatusFilter('PENDING');
     setOutlierSegments(null);
     setValidRanges(null);
+    setChartParamColumns([]);
     setSelectedChartParamIds([]);
     setSeriesData(null);
     void loadReviewSummary(row.run_id);
@@ -500,7 +514,7 @@ export function TasksListPage() {
       setReviewList(null);
       setOutlierSegments(null);
       setValidRanges(null);
-      const columns = processedData?.columns ?? [];
+      const columns = chartParamColumns;
       const nextParamIds =
         selectedChartParamIds.length > 0
           ? selectedChartParamIds
@@ -1110,6 +1124,7 @@ export function TasksListPage() {
           setReviewSummary(null);
           setOutlierSegments(null);
           setValidRanges(null);
+          setChartParamColumns([]);
           setSelectedChartParamIds([]);
           setSeriesData(null);
         }}
@@ -1246,7 +1261,7 @@ export function TasksListPage() {
         )}
         {dataViewMode === 'chart' && (
           <ProcessedDataChartPanel
-            columns={processedData?.columns ?? []}
+            columns={chartParamColumns}
             seriesData={seriesData}
             loading={chartLoading}
             selectedParamIds={selectedChartParamIds}
