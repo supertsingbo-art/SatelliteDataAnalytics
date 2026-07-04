@@ -300,6 +300,64 @@ public sealed class InMemoryPreprocessParamClaimRepository : IPreprocessParamCla
         }
     }
 
+    public Task<PreprocessParamClaimAcquireResult> ProbeConflictsAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        if (claims.Count == 0)
+        {
+            return Task.FromResult(PreprocessParamClaimAcquireResult.Success);
+        }
+
+        lock (_gate)
+        {
+            var normalized = claims
+                .Where(c => !string.IsNullOrWhiteSpace(c.ParamId) && c.SegmentStart < c.SegmentEnd)
+                .Select(c => c with { ParamId = c.ParamId.Trim() })
+                .ToList();
+
+            var conflicts = new List<PreprocessParamClaimConflict>();
+            foreach (var claim in normalized)
+            {
+                var conflict = _rows.FirstOrDefault(row =>
+                    row.RunId != runId
+                    && string.Equals(row.TasookNo, tasookNo, StringComparison.Ordinal)
+                    && string.Equals(row.SatelliteNo, satelliteNo, StringComparison.Ordinal)
+                    && string.Equals(row.ParamId, claim.ParamId, StringComparison.Ordinal)
+                    && row.Status is ClaimStatus.Active or ClaimStatus.Committed
+                    && claim.SegmentStart < row.SegmentEnd
+                    && claim.SegmentEnd > row.SegmentStart);
+                if (conflict is null)
+                {
+                    continue;
+                }
+
+                if (conflicts.Any(x =>
+                        string.Equals(x.ParamId, claim.ParamId, StringComparison.Ordinal)
+                        && x.ConflictRunId == conflict.RunId))
+                {
+                    continue;
+                }
+
+                conflicts.Add(new PreprocessParamClaimConflict(
+                    claim.ParamId,
+                    conflict.RunId,
+                    conflict.FilterTemplateId,
+                    conflict.FilterTemplateVersion,
+                    conflict.Status == ClaimStatus.Active ? "ACTIVE" : "COMMITTED"));
+            }
+
+            return Task.FromResult(
+                conflicts.Count > 0
+                    ? PreprocessParamClaimAcquireResult.Conflict(conflicts)
+                    : PreprocessParamClaimAcquireResult.Success);
+        }
+    }
+
     public Task MarkCommittedByRunIdAsync(Guid runId, CancellationToken cancellationToken)
     {
         _ = cancellationToken;

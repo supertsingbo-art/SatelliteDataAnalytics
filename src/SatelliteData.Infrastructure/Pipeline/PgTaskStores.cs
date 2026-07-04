@@ -1585,6 +1585,36 @@ public sealed class PgPreprocessParamClaimRepository : IPreprocessParamClaimRepo
         }
     }
 
+    public async Task<PreprocessParamClaimAcquireResult> ProbeConflictsAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken)
+    {
+        var normalized = claims
+            .Where(c => !string.IsNullOrWhiteSpace(c.ParamId) && c.SegmentStart < c.SegmentEnd)
+            .Select(c => c with { ParamId = c.ParamId.Trim() })
+            .OrderBy(c => c.ParamId, StringComparer.Ordinal)
+            .ThenBy(c => c.SegmentStart)
+            .ToArray();
+        if (normalized.Length == 0)
+        {
+            return PreprocessParamClaimAcquireResult.Success;
+        }
+
+        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        await using var conn = new NpgsqlConnection(_cs);
+        await conn.OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await QueryConflictsAsync(
+            conn,
+            runId,
+            tasookNo,
+            satelliteNo,
+            normalized,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task MarkCommittedByRunIdAsync(Guid runId, CancellationToken cancellationToken)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);

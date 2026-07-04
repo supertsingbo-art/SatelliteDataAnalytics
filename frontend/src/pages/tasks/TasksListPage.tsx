@@ -20,7 +20,6 @@ import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { ReloadOutlined } from '@ant-design/icons';
 import { tasksApi } from '@/api/tasks';
-import { parseApiError } from '@/api/client';
 import type {
   OutlierReviewItem,
   OutlierReviewList,
@@ -39,10 +38,8 @@ import type {
 } from '@/api/types';
 import { PreprocessConflictPanel } from '@/pages/tasks/components/PreprocessConflictPanel';
 import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
-import {
-  buildConflictRetryOptions,
-  reExecuteWithConflictPolicy
-} from '@/pages/tasks/utils/preprocessConflictRetry';
+import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
+import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
 
 const { Paragraph, Text } = Typography;
 
@@ -137,7 +134,29 @@ export function TasksListPage() {
   const pendingConflictRunIdsRef = useRef<Set<string>>(new Set());
   const shownConflictRunIdsRef = useRef<Set<string>>(new Set());
 
-  const openConflictModal = (row: TaskListItemV2, forceRetry = false) => {
+  const openConflictModal = (row: TaskListItemV2) => {
+    if (row.can_re_execute && row.run_id) {
+      void runPreprocessWithPreflight({
+        runId: row.run_id,
+        detailHref: taskDetailPath(row.job_type, row.run_id),
+        onOpenTemplate: openTemplateEditor,
+        execute: async (options) => {
+          if (options) {
+            await reExecuteWithConflictPolicy(
+              row.run_id!,
+              options.onCommittedConflict === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
+            );
+          } else {
+            const res = await tasksApi.reExecuteRun(row.run_id!);
+            message.success(`已重新提交执行（${res.display_status}）`);
+          }
+          pendingConflictRunIdsRef.current.add(row.run_id!);
+          await load();
+        }
+      });
+      return;
+    }
+
     void (async () => {
       let details: PreprocessConflictDetail[] | null = null;
       if (row.run_id) {
@@ -149,26 +168,12 @@ export function TasksListPage() {
         }
       }
 
-      const canRetry = Boolean(row.can_re_execute && row.run_id);
       openPreprocessConflictModal({
         errorMsg: row.error_msg,
         conflictDetails: details,
-        canRetry: forceRetry || canRetry,
+        canRetry: false,
         detailHref: row.run_id ? taskDetailPath(row.job_type, row.run_id) : undefined,
-        onOpenTemplate: openTemplateEditor,
-        onRetry:
-          canRetry && row.run_id
-            ? async (policy) => {
-                setExecutingKey(rowKey(row));
-                try {
-                  await reExecuteWithConflictPolicy(row.run_id!, policy);
-                  pendingConflictRunIdsRef.current.add(row.run_id!);
-                  await load();
-                } finally {
-                  setExecutingKey(null);
-                }
-              }
-            : undefined
+        onOpenTemplate: openTemplateEditor
       });
     })();
   };
@@ -182,7 +187,7 @@ export function TasksListPage() {
 
         pendingConflictRunIdsRef.current.delete(row.run_id);
         shownConflictRunIdsRef.current.add(row.run_id);
-        openConflictModal(row, true);
+        openConflictModal(row);
       }
     },
     // openConflictModal closes over load/setExecutingKey — stable enough for list refresh
@@ -294,30 +299,22 @@ export function TasksListPage() {
       if (row.item_type === 'SCHEDULE' && row.schedule_id) {
         await tasksApi.executeSchedule(row.schedule_id);
         message.success('每天定时计划已启用');
+        await load();
       } else if (row.run_id && isImmediateRun(row)) {
-        const res = await tasksApi.executeRun(row.run_id);
-        pendingConflictRunIdsRef.current.add(row.run_id);
-        message.success(`任务已提交执行（${res.display_status}）`);
-      }
-      await load();
-    } catch (error) {
-      const parsed = parseApiError(error);
-      if (parsed?.code === 'PRE_006' && row.run_id) {
-        openPreprocessConflictModal({
-          errorMsg: parsed.message,
-          canRetry: Boolean(row.can_re_execute),
+        await runPreprocessWithPreflight({
+          runId: row.run_id,
           detailHref: taskDetailPath(row.job_type, row.run_id),
           onOpenTemplate: openTemplateEditor,
-          onRetry: row.can_re_execute
-            ? async (policy) => {
-                await tasksApi.executeRun(row.run_id!, buildConflictRetryOptions(policy));
-                pendingConflictRunIdsRef.current.add(row.run_id!);
-                message.success('任务已提交执行');
-                await load();
-              }
-            : undefined
+          execute: async (options) => {
+            const res = await tasksApi.executeRun(row.run_id!, options);
+            pendingConflictRunIdsRef.current.add(row.run_id!);
+            message.success(`任务已提交执行（${res.display_status}）`);
+            await load();
+          }
         });
       }
+    } catch {
+      /* axios 已提示 */
     } finally {
       setExecutingKey(null);
     }
@@ -325,32 +322,28 @@ export function TasksListPage() {
 
   const handleReExecute = async (row: TaskListItemV2) => {
     if (!row.run_id) return;
-    if (row.error_code === 'PRE_006') {
-      openConflictModal(row, true);
-      return;
-    }
-
     setExecutingKey(rowKey(row));
     try {
-      const res = await tasksApi.reExecuteRun(row.run_id);
-      pendingConflictRunIdsRef.current.add(row.run_id);
-      message.success(`已重新提交执行（${res.display_status}）`);
-      await load();
-    } catch (error) {
-      const parsed = parseApiError(error);
-      if (parsed?.code === 'PRE_006') {
-        openPreprocessConflictModal({
-          errorMsg: parsed.message,
-          canRetry: true,
-          detailHref: taskDetailPath(row.job_type, row.run_id),
-          onOpenTemplate: openTemplateEditor,
-          onRetry: async (policy) => {
-            await reExecuteWithConflictPolicy(row.run_id!, policy);
-            pendingConflictRunIdsRef.current.add(row.run_id!);
-            await load();
+      await runPreprocessWithPreflight({
+        runId: row.run_id,
+        detailHref: taskDetailPath(row.job_type, row.run_id),
+        onOpenTemplate: openTemplateEditor,
+        execute: async (options) => {
+          if (options) {
+            await reExecuteWithConflictPolicy(
+              row.run_id!,
+              options.onCommittedConflict === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
+            );
+          } else {
+            const res = await tasksApi.reExecuteRun(row.run_id!);
+            message.success(`已重新提交执行（${res.display_status}）`);
           }
-        });
-      }
+          pendingConflictRunIdsRef.current.add(row.run_id!);
+          await load();
+        }
+      });
+    } catch {
+      /* axios 已提示 */
     } finally {
       setExecutingKey(null);
     }

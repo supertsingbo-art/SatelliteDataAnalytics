@@ -3,6 +3,7 @@ using SatelliteData.Application.Algorithms;
 using SatelliteData.Application.Assets;
 using SatelliteData.Application.Identity;
 using SatelliteData.Application.Integration;
+using SatelliteData.Application.Pipeline;
 using SatelliteData.Application.Tasks;
 using SatelliteData.Application.Templates;
 
@@ -31,6 +32,9 @@ public static class DependencyInjection
 
         services.AddScoped<PreprocessTaskValidator>();
         services.AddScoped<PreprocessConflictReader>();
+        services.AddScoped<PreprocessConflictEnricher>();
+        services.AddScoped<PreprocessClaimPlanner>();
+        services.AddScoped<PreprocessConflictPreflightService>();
         services.AddScoped<TaskListService>();
         services.AddScoped<TaskExecutionService>();
         services.AddScoped<TaskRunLifecycleService>();

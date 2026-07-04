@@ -18,6 +18,7 @@ public sealed class TasksController(
     TaskRunProcessedDataService taskProcessedDataService,
     OutlierReviewService outlierReviewService,
     PreprocessConflictReader conflictReader,
+    PreprocessConflictPreflightService conflictPreflight,
     ITaskRunRepository taskRuns,
     IPreprocessScheduleRepository scheduleRepository,
     IFilterTemplateRepository filterTemplates,
@@ -199,6 +200,39 @@ public sealed class TasksController(
     public sealed record ExecuteRunBody(
         string? OnActiveConflict,
         string? OnCommittedConflict);
+
+    public sealed record PreprocessConflictPreflightResponse(
+        [property: JsonPropertyName("has_conflict")] bool HasConflict,
+        [property: JsonPropertyName("error_code")] string? ErrorCode,
+        [property: JsonPropertyName("message")] string? Message,
+        [property: JsonPropertyName("conflict_details")] IReadOnlyList<PreprocessConflictDetailDto>? ConflictDetails,
+        [property: JsonPropertyName("plan_error_code")] string? PlanErrorCode,
+        [property: JsonPropertyName("plan_error_message")] string? PlanErrorMessage);
+
+    /// <summary>执行前参数时间段冲突预检（只读，不占用参数）。</summary>
+    [HttpGet("{runId:guid}/conflict-preflight")]
+    public async Task<ActionResult<ApiResponse<PreprocessConflictPreflightResponse>>> ConflictPreflight(
+        Guid runId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await conflictPreflight.CheckAsync(runId, cancellationToken).ConfigureAwait(false);
+            return Ok(ApiResponse<PreprocessConflictPreflightResponse>.Ok(
+                new PreprocessConflictPreflightResponse(
+                    result.HasConflict,
+                    result.ErrorCode,
+                    result.Message,
+                    result.ConflictDetails,
+                    result.PlanErrorCode,
+                    result.PlanErrorMessage),
+                HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
 
     [HttpPost("pipeline")]
     public async Task<ActionResult<ApiResponse<AcceptedJobResponse>>> CreatePipeline(

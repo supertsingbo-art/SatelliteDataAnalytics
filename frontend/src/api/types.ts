@@ -472,6 +472,15 @@ export interface PreprocessConflictDetail {
   conflict_filter_template_name?: string | null;
 }
 
+export interface PreprocessConflictPreflight {
+  has_conflict: boolean;
+  error_code?: string | null;
+  message?: string | null;
+  conflict_details?: PreprocessConflictDetail[] | null;
+  plan_error_code?: string | null;
+  plan_error_message?: string | null;
+}
+
 export interface TaskRunDetail {
   run_id: string;
   job_id: string;

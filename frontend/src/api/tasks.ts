@@ -11,6 +11,7 @@ import type {
   OutlierReviewList,
   CompleteOutlierReviewResult,
   TaskProcessedData,
+  PreprocessConflictPreflight,
   TaskRunDetail
 } from './types';
 
@@ -103,6 +104,8 @@ export const tasksApi = {
   listScheduleExecutions: (scheduleId: string) =>
     request<TaskExecutionRecord[]>('get', `${TASKS_BASE}/schedules/${scheduleId}/executions`),
   get: (runId: string) => request<TaskRunDetail>('get', `${TASKS_BASE}/${runId}`),
+  conflictPreflight: (runId: string) =>
+    request<PreprocessConflictPreflight>('get', `${TASKS_BASE}/${runId}/conflict-preflight`),
   cancel: (runId: string) =>
     request<JobAccepted>('post', `${TASKS_BASE}/${runId}/cancel`),
   deleteRun: (runId: string) =>

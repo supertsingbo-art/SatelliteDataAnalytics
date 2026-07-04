@@ -19,7 +19,7 @@ import {
 } from '@/pages/tasks/components/PreprocessSchedulePanel';
 import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
-import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
+import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
 import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
 
 const { Paragraph } = Typography;
@@ -47,14 +47,19 @@ export function PreprocessTasksPage() {
   };
 
   const openConflictRetry = () => {
-    if (!viewRunId || !detail || detail.error_code !== 'PRE_006') return;
-    openPreprocessConflictModal({
-      errorMsg: detail.error_msg,
-      conflictDetails: detail.conflict_details,
-      canRetry: canReExecuteDetail(detail),
+    if (!viewRunId || !detail) return;
+    void runPreprocessWithPreflight({
+      runId: viewRunId,
       onOpenTemplate: openTemplateEditor,
-      onRetry: async (policy) => {
-        await reExecuteWithConflictPolicy(viewRunId, policy);
+      execute: async (options) => {
+        if (options) {
+          await reExecuteWithConflictPolicy(
+            viewRunId,
+            options.onCommittedConflict === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
+          );
+        } else {
+          await tasksApi.reExecuteRun(viewRunId);
+        }
         setPolling(true);
         await refresh();
       }

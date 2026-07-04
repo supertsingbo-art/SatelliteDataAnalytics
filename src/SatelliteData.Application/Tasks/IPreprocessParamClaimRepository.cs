@@ -43,6 +43,14 @@ public interface IPreprocessParamClaimRepository
         IReadOnlyList<PreprocessParamClaimRequest> claims,
         CancellationToken cancellationToken);
 
+    /// <summary>只读探测参数时间段冲突，不写入占位。</summary>
+    Task<PreprocessParamClaimAcquireResult> ProbeConflictsAsync(
+        Guid runId,
+        string tasookNo,
+        string satelliteNo,
+        IReadOnlyList<PreprocessParamClaimRequest> claims,
+        CancellationToken cancellationToken);
+
     Task MarkCommittedByRunIdAsync(Guid runId, CancellationToken cancellationToken);
 
     Task DeleteCommittedOverlapsAsync(
