@@ -1,6 +1,7 @@
-import { Button, Card, Collapse, Form, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Space, Typography, message } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tasksApi } from '@/api/tasks';
+import type { TaskRunDetail } from '@/api/types';
 import {
   PreprocessFormFields,
   parseFilterTemplateKey,
@@ -18,10 +19,20 @@ import {
 } from '@/pages/tasks/components/PreprocessSchedulePanel';
 import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
+import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
+import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
 
 const { Paragraph } = Typography;
 
 const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function canReExecuteDetail(d: TaskRunDetail): boolean {
+  return (
+    d.job_type === 'PREPROCESS' &&
+    ['Failed', 'Succeeded', 'Timeout', 'Cancelled'].includes(d.status) &&
+    (d.execution_mode === 'IMMEDIATE' || d.execution_mode == null)
+  );
+}
 
 export function PreprocessTasksPage() {
   const [form] = Form.useForm();
@@ -30,6 +41,25 @@ export function PreprocessTasksPage() {
   const urlRunId = searchParams.get('runId');
   const viewRunId = urlRunId && runIdPattern.test(urlRunId) ? urlRunId : null;
   const { detail, loading, setPolling, refresh } = useTaskRunDetail(viewRunId);
+
+  const openTemplateEditor = (templateId: string, version: number) => {
+    window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
+  };
+
+  const openConflictRetry = () => {
+    if (!viewRunId || !detail || detail.error_code !== 'PRE_006') return;
+    openPreprocessConflictModal({
+      errorMsg: detail.error_msg,
+      conflictDetails: detail.conflict_details,
+      canRetry: canReExecuteDetail(detail),
+      onOpenTemplate: openTemplateEditor,
+      onRetry: async (policy) => {
+        await reExecuteWithConflictPolicy(viewRunId, policy);
+        setPolling(true);
+        await refresh();
+      }
+    });
+  };
 
   return (
     <Card
@@ -47,11 +77,16 @@ export function PreprocessTasksPage() {
       {viewRunId && (
         <>
           <TaskDetailCard detail={detail} loading={loading} />
-          <div style={{ marginTop: 8 }}>
+          <Space style={{ marginTop: 8 }} wrap>
             <Button onClick={() => void refresh()} loading={loading}>
               刷新状态
             </Button>
-          </div>
+            {detail?.error_code === 'PRE_006' && detail && canReExecuteDetail(detail) && (
+              <Button type="primary" danger onClick={openConflictRetry}>
+                选择策略并重复执行
+              </Button>
+            )}
+          </Space>
         </>
       )}
 

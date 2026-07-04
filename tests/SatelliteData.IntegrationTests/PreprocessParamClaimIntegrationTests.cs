@@ -351,6 +351,234 @@ public sealed class PreprocessParamClaimIntegrationTests
         Assert.Equal("PRE-OCCUPY-001", conflict.ConflictJobId);
     }
 
+    [Fact]
+    public async Task PreprocessPipeline_WhenCommittedConflictAndOverwritePolicy_Succeeds()
+    {
+        var taskRuns = new InMemoryTaskRunRepository();
+        var taskEvents = new InMemoryTaskEventRepository();
+        var filterTemplates = new InMemoryFilterTemplateRepository();
+        var assetCache = new InMemoryAssetCacheRepository();
+        var paramClaims = new InMemoryPreprocessParamClaimRepository();
+        var outlierSegments = new InMemoryPreprocessOutlierSegmentRepository();
+        var outlierReviews = new InMemoryPreprocessOutlierPointReviewRepository();
+        var hqMetadata = new InMemoryHqParamMetadataRepository();
+        var scheduler = new FakeScheduler();
+        var conflictOptionStore = new InMemoryTaskRunConflictOptionStore();
+
+        var groupRepo = new InMemorySatelliteGroupRepository();
+        var memberRepo = new InMemorySatelliteGroupMemberRepository();
+        var groupService = new SatelliteGroupService(groupRepo, memberRepo);
+        var validator = new PreprocessTaskValidator(assetCache, filterTemplates, groupService);
+        var scheduleService = new PreprocessScheduleService(
+            new InMemoryPreprocessScheduleRepository(),
+            taskRuns,
+            taskEvents,
+            scheduler,
+            validator,
+            NullLogger<PreprocessScheduleService>.Instance);
+
+        var pipeline = new PreprocessPipeline(
+            taskRuns,
+            taskEvents,
+            filterTemplates,
+            assetCache,
+            new MongoConnectionPool(assetCache),
+            new FilterRuleEvaluator(NullLogger<FilterRuleEvaluator>.Instance),
+            new FakeMongoPkgSeriesReader(),
+            new FakeMongoRawSeriesReader(),
+            new FakeConditionHistoryProvider(),
+            new ConditionRangeEvaluator(NullLogger<ConditionRangeEvaluator>.Instance),
+            new DefaultOutlierDetector(),
+            new FakeClickHouseGateway(),
+            hqMetadata,
+            paramClaims,
+            outlierSegments,
+            outlierReviews,
+            new InMemoryPreprocessValidRangeRepository(),
+            conflictOptionStore,
+            scheduleService,
+            scheduler,
+            Options.Create(new PipelineOptions { ClickHouseBatchSize = 100 }),
+            NullLogger<PreprocessPipeline>.Instance);
+
+        var templateId = Guid.NewGuid();
+        var runId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var config = ParseJson(
+            """
+            {
+              "scope": { "referenceTasookNo": "TASK-A", "referenceSatelliteNo": "SAT-001" },
+              "timeWindow": { "mode": "CUSTOM" },
+              "conditionConfig": {
+                "instructions": { "startCommands": [], "endCommands": [] },
+                "parameters": [],
+                "expression": ""
+              },
+              "durationSeconds": 0,
+              "targetParams": [
+                {
+                  "paramId": "1001",
+                  "outlier": { "method": "SIGMA", "sigma": 3 }
+                }
+              ]
+            }
+            """);
+
+        await filterTemplates.SaveAsync(
+            new FilterTemplate(
+                templateId,
+                1,
+                "冲突模板测试",
+                TemplateStatus.Published,
+                Guid.NewGuid(),
+                config,
+                null,
+                null,
+                now,
+                null,
+                now,
+                now),
+            CancellationToken.None);
+
+        await assetCache.UpsertSatelliteAsync(
+            new SatelliteCache(
+                "TASK-A",
+                "TASK-A",
+                "SAT-001",
+                "SAT-001",
+                null,
+                new MongoConnectionInfo("mongodb://localhost:27017", "db", null),
+                "v1",
+                now,
+                1,
+                0,
+                true,
+                ParseJson("{}")),
+            CancellationToken.None);
+        await assetCache.UpsertParametersAsync(
+            [
+                new ParamCache(
+                    "TASK-A",
+                    "SAT-001",
+                    1001,
+                    "P1001",
+                    "电压监测",
+                    "double",
+                    null,
+                    null,
+                    null,
+                    null,
+                    1,
+                    "v1",
+                    now,
+                    ParseJson("{}"))
+            ],
+            CancellationToken.None);
+
+        await taskRuns.InsertAsync(
+            new TaskRun(
+                runId,
+                null,
+                "PRE-TEST-OVERWRITE",
+                TaskJobType.Preprocess,
+                TaskTriggerType.Api,
+                TaskRunStatus.Queued,
+                "idem-overwrite",
+                "TASK-A",
+                "SAT-001",
+                "自定义时间段",
+                now,
+                now.AddMinutes(10),
+                templateId,
+                1,
+                null,
+                null,
+                null,
+                null,
+                0m,
+                "queued",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                now),
+            CancellationToken.None);
+
+        var conflictTemplateId = Guid.NewGuid();
+        var conflictRunId = Guid.NewGuid();
+        await filterTemplates.SaveAsync(
+            new FilterTemplate(
+                conflictTemplateId,
+                2,
+                "占用模板",
+                TemplateStatus.Published,
+                Guid.NewGuid(),
+                config,
+                null,
+                null,
+                now,
+                null,
+                now,
+                now),
+            CancellationToken.None);
+        await taskRuns.InsertAsync(
+            new TaskRun(
+                conflictRunId,
+                null,
+                "PRE-OCCUPY-001",
+                TaskJobType.Preprocess,
+                TaskTriggerType.Api,
+                TaskRunStatus.Succeeded,
+                "idem-conflict",
+                "TASK-A",
+                "SAT-001",
+                "自定义时间段",
+                now,
+                now.AddMinutes(10),
+                conflictTemplateId,
+                2,
+                null,
+                null,
+                null,
+                null,
+                100m,
+                "done",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                now),
+            CancellationToken.None);
+
+        var occupy = await paramClaims.TryAcquireAsync(
+            conflictRunId,
+            "TASK-A",
+            "SAT-001",
+            conflictTemplateId,
+            2,
+            [new PreprocessParamClaimRequest("1001", now, now.AddMinutes(10))],
+            CancellationToken.None);
+        Assert.True(occupy.Acquired);
+        await paramClaims.MarkCommittedByRunIdAsync(conflictRunId, CancellationToken.None);
+
+        conflictOptionStore.Set(
+            runId,
+            new PreprocessConflictHandlingOptions(
+                ActiveConflictHandling.Skip,
+                CommittedConflictHandling.Overwrite));
+
+        await pipeline.ExecuteAsync(runId, CancellationToken.None);
+
+        var succeeded = await taskRuns.GetByRunIdAsync(runId, CancellationToken.None);
+        Assert.NotNull(succeeded);
+        Assert.Equal(TaskRunStatus.Succeeded, succeeded!.Status);
+        Assert.Null(succeeded.ErrorCode);
+    }
+
     private static JsonElement ParseJson(string json)
     {
         using var document = JsonDocument.Parse(json);

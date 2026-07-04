@@ -37,10 +37,12 @@ import type {
   TaskValidRangeItem,
   PreprocessConflictDetail
 } from '@/api/types';
+import { PreprocessConflictPanel } from '@/pages/tasks/components/PreprocessConflictPanel';
+import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
 import {
-  PreprocessConflictPanel,
-  formatConflictStatus
-} from '@/pages/tasks/components/PreprocessConflictPanel';
+  buildConflictRetryOptions,
+  reExecuteWithConflictPolicy
+} from '@/pages/tasks/utils/preprocessConflictRetry';
 
 const { Paragraph, Text } = Typography;
 
@@ -132,7 +134,10 @@ export function TasksListPage() {
     window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
   };
 
-  const openConflictModal = (row: TaskListItemV2) => {
+  const pendingConflictRunIdsRef = useRef<Set<string>>(new Set());
+  const shownConflictRunIdsRef = useRef<Set<string>>(new Set());
+
+  const openConflictModal = (row: TaskListItemV2, forceRetry = false) => {
     void (async () => {
       let details: PreprocessConflictDetail[] | null = null;
       if (row.run_id) {
@@ -144,69 +149,46 @@ export function TasksListPage() {
         }
       }
 
-      Modal.warning({
-        title: '参数时间段冲突',
-        okText: '知道了',
-        width: 560,
-        content: (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <PreprocessConflictPanel
-              errorMsg={row.error_msg}
-              conflictDetails={details}
-              onOpenTemplate={openTemplateEditor}
-            />
-            {row.run_id && (
-              <Link to={taskDetailPath(row.job_type, row.run_id)}>查看任务详情</Link>
-            )}
-          </Space>
-        )
+      const canRetry = Boolean(row.can_re_execute && row.run_id);
+      openPreprocessConflictModal({
+        errorMsg: row.error_msg,
+        conflictDetails: details,
+        canRetry: forceRetry || canRetry,
+        detailHref: row.run_id ? taskDetailPath(row.job_type, row.run_id) : undefined,
+        onOpenTemplate: openTemplateEditor,
+        onRetry:
+          canRetry && row.run_id
+            ? async (policy) => {
+                setExecutingKey(rowKey(row));
+                try {
+                  await reExecuteWithConflictPolicy(row.run_id!, policy);
+                  pendingConflictRunIdsRef.current.add(row.run_id!);
+                  await load();
+                } finally {
+                  setExecutingKey(null);
+                }
+              }
+            : undefined
       });
     })();
   };
 
-  const showPre006Conflict = (
-    rawMessage: string,
-    retryWithPolicy?: (policy: 'OVERWRITE' | 'SKIP') => Promise<void>
-  ) => {
-    const conflictPanel = (
-      <PreprocessConflictPanel errorMsg={rawMessage} onOpenTemplate={openTemplateEditor} compact />
-    );
+  const maybePromptConflictAfterExecute = useCallback(
+    (rows: TaskListItemV2[]) => {
+      for (const row of rows) {
+        if (!row.run_id || row.error_code !== 'PRE_006') continue;
+        if (!pendingConflictRunIdsRef.current.has(row.run_id)) continue;
+        if (shownConflictRunIdsRef.current.has(row.run_id)) continue;
 
-    if (retryWithPolicy) {
-      Modal.confirm({
-        title: '参数时间段冲突',
-        okText: '覆盖已完成冲突并继续',
-        cancelText: '跳过冲突参数并继续',
-        onOk: async () => {
-          await retryWithPolicy('OVERWRITE');
-        },
-        onCancel: async () => {
-          await retryWithPolicy('SKIP');
-        },
-        content: (
-          <Space direction="vertical" size={8}>
-            <Text>检测到参数时间段冲突，请按下列规则选择处理策略：</Text>
-            <Text>
-              1) <Text strong>执行中冲突（状态：{formatConflictStatus('ACTIVE')}）</Text>：只能跳过，不支持覆盖。
-            </Text>
-            <Text>
-              2) <Text strong>已完成冲突（状态：{formatConflictStatus('COMMITTED')}）</Text>：可覆盖或跳过。
-            </Text>
-            {conflictPanel}
-            <Text type="secondary">关闭弹窗表示暂不处理（可等待，或先取消冲突任务后再重试）。</Text>
-          </Space>
-        )
-      });
-      return;
-    }
-
-    Modal.warning({
-      title: '参数时间段冲突',
-      okText: '知道了',
-      width: 560,
-      content: conflictPanel
-    });
-  };
+        pendingConflictRunIdsRef.current.delete(row.run_id);
+        shownConflictRunIdsRef.current.add(row.run_id);
+        openConflictModal(row, true);
+      }
+    },
+    // openConflictModal closes over load/setExecutingKey — stable enough for list refresh
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   const [rows, setRows] = useState<TaskListItemV2[]>([]);
   const [loading, setLoading] = useState(false);
@@ -257,10 +239,11 @@ export function TasksListPage() {
     try {
       const data = await tasksApi.list({ pageSize: 100 });
       setRows(data);
+      maybePromptConflictAfterExecute(data);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [maybePromptConflictAfterExecute]);
 
   useEffect(() => {
     void load();
@@ -313,20 +296,26 @@ export function TasksListPage() {
         message.success('每天定时计划已启用');
       } else if (row.run_id && isImmediateRun(row)) {
         const res = await tasksApi.executeRun(row.run_id);
+        pendingConflictRunIdsRef.current.add(row.run_id);
         message.success(`任务已提交执行（${res.display_status}）`);
       }
       await load();
     } catch (error) {
       const parsed = parseApiError(error);
-      if (parsed?.code === 'PRE_006') {
-        showPre006Conflict(parsed.message, async (policy) => {
-          if (!row.run_id) return;
-          const res = await tasksApi.executeRun(row.run_id, {
-            onActiveConflict: 'SKIP',
-            onCommittedConflict: policy
-          });
-          message.success(`任务已提交执行（${res.display_status}）`);
-          await load();
+      if (parsed?.code === 'PRE_006' && row.run_id) {
+        openPreprocessConflictModal({
+          errorMsg: parsed.message,
+          canRetry: Boolean(row.can_re_execute),
+          detailHref: taskDetailPath(row.job_type, row.run_id),
+          onOpenTemplate: openTemplateEditor,
+          onRetry: row.can_re_execute
+            ? async (policy) => {
+                await tasksApi.executeRun(row.run_id!, buildConflictRetryOptions(policy));
+                pendingConflictRunIdsRef.current.add(row.run_id!);
+                message.success('任务已提交执行');
+                await load();
+              }
+            : undefined
         });
       }
     } finally {
@@ -336,22 +325,30 @@ export function TasksListPage() {
 
   const handleReExecute = async (row: TaskListItemV2) => {
     if (!row.run_id) return;
+    if (row.error_code === 'PRE_006') {
+      openConflictModal(row, true);
+      return;
+    }
+
     setExecutingKey(rowKey(row));
     try {
       const res = await tasksApi.reExecuteRun(row.run_id);
+      pendingConflictRunIdsRef.current.add(row.run_id);
       message.success(`已重新提交执行（${res.display_status}）`);
       await load();
     } catch (error) {
       const parsed = parseApiError(error);
       if (parsed?.code === 'PRE_006') {
-        showPre006Conflict(parsed.message, async (policy) => {
-          if (!row.run_id) return;
-          const res = await tasksApi.reExecuteRun(row.run_id, {
-            onActiveConflict: 'SKIP',
-            onCommittedConflict: policy
-          });
-          message.success(`已重新提交执行（${res.display_status}）`);
-          await load();
+        openPreprocessConflictModal({
+          errorMsg: parsed.message,
+          canRetry: true,
+          detailHref: taskDetailPath(row.job_type, row.run_id),
+          onOpenTemplate: openTemplateEditor,
+          onRetry: async (policy) => {
+            await reExecuteWithConflictPolicy(row.run_id!, policy);
+            pendingConflictRunIdsRef.current.add(row.run_id!);
+            await load();
+          }
         });
       }
     } finally {
