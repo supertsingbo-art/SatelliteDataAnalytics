@@ -94,6 +94,39 @@ public sealed class TasksController(
         [property: JsonPropertyName("page")] int Page,
         [property: JsonPropertyName("page_size")] int PageSize);
 
+    public sealed record SeriesBucketPointResponse(
+        [property: JsonPropertyName("ts")] string Ts,
+        [property: JsonPropertyName("min_value")] double MinValue,
+        [property: JsonPropertyName("max_value")] double MaxValue,
+        [property: JsonPropertyName("value")] double Value,
+        [property: JsonPropertyName("point_count")] long PointCount);
+
+    public sealed record ParamSeriesResponse(
+        [property: JsonPropertyName("param_id")] string ParamId,
+        [property: JsonPropertyName("label")] string Label,
+        [property: JsonPropertyName("points")] IReadOnlyList<SeriesBucketPointResponse> Points,
+        [property: JsonPropertyName("raw_point_count")] long RawPointCount);
+
+    public sealed record SeriesOutlierPointResponse(
+        [property: JsonPropertyName("param_id")] string ParamId,
+        [property: JsonPropertyName("param_label")] string ParamLabel,
+        [property: JsonPropertyName("ts")] string Ts,
+        [property: JsonPropertyName("value")] double Value,
+        [property: JsonPropertyName("is_outlier")] bool IsOutlier,
+        [property: JsonPropertyName("is_confirmed_outlier")] bool IsConfirmedOutlier,
+        [property: JsonPropertyName("review_status")] string? ReviewStatus);
+
+    public sealed record TaskProcessedSeriesResponse(
+        [property: JsonPropertyName("run_id")] Guid RunId,
+        [property: JsonPropertyName("window_start")] string WindowStart,
+        [property: JsonPropertyName("window_end")] string WindowEnd,
+        [property: JsonPropertyName("max_points")] int MaxPoints,
+        [property: JsonPropertyName("bucket_seconds")] int BucketSeconds,
+        [property: JsonPropertyName("series")] IReadOnlyList<ParamSeriesResponse> Series,
+        [property: JsonPropertyName("outliers")] IReadOnlyList<SeriesOutlierPointResponse> Outliers,
+        [property: JsonPropertyName("outliers_truncated")] bool OutliersTruncated,
+        [property: JsonPropertyName("outliers_total")] long OutliersTotal);
+
     public sealed record TaskOutlierPointItemResponse(
         [property: JsonPropertyName("review_id")] Guid ReviewId,
         [property: JsonPropertyName("param_id")] string ParamId,
@@ -506,6 +539,37 @@ public sealed class TasksController(
         }
     }
 
+    [HttpGet("{runId:guid}/processed-series")]
+    public async Task<ActionResult<ApiResponse<TaskProcessedSeriesResponse>>> GetProcessedSeries(
+        Guid runId,
+        [FromQuery] string? paramIds,
+        [FromQuery] DateTimeOffset? windowStart,
+        [FromQuery] DateTimeOffset? windowEnd,
+        [FromQuery] int maxPoints = TaskRunProcessedDataService.DefaultSeriesMaxPoints,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var parsedParamIds = string.IsNullOrWhiteSpace(paramIds)
+                ? null
+                : paramIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var data = await taskProcessedDataService
+                .GetProcessedSeriesAsync(runId, parsedParamIds, windowStart, windowEnd, maxPoints, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(ApiResponse<TaskProcessedSeriesResponse>.Ok(ToProcessedSeriesResponse(data), HttpContext));
+        }
+        catch (TaskValidationException ex) when (ex.ErrorCode == TaskErrorCodes.NotFound)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+    }
+
     [HttpGet("{runId:guid}/outlier-reviews/summary")]
     public async Task<ActionResult<ApiResponse<OutlierReviewSummaryResponse>>> GetOutlierReviewSummary(
         Guid runId,
@@ -905,6 +969,34 @@ public sealed class TasksController(
             d.Total,
             d.Page,
             d.PageSize);
+
+    private static TaskProcessedSeriesResponse ToProcessedSeriesResponse(TaskProcessedSeriesDto d) =>
+        new(
+            d.RunId,
+            d.WindowStart,
+            d.WindowEnd,
+            d.MaxPoints,
+            d.BucketSeconds,
+            d.Series.Select(s => new ParamSeriesResponse(
+                s.ParamId,
+                s.Label,
+                s.Points.Select(p => new SeriesBucketPointResponse(
+                    p.Ts,
+                    p.MinValue,
+                    p.MaxValue,
+                    p.Value,
+                    p.PointCount)).ToArray(),
+                s.RawPointCount)).ToArray(),
+            d.Outliers.Select(o => new SeriesOutlierPointResponse(
+                o.ParamId,
+                o.ParamLabel,
+                o.Ts,
+                o.Value,
+                o.IsOutlier,
+                o.IsConfirmedOutlier,
+                o.ReviewStatus)).ToArray(),
+            d.OutliersTruncated,
+            d.OutliersTotal);
 
     private static TaskOutlierPointsResponse ToOutlierPointsResponse(TaskOutlierPointsDto d) =>
         new(

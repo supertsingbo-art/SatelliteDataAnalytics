@@ -16,6 +16,11 @@ public sealed class TaskRunProcessedDataService(
 {
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 200;
+    public const int DefaultSeriesMaxPoints = 3000;
+    public const int MinSeriesMaxPoints = 500;
+    public const int MaxSeriesMaxPoints = 5000;
+    public const int MaxSeriesParams = 8;
+    public const int MaxOutlierPointsForChart = 10_000;
 
     public async Task<TaskProcessedDataDto> GetProcessedDataAsync(
         Guid runId,
@@ -172,6 +177,163 @@ public sealed class TaskRunProcessedDataService(
             .ToArray();
 
         return new TaskValidRangesDto(runId, items, items.Length);
+    }
+
+    public async Task<TaskProcessedSeriesDto> GetProcessedSeriesAsync(
+        Guid runId,
+        IReadOnlyList<string>? paramIds,
+        DateTimeOffset? windowStart,
+        DateTimeOffset? windowEnd,
+        int maxPoints,
+        CancellationToken cancellationToken)
+    {
+        var ctx = await LoadQueryContextAsync(runId, cancellationToken).ConfigureAwait(false);
+        var safeMaxPoints = Math.Clamp(maxPoints, MinSeriesMaxPoints, MaxSeriesMaxPoints);
+        var effectiveWindowStart = windowStart ?? ctx.WindowStart;
+        var effectiveWindowEnd = windowEnd ?? ctx.WindowEnd;
+        if (effectiveWindowEnd < effectiveWindowStart)
+        {
+            throw new TaskValidationException(TaskErrorCodes.NoProcessedData, "时间窗无效：结束时间早于开始时间");
+        }
+
+        var selectedParamIds = ResolveSeriesParamIds(paramIds, ctx.ParamIds);
+        var bucketSeconds = ProcessedSeriesBucketCalculator.ComputeBucketSeconds(
+            effectiveWindowStart,
+            effectiveWindowEnd,
+            safeMaxPoints);
+
+        var reviews = await outlierReviews.ListByRunIdAsync(runId, cancellationToken).ConfigureAwait(false);
+        var reviewByKey = reviews.ToDictionary(
+            r => ReviewCellKey(r.ParamId, r.Ts),
+            r => r.ReviewStatus,
+            StringComparer.Ordinal);
+
+        var series = new List<ParamSeriesDto>(selectedParamIds.Count);
+        foreach (var paramId in selectedParamIds)
+        {
+            ctx.Parameters.TryGetValue(paramId, out var param);
+            var rawPointCount = await clickHouse.CountParamPointsInWindowAsync(
+                ctx.Run.TasookNo,
+                ctx.Run.SatelliteNo,
+                ctx.TestBatchId,
+                paramId,
+                effectiveWindowStart,
+                effectiveWindowEnd,
+                cancellationToken).ConfigureAwait(false);
+            var buckets = await clickHouse.QueryAggregatedSeriesAsync(
+                ctx.Run.TasookNo,
+                ctx.Run.SatelliteNo,
+                ctx.TestBatchId,
+                paramId,
+                effectiveWindowStart,
+                effectiveWindowEnd,
+                bucketSeconds,
+                cancellationToken).ConfigureAwait(false);
+            var points = buckets
+                .Select(b => new SeriesBucketPointDto(
+                    b.Ts.ToString("O"),
+                    b.MinValue,
+                    b.MaxValue,
+                    b.AvgValue,
+                    b.PointCount))
+                .ToList();
+            series.Add(new ParamSeriesDto(
+                paramId,
+                param?.DisplayLabel ?? paramId,
+                points,
+                rawPointCount));
+        }
+
+        var outliersTotal = await clickHouse.CountOutlierPointsAsync(
+            ctx.Run.TasookNo,
+            ctx.Run.SatelliteNo,
+            ctx.TestBatchId,
+            selectedParamIds,
+            effectiveWindowStart,
+            effectiveWindowEnd,
+            null,
+            cancellationToken).ConfigureAwait(false);
+        var outlierRows = outliersTotal == 0
+            ? []
+            : await clickHouse.QueryOutlierPointsForChartAsync(
+                ctx.Run.TasookNo,
+                ctx.Run.SatelliteNo,
+                ctx.TestBatchId,
+                selectedParamIds,
+                effectiveWindowStart,
+                effectiveWindowEnd,
+                MaxOutlierPointsForChart,
+                cancellationToken).ConfigureAwait(false);
+        var outliers = outlierRows
+            .Select(pt =>
+            {
+                ctx.Parameters.TryGetValue(pt.ParamId, out var p);
+                reviewByKey.TryGetValue(ReviewCellKey(pt.ParamId, pt.Ts), out var reviewStatus);
+                return new SeriesOutlierPointDto(
+                    pt.ParamId,
+                    p?.DisplayLabel ?? pt.ParamId,
+                    pt.Ts.ToString("O"),
+                    pt.Value,
+                    pt.IsOutlier,
+                    pt.IsConfirmedOutlier,
+                    reviewStatus);
+            })
+            .ToList();
+
+        return new TaskProcessedSeriesDto(
+            runId,
+            effectiveWindowStart.ToString("O"),
+            effectiveWindowEnd.ToString("O"),
+            safeMaxPoints,
+            bucketSeconds,
+            series,
+            outliers,
+            outliersTotal > MaxOutlierPointsForChart,
+            outliersTotal);
+    }
+
+    private static IReadOnlyList<string> ResolveSeriesParamIds(
+        IReadOnlyList<string>? paramIds,
+        IReadOnlyList<string> allowedParamIds)
+    {
+        if (allowedParamIds.Count == 0)
+        {
+            return [];
+        }
+
+        if (paramIds is null || paramIds.Count == 0)
+        {
+            throw new TaskValidationException(TaskErrorCodes.NoProcessedData, "请至少选择一个参数");
+        }
+
+        var distinct = paramIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (distinct.Count == 0)
+        {
+            throw new TaskValidationException(TaskErrorCodes.NoProcessedData, "请至少选择一个参数");
+        }
+
+        if (distinct.Count > MaxSeriesParams)
+        {
+            throw new TaskValidationException(
+                TaskErrorCodes.NoProcessedData,
+                $"每次最多选择 {MaxSeriesParams} 个参数");
+        }
+
+        foreach (var paramId in distinct)
+        {
+            if (!allowedParamIds.Contains(paramId, StringComparer.Ordinal))
+            {
+                throw new TaskValidationException(
+                    TaskErrorCodes.NoProcessedData,
+                    $"参数不在本任务目标列表中：{paramId}");
+            }
+        }
+
+        return distinct;
     }
 
     private static string? NormalizeReviewStatusFilter(string? status)

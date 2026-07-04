@@ -33,10 +33,12 @@ import type {
   TaskProcessedData,
   TaskProcessedDataCell,
   TaskProcessedDataColumn,
+  TaskProcessedSeries,
   TaskValidRangeItem,
   PreprocessConflictDetail
 } from '@/api/types';
 import { PreprocessConflictPanel } from '@/pages/tasks/components/PreprocessConflictPanel';
+import { ProcessedDataChartPanel } from '@/pages/tasks/components/ProcessedDataChartPanel';
 import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
 import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
 import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
@@ -121,7 +123,7 @@ function reviewedCount(summary: OutlierReviewSummary | null): number {
   return (summary.confirmed_count ?? 0) + (summary.jitter_count ?? 0);
 }
 
-type DataViewMode = 'all' | 'outlier-points' | 'outlier-segments' | 'valid-ranges';
+type DataViewMode = 'all' | 'chart' | 'outlier-points' | 'outlier-segments' | 'valid-ranges';
 
 const DATA_DRAWER_TABLE_SCROLL_Y = 'calc(100vh - 330px)';
 const DATA_DRAWER_PAGE_SIZE = 100;
@@ -219,6 +221,9 @@ export function TasksListPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [outlierSegments, setOutlierSegments] = useState<TaskOutlierSegments | null>(null);
   const [validRanges, setValidRanges] = useState<TaskValidRanges | null>(null);
+  const [selectedChartParamIds, setSelectedChartParamIds] = useState<string[]>([]);
+  const [seriesData, setSeriesData] = useState<TaskProcessedSeries | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const enabledReviewOptions = useMemo<OutlierMarkOption[]>(
@@ -440,6 +445,27 @@ export function TasksListPage() {
     }
   }, []);
 
+  const loadProcessedSeries = useCallback(
+    async (runId: string, paramIds: string[], windowStart?: string, windowEnd?: string) => {
+      if (paramIds.length === 0) {
+        setSeriesData(null);
+        return;
+      }
+      setChartLoading(true);
+      try {
+        const data = await tasksApi.getProcessedSeries(runId, {
+          paramIds,
+          windowStart,
+          windowEnd
+        });
+        setSeriesData(data);
+      } finally {
+        setChartLoading(false);
+      }
+    },
+    []
+  );
+
   const openProcessedData = async (row: TaskListItemV2) => {
     if (!row.run_id) return;
     setDataTitle(row.job_id ?? row.run_id);
@@ -454,6 +480,8 @@ export function TasksListPage() {
     setReviewStatusFilter('PENDING');
     setOutlierSegments(null);
     setValidRanges(null);
+    setSelectedChartParamIds([]);
+    setSeriesData(null);
     void loadReviewSummary(row.run_id);
     await loadProcessedData(row.run_id, 1, DATA_DRAWER_PAGE_SIZE);
   };
@@ -466,24 +494,61 @@ export function TasksListPage() {
       setReviewList(null);
       setOutlierSegments(null);
       setValidRanges(null);
+      setSeriesData(null);
       void loadProcessedData(dataRunId, 1, dataPageSize);
+    } else if (mode === 'chart') {
+      setReviewList(null);
+      setOutlierSegments(null);
+      setValidRanges(null);
+      const columns = processedData?.columns ?? [];
+      const nextParamIds =
+        selectedChartParamIds.length > 0
+          ? selectedChartParamIds
+          : columns.length > 0
+            ? [columns[0].param_id]
+            : [];
+      if (nextParamIds.length > 0 && selectedChartParamIds.length === 0) {
+        setSelectedChartParamIds(nextParamIds);
+      }
+      void loadReviewSummary(dataRunId);
+      void loadProcessedSeries(dataRunId, nextParamIds);
     } else if (mode === 'outlier-points') {
       setProcessedData(null);
       setOutlierSegments(null);
       setValidRanges(null);
+      setSeriesData(null);
       void loadReviewSummary(dataRunId);
       void loadOutlierReviews(dataRunId, 1, dataPageSize, reviewStatusFilter);
     } else if (mode === 'outlier-segments') {
       setProcessedData(null);
       setReviewList(null);
       setValidRanges(null);
+      setSeriesData(null);
       void loadOutlierSegments(dataRunId);
     } else {
       setProcessedData(null);
       setReviewList(null);
       setOutlierSegments(null);
+      setSeriesData(null);
       void loadValidRanges(dataRunId);
     }
+  };
+
+  const handleChartParamChange = (paramIds: string[]) => {
+    setSelectedChartParamIds(paramIds);
+    if (dataRunId) {
+      void loadProcessedSeries(
+        dataRunId,
+        paramIds,
+        seriesData?.window_start,
+        seriesData?.window_end
+      );
+    }
+  };
+
+  const handleChartWindowChange = (windowStart: string, windowEnd: string) => {
+    if (!dataRunId || selectedChartParamIds.length === 0) return;
+    void loadProcessedSeries(dataRunId, selectedChartParamIds, windowStart, windowEnd);
   };
 
   const handleDataPageChange = (page: number, pageSize: number) => {
@@ -1045,6 +1110,8 @@ export function TasksListPage() {
           setReviewSummary(null);
           setOutlierSegments(null);
           setValidRanges(null);
+          setSelectedChartParamIds([]);
+          setSeriesData(null);
         }}
         width="90%"
         styles={{
@@ -1059,11 +1126,17 @@ export function TasksListPage() {
             onChange={(v) => handleDataViewModeChange(v as DataViewMode)}
             options={[
               { label: '全部数据（矩阵）', value: 'all' },
+              { label: '曲线视图', value: 'chart' },
               { label: '离群点清单', value: 'outlier-points' },
               { label: '离群时间段', value: 'outlier-segments' },
               { label: '有效时间段', value: 'valid-ranges' }
             ]}
           />
+          {dataViewMode === 'chart' && (
+            <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              主曲线为时间桶聚合（默认最多 3000 桶）；离群点为视窗内全量散点。缩放图表将缩小查询时间窗并重新加载。
+            </Paragraph>
+          )}
           {dataViewMode === 'all' && processedData && processedData.total > 0 && (
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
               共 {processedData.total} 个时间点，当前第 {processedData.page} 页（每页 {processedData.page_size}{' '}
@@ -1169,6 +1242,17 @@ export function TasksListPage() {
               onChange: (page, pageSize) => handleDataPageChange(page, pageSize)
             }}
             size="small"
+          />
+        )}
+        {dataViewMode === 'chart' && (
+          <ProcessedDataChartPanel
+            columns={processedData?.columns ?? []}
+            seriesData={seriesData}
+            loading={chartLoading}
+            selectedParamIds={selectedChartParamIds}
+            onSelectedParamIdsChange={handleChartParamChange}
+            onWindowChange={handleChartWindowChange}
+            reviewOptions={reviewSummary?.mark_options}
           />
         )}
         {dataViewMode === 'outlier-points' && (

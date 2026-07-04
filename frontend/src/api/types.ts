@@ -591,6 +591,43 @@ export interface TaskProcessedData {
   page_size: number;
 }
 
+export interface SeriesBucketPoint {
+  ts: string;
+  min_value: number;
+  max_value: number;
+  value: number;
+  point_count: number;
+}
+
+export interface ParamSeries {
+  param_id: string;
+  label: string;
+  points: SeriesBucketPoint[];
+  raw_point_count: number;
+}
+
+export interface SeriesOutlierPoint {
+  param_id: string;
+  param_label: string;
+  ts: string;
+  value: number;
+  is_outlier: boolean;
+  is_confirmed_outlier: boolean;
+  review_status?: string | null;
+}
+
+export interface TaskProcessedSeries {
+  run_id: string;
+  window_start: string;
+  window_end: string;
+  max_points: number;
+  bucket_seconds: number;
+  series: ParamSeries[];
+  outliers: SeriesOutlierPoint[];
+  outliers_truncated: boolean;
+  outliers_total: number;
+}
+
 export interface TaskOutlierPointItem {
   review_id: string;
   param_id: string;

@@ -362,6 +362,114 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         return QueryHqParamPointsFromSqlAsync(sql, cancellationToken);
     }
 
+    public Task<long> CountParamPointsInWindowAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken)
+    {
+        var ws = ToUtcTimestampLiteral(windowStart);
+        var we = ToUtcTimestampLiteral(windowEnd);
+        var sql = $"""
+            SELECT count() AS cnt
+            FROM (
+              SELECT ts
+              FROM hq_param_point
+              WHERE tasook_no = '{Escape(tasookNo)}'
+                AND satellite_no = '{Escape(satelliteNo)}'
+                AND test_batch_id = '{Escape(testBatchId)}'
+                AND param_id = '{Escape(paramId)}'
+                AND ts >= parseDateTime64BestEffort('{ws}')
+                AND ts <= parseDateTime64BestEffort('{we}')
+              GROUP BY ts
+            )
+            """;
+        return ExecuteScalarLongAsync(sql, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<AggregatedSeriesPoint>> QueryAggregatedSeriesAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int bucketSeconds,
+        CancellationToken cancellationToken)
+    {
+        var safeBucketSeconds = Math.Max(1, bucketSeconds);
+        var filter = BuildMatrixWhereClause(
+            tasookNo,
+            satelliteNo,
+            testBatchId,
+            [paramId],
+            windowStart,
+            windowEnd);
+        var sql = $"""
+            SELECT
+              toStartOfInterval(ts, INTERVAL {safeBucketSeconds} SECOND) AS bucket_ts,
+              min(v) AS min_value,
+              max(v) AS max_value,
+              avg(v) AS avg_value,
+              count() AS point_count
+            FROM (
+              SELECT ts, argMax(processed_value, version) AS v
+              FROM hq_param_point
+              WHERE {filter}
+              GROUP BY ts
+            ) AS deduped
+            GROUP BY bucket_ts
+            ORDER BY bucket_ts
+            FORMAT JSONEachRow
+            """;
+        return QueryAggregatedSeriesFromSqlAsync(sql, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsForChartAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int maxOutlierPoints,
+        CancellationToken cancellationToken)
+    {
+        if (paramIds.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyList<HqParamPointRow>>([]);
+        }
+
+        var safeLimit = Math.Clamp(maxOutlierPoints, 1, 100_000);
+        var filter = BuildOutlierWhereClause(
+            tasookNo,
+            satelliteNo,
+            testBatchId,
+            paramIds,
+            windowStart,
+            windowEnd,
+            null);
+        var sql = $"""
+            SELECT
+              param_id,
+              ts,
+              argMax(processed_value, version) AS processed_value,
+              argMax(is_outlier, version) AS is_outlier,
+              argMax(is_confirmed_outlier, version) AS is_confirmed_outlier
+            FROM hq_param_point
+            WHERE {filter}
+            GROUP BY param_id, ts
+            HAVING is_outlier = 1
+            ORDER BY ts ASC, param_id ASC
+            LIMIT {safeLimit}
+            FORMAT JSONEachRow
+            """;
+        return QueryHqParamPointsFromSqlAsync(sql, cancellationToken);
+    }
+
     public async Task<HqParamPointInsertRow?> QueryLatestPointAsync(
         string tasookNo,
         string satelliteNo,
@@ -605,6 +713,44 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
         }
 
         return 0;
+    }
+
+    private async Task<IReadOnlyList<AggregatedSeriesPoint>> QueryAggregatedSeriesFromSqlAsync(
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, _baseUri);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", _authValue);
+        req.Content = new StringContent(sql, Encoding.UTF8, "text/plain");
+        var resp = await _http.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var text = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("ClickHouse aggregated series query failed {Status}: {Body}", resp.StatusCode, text);
+            return [];
+        }
+
+        var list = new List<AggregatedSeriesPoint>();
+        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("bucket_ts", out var tsEl)) continue;
+            var tsStr = tsEl.GetString();
+            if (string.IsNullOrEmpty(tsStr)) continue;
+            if (!DateTimeOffset.TryParse(tsStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var ts))
+            {
+                continue;
+            }
+
+            if (!root.TryGetProperty("min_value", out var minEl) || !minEl.TryGetDouble(out var minValue)) continue;
+            if (!root.TryGetProperty("max_value", out var maxEl) || !maxEl.TryGetDouble(out var maxValue)) continue;
+            if (!root.TryGetProperty("avg_value", out var avgEl) || !avgEl.TryGetDouble(out var avgValue)) continue;
+            if (!root.TryGetProperty("point_count", out var countEl) || !countEl.TryGetInt64(out var pointCount)) continue;
+            list.Add(new AggregatedSeriesPoint(ts, minValue, maxValue, avgValue, pointCount));
+        }
+
+        return list;
     }
 
     private async Task<IReadOnlyList<HqParamPointRow>> QueryHqParamPointsFromSqlAsync(

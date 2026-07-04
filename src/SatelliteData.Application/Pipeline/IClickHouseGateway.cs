@@ -95,6 +95,38 @@ public interface IClickHouseGateway
         int pageSize,
         CancellationToken cancellationToken);
 
+    /// <summary>单参数在视窗内的原始点数（按 ts 去重后计数，用于曲线视图说明）。</summary>
+    Task<long> CountParamPointsInWindowAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken);
+
+    /// <summary>时间桶聚合曲线（确定性降采样，非随机抽样）。</summary>
+    Task<IReadOnlyList<AggregatedSeriesPoint>> QueryAggregatedSeriesAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int bucketSeconds,
+        CancellationToken cancellationToken);
+
+    /// <summary>视窗内离群点全量（不桶聚合），按 ts 排序并限制条数。</summary>
+    Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsForChartAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int maxOutlierPoints,
+        CancellationToken cancellationToken);
+
     Task DeleteByClaimsAsync(
         string tasookNo,
         string satelliteNo,
@@ -103,6 +135,13 @@ public interface IClickHouseGateway
         ulong keepVersionFromInclusive,
         CancellationToken cancellationToken);
 }
+
+public sealed record AggregatedSeriesPoint(
+    DateTimeOffset Ts,
+    double MinValue,
+    double MaxValue,
+    double AvgValue,
+    long PointCount);
 
 public sealed record HqParamPointRow(
     string ParamId,

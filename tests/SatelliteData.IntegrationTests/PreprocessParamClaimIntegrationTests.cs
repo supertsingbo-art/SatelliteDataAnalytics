@@ -941,6 +941,37 @@ public sealed class PreprocessParamClaimIntegrationTests
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<HqParamPointRow>>(Array.Empty<HqParamPointRow>());
 
+        public Task<long> CountParamPointsInWindowAsync(
+            string tasookNo,
+            string satelliteNo,
+            string testBatchId,
+            string paramId,
+            DateTimeOffset windowStart,
+            DateTimeOffset windowEnd,
+            CancellationToken cancellationToken) => Task.FromResult(0L);
+
+        public Task<IReadOnlyList<AggregatedSeriesPoint>> QueryAggregatedSeriesAsync(
+            string tasookNo,
+            string satelliteNo,
+            string testBatchId,
+            string paramId,
+            DateTimeOffset windowStart,
+            DateTimeOffset windowEnd,
+            int bucketSeconds,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AggregatedSeriesPoint>>(Array.Empty<AggregatedSeriesPoint>());
+
+        public Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsForChartAsync(
+            string tasookNo,
+            string satelliteNo,
+            string testBatchId,
+            IReadOnlyList<string> paramIds,
+            DateTimeOffset windowStart,
+            DateTimeOffset windowEnd,
+            int maxOutlierPoints,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<HqParamPointRow>>(Array.Empty<HqParamPointRow>());
+
         public Task DeleteByClaimsAsync(
             string tasookNo,
             string satelliteNo,

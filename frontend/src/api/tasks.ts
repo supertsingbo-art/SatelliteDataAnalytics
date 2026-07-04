@@ -11,6 +11,7 @@ import type {
   OutlierReviewList,
   CompleteOutlierReviewResult,
   TaskProcessedData,
+  TaskProcessedSeries,
   PreprocessConflictPreflight,
   TaskRunDetail
 } from './types';
@@ -116,6 +117,21 @@ export const tasksApi = {
     request<TaskProcessedData>('get', `${TASKS_BASE}/${runId}/processed-data`, undefined, {
       page: params?.page ?? 1,
       pageSize: params?.pageSize ?? 50
+    } as Record<string, unknown>),
+  getProcessedSeries: (
+    runId: string,
+    params: {
+      paramIds: string[];
+      windowStart?: string;
+      windowEnd?: string;
+      maxPoints?: number;
+    }
+  ) =>
+    request<TaskProcessedSeries>('get', `${TASKS_BASE}/${runId}/processed-series`, undefined, {
+      paramIds: params.paramIds.join(','),
+      ...(params.windowStart ? { windowStart: params.windowStart } : {}),
+      ...(params.windowEnd ? { windowEnd: params.windowEnd } : {}),
+      ...(params.maxPoints != null ? { maxPoints: params.maxPoints } : {})
     } as Record<string, unknown>),
   getOutlierPoints: (runId: string, params?: { page?: number; pageSize?: number; paramId?: string; status?: string }) =>
     request<TaskOutlierPoints>('get', `${TASKS_BASE}/${runId}/outlier-points`, undefined, {

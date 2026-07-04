@@ -62,3 +62,36 @@ public sealed record TaskValidRangesDto(
     Guid RunId,
     IReadOnlyList<TaskValidRangeItemDto> Items,
     int Total);
+
+public sealed record SeriesBucketPointDto(
+    string Ts,
+    double MinValue,
+    double MaxValue,
+    double Value,
+    long PointCount);
+
+public sealed record ParamSeriesDto(
+    string ParamId,
+    string Label,
+    IReadOnlyList<SeriesBucketPointDto> Points,
+    long RawPointCount);
+
+public sealed record SeriesOutlierPointDto(
+    string ParamId,
+    string ParamLabel,
+    string Ts,
+    double Value,
+    bool IsOutlier,
+    bool IsConfirmedOutlier,
+    string? ReviewStatus);
+
+public sealed record TaskProcessedSeriesDto(
+    Guid RunId,
+    string WindowStart,
+    string WindowEnd,
+    int MaxPoints,
+    int BucketSeconds,
+    IReadOnlyList<ParamSeriesDto> Series,
+    IReadOnlyList<SeriesOutlierPointDto> Outliers,
+    bool OutliersTruncated,
+    long OutliersTotal);

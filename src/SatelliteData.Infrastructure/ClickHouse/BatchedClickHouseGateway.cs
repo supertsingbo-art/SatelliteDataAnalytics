@@ -231,4 +231,39 @@ public sealed class BatchedClickHouseGateway : IClickHouseGateway
         CancellationToken cancellationToken) =>
         _inner.QueryOutlierPointsPageAsync(
             tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd, paramIdFilter, page, pageSize, cancellationToken);
+
+    public Task<long> CountParamPointsInWindowAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        CancellationToken cancellationToken) =>
+        _inner.CountParamPointsInWindowAsync(
+            tasookNo, satelliteNo, testBatchId, paramId, windowStart, windowEnd, cancellationToken);
+
+    public Task<IReadOnlyList<AggregatedSeriesPoint>> QueryAggregatedSeriesAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        string paramId,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int bucketSeconds,
+        CancellationToken cancellationToken) =>
+        _inner.QueryAggregatedSeriesAsync(
+            tasookNo, satelliteNo, testBatchId, paramId, windowStart, windowEnd, bucketSeconds, cancellationToken);
+
+    public Task<IReadOnlyList<HqParamPointRow>> QueryOutlierPointsForChartAsync(
+        string tasookNo,
+        string satelliteNo,
+        string testBatchId,
+        IReadOnlyList<string> paramIds,
+        DateTimeOffset windowStart,
+        DateTimeOffset windowEnd,
+        int maxOutlierPoints,
+        CancellationToken cancellationToken) =>
+        _inner.QueryOutlierPointsForChartAsync(
+            tasookNo, satelliteNo, testBatchId, paramIds, windowStart, windowEnd, maxOutlierPoints, cancellationToken);
 }
