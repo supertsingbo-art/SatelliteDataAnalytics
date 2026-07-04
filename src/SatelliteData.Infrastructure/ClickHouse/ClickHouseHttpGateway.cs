@@ -440,6 +440,14 @@ public sealed class ClickHouseHttpGateway : IClickHouseGateway
             version);
     }
 
+    public Task InsertHqParamPointsAsync(
+        IReadOnlyList<HqParamPointInsertRow> rows,
+        CancellationToken cancellationToken) =>
+        InsertReviewedPointVersionsAsync(rows, cancellationToken);
+
+    /// <summary>HTTP 网关无内部缓冲，Flush 为空操作（攒批由 <see cref="BatchedClickHouseGateway"/> 承担）。</summary>
+    public Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public async Task InsertReviewedPointVersionsAsync(
         IReadOnlyList<HqParamPointInsertRow> rows,
         CancellationToken cancellationToken)

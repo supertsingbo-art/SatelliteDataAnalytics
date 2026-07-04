@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -401,7 +400,9 @@ public sealed class PreprocessPipeline(
 
             ulong versionCounter = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var writeVersionFloorExclusive = versionCounter + 1;
-            var buffer = new List<string>();
+            var buffer = new List<HqParamPointInsertRow>();
+            var gatewayPushInterval = TimeSpan.FromMilliseconds(Math.Max(1, opt.ClickHouseBatchFlushIntervalMs));
+            var lastGatewayPushAt = DateTimeOffset.UtcNow;
             var allOutlierSegments = new List<PreprocessOutlierSegment>();
             var allOutlierReviews = new List<PreprocessOutlierPointReview>();
             var now = DateTimeOffset.UtcNow;
@@ -451,20 +452,17 @@ public sealed class PreprocessPipeline(
                     }
 
                     versionCounter++;
-                    var row = new Dictionary<string, object?>
-                    {
-                        ["tasook_no"] = run.TasookNo,
-                        ["satellite_no"] = run.SatelliteNo,
-                        ["test_batch_id"] = warehouseBatchLabel,
-                        ["param_id"] = spec.ParamId,
-                        ["ts"] = points[i].Ts.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
-                        ["raw_value"] = points[i].Value,
-                        ["processed_value"] = points[i].Value,
-                        ["is_outlier"] = flags[i],
-                        ["is_confirmed_outlier"] = 0,
-                        ["version"] = versionCounter
-                    };
-                    buffer.Add(JsonSerializer.Serialize(row));
+                    buffer.Add(new HqParamPointInsertRow(
+                        run.TasookNo,
+                        run.SatelliteNo,
+                        warehouseBatchLabel,
+                        spec.ParamId,
+                        points[i].Ts,
+                        points[i].Value,
+                        points[i].Value,
+                        flags[i],
+                        0,
+                        versionCounter));
                     if (flags[i] != 0)
                     {
                         allOutlierReviews.Add(new PreprocessOutlierPointReview(
@@ -483,12 +481,14 @@ public sealed class PreprocessPipeline(
                             now));
                     }
 
-                    if (buffer.Count >= opt.ClickHouseBatchSize)
+                    if (buffer.Count >= opt.ClickHouseBatchSize
+                        || DateTimeOffset.UtcNow - lastGatewayPushAt >= gatewayPushInterval)
                     {
                         await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
                             .ConfigureAwait(false);
-                        await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
+                        await clickHouse.InsertHqParamPointsAsync(buffer, cancellationToken);
                         buffer.Clear();
+                        lastGatewayPushAt = DateTimeOffset.UtcNow;
                     }
                 }
 
@@ -526,8 +526,13 @@ public sealed class PreprocessPipeline(
             {
                 await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken)
                     .ConfigureAwait(false);
-                await clickHouse.InsertJsonEachRowAsync("hq_param_point", buffer, cancellationToken);
+                await clickHouse.InsertHqParamPointsAsync(buffer, cancellationToken);
+                buffer.Clear();
             }
+
+            // 攒批屏障：确保本次写入的所有高精度点已落盘，
+            // 再执行“提交占位 / 覆盖删除旧版本 / 标记成功 / 调度算法”，保证版本时序与下游读一致性。
+            await clickHouse.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             if (allOutlierReviews.Count > 0)
             {

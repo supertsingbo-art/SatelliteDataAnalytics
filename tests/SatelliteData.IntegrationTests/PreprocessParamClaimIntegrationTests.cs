@@ -377,6 +377,11 @@ public sealed class PreprocessParamClaimIntegrationTests
         public Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
+        public Task InsertHqParamPointsAsync(IReadOnlyList<HqParamPointInsertRow> rows, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         public Task<HqParamPointInsertRow?> QueryLatestPointAsync(
             string tasookNo,
             string satelliteNo,

@@ -21,5 +21,12 @@ public sealed class PipelineOptions
     /// <summary>指令历史 Mongo 集合名（默认与海量/AIRTP 一致）。</summary>
     public string MongoInstructionCollection { get; init; } = "IndicatorCollection";
 
+    /// <summary>预处理管道在本地累积多少行后向网关推送一次（限制单次内存占用）。</summary>
     public int ClickHouseBatchSize { get; init; } = 100_000;
+
+    /// <summary>网关攒批行数阈值：缓冲达到该行数立即刷写（默认 1 万行）。</summary>
+    public int ClickHouseBatchRowThreshold { get; init; } = 10_000;
+
+    /// <summary>网关攒批时间阈值（毫秒）：最旧缓冲行超过该时长即刷写（默认 1 秒）。</summary>
+    public int ClickHouseBatchFlushIntervalMs { get; init; } = 1000;
 }

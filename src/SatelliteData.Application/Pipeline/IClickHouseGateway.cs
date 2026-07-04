@@ -10,6 +10,12 @@ public interface IClickHouseGateway
 
     Task InsertJsonEachRowAsync(string tableName, IReadOnlyList<string> jsonRows, CancellationToken cancellationToken);
 
+    /// <summary>攒批写入 <c>hq_param_point</c>（累积到阈值或超时后由网关统一刷写）。</summary>
+    Task InsertHqParamPointsAsync(IReadOnlyList<HqParamPointInsertRow> rows, CancellationToken cancellationToken);
+
+    /// <summary>将网关内部尚未刷写的攒批数据强制落盘（关键屏障：删除旧版本 / 任务成功前必须调用）。</summary>
+    Task FlushAsync(CancellationToken cancellationToken);
+
     /// <summary>查询单点最新版本（ReplacingMergeTree 按 version 降序）。</summary>
     Task<HqParamPointInsertRow?> QueryLatestPointAsync(
         string tasookNo,

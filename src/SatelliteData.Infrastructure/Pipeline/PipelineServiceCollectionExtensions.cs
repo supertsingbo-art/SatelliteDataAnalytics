@@ -16,7 +16,11 @@ public static class PipelineServiceCollectionExtensions
     public static IServiceCollection AddSatellitePipeline(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<PipelineOptions>(configuration.GetSection(PipelineOptions.SectionName));
-        services.AddSingleton<IClickHouseGateway, ClickHouseHttpGateway>();
+        services.AddSingleton<ClickHouseHttpGateway>();
+        services.AddSingleton<ClickHouseBulkWriter>();
+        services.AddSingleton<BatchedClickHouseGateway>();
+        services.AddSingleton<IClickHouseGateway>(sp => sp.GetRequiredService<BatchedClickHouseGateway>());
+        services.AddHostedService<ClickHouseBatchFlushHostedService>();
         services.AddSingleton<IMongoRawSeriesReader, MongoRawSeriesReader>();
         services.AddSingleton<IMongoPkgSeriesReader, MongoPkgSeriesReader>();
         services.AddSingleton<IMongoInstructionSeriesReader, MongoInstructionSeriesReader>();
