@@ -222,6 +222,7 @@ export function TasksListPage() {
   const [outlierSegments, setOutlierSegments] = useState<TaskOutlierSegments | null>(null);
   const [validRanges, setValidRanges] = useState<TaskValidRanges | null>(null);
   const [chartParamColumns, setChartParamColumns] = useState<TaskProcessedDataColumn[]>([]);
+  const [chartRootWindow, setChartRootWindow] = useState<{ start: string; end: string } | null>(null);
   const [selectedChartParamIds, setSelectedChartParamIds] = useState<string[]>([]);
   const [seriesData, setSeriesData] = useState<TaskProcessedSeries | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -461,6 +462,9 @@ export function TasksListPage() {
           windowEnd
         });
         setSeriesData(data);
+        if (!windowStart && !windowEnd) {
+          setChartRootWindow({ start: data.window_start, end: data.window_end });
+        }
         if (data.series.length > 0) {
           setChartParamColumns((prev) => {
             const next = new Map(prev.map((c) => [c.param_id, c] as const));
@@ -494,6 +498,7 @@ export function TasksListPage() {
     setOutlierSegments(null);
     setValidRanges(null);
     setChartParamColumns([]);
+    setChartRootWindow(null);
     setSelectedChartParamIds([]);
     setSeriesData(null);
     void loadReviewSummary(row.run_id);
@@ -1125,6 +1130,7 @@ export function TasksListPage() {
           setOutlierSegments(null);
           setValidRanges(null);
           setChartParamColumns([]);
+          setChartRootWindow(null);
           setSelectedChartParamIds([]);
           setSeriesData(null);
         }}
@@ -1263,6 +1269,7 @@ export function TasksListPage() {
           <ProcessedDataChartPanel
             columns={chartParamColumns}
             seriesData={seriesData}
+            rootWindow={chartRootWindow}
             loading={chartLoading}
             selectedParamIds={selectedChartParamIds}
             onSelectedParamIdsChange={handleChartParamChange}

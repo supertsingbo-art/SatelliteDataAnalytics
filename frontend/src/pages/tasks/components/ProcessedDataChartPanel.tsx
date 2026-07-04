@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Alert, Checkbox, Space, Typography } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
@@ -47,6 +47,8 @@ function formatWindowLabel(value: string): string {
 export interface ProcessedDataChartPanelProps {
   columns: TaskProcessedDataColumn[];
   seriesData: TaskProcessedSeries | null;
+  /** 任务全量时间窗；缩放百分比始终相对此范围计算，便于放大后再缩小回全量。 */
+  rootWindow?: { start: string; end: string } | null;
   loading: boolean;
   selectedParamIds: string[];
   onSelectedParamIdsChange: (ids: string[]) => void;
@@ -54,9 +56,23 @@ export interface ProcessedDataChartPanelProps {
   reviewOptions?: OutlierMarkOption[];
 }
 
+function readZoomBoundary(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = parseTs(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  if (value instanceof Date) {
+    const parsed = value.getTime();
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
 export function ProcessedDataChartPanel({
   columns,
   seriesData,
+  rootWindow,
   loading,
   selectedParamIds,
   onSelectedParamIdsChange,
@@ -65,6 +81,18 @@ export function ProcessedDataChartPanel({
 }: ProcessedDataChartPanelProps) {
   const zoomTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chartRef = useRef<ReactECharts | null>(null);
+  const lastRequestedWindowRef = useRef<{ start: string; end: string } | null>(null);
+
+  useEffect(() => {
+    if (!seriesData) {
+      lastRequestedWindowRef.current = null;
+      return;
+    }
+    lastRequestedWindowRef.current = {
+      start: seriesData.window_start,
+      end: seriesData.window_end
+    };
+  }, [seriesData?.window_start, seriesData?.window_end]);
 
   const reviewOptionByCode = useMemo(() => {
     const map: Record<string, OutlierMarkOption> = {};
@@ -90,25 +118,30 @@ export function ProcessedDataChartPanel({
   };
 
   const scheduleWindowRefetch = useCallback(
-    (startPercent: number, endPercent: number) => {
+    (startMs: number, endMs: number) => {
       if (!seriesData) return;
-      const fullStart = parseTs(seriesData.window_start);
-      const fullEnd = parseTs(seriesData.window_end);
-      if (Number.isNaN(fullStart) || Number.isNaN(fullEnd) || fullEnd <= fullStart) return;
 
-      const span = fullEnd - fullStart;
-      const nextStart = new Date(fullStart + (span * startPercent) / 100);
-      const nextEnd = new Date(fullStart + (span * endPercent) / 100);
-      if (nextEnd.getTime() - nextStart.getTime() < 1000) return;
+      const rootStartMs = parseTs(rootWindow?.start ?? seriesData.window_start);
+      const rootEndMs = parseTs(rootWindow?.end ?? seriesData.window_end);
+      if (Number.isNaN(rootStartMs) || Number.isNaN(rootEndMs) || rootEndMs <= rootStartMs) return;
+
+      const clampedStart = Math.max(rootStartMs, Math.min(startMs, endMs));
+      const clampedEnd = Math.min(rootEndMs, Math.max(startMs, endMs));
+      if (clampedEnd - clampedStart < 1000) return;
+
+      const nextStartIso = new Date(clampedStart).toISOString();
+      const nextEndIso = new Date(clampedEnd).toISOString();
+      const last = lastRequestedWindowRef.current;
+      if (last?.start === nextStartIso && last?.end === nextEndIso) return;
 
       if (zoomTimerRef.current) {
         clearTimeout(zoomTimerRef.current);
       }
       zoomTimerRef.current = setTimeout(() => {
-        onWindowChange(nextStart.toISOString(), nextEnd.toISOString());
+        onWindowChange(nextStartIso, nextEndIso);
       }, 300);
     },
-    [onWindowChange, seriesData]
+    [onWindowChange, rootWindow, seriesData]
   );
 
   const chartOption = useMemo((): EChartsOption => {
@@ -117,6 +150,11 @@ export function ProcessedDataChartPanel({
         title: { text: '请选择参数', left: 'center', top: 'middle', textStyle: { color: '#999', fontSize: 14 } }
       };
     }
+
+    const rootStartMs = parseTs(rootWindow?.start ?? seriesData.window_start);
+    const rootEndMs = parseTs(rootWindow?.end ?? seriesData.window_end);
+    const queryStartMs = parseTs(seriesData.window_start);
+    const queryEndMs = parseTs(seriesData.window_end);
 
     const legendNames = seriesData.series.map((s) => s.label);
     const lineSeries = seriesData.series.map((s, index) => ({
@@ -198,35 +236,67 @@ export function ProcessedDataChartPanel({
       legend: { data: [...legendNames, '离群点'], top: 24, type: 'scroll' },
       xAxis: {
         type: 'time',
-        min: parseTs(seriesData.window_start),
-        max: parseTs(seriesData.window_end)
+        min: rootStartMs,
+        max: rootEndMs
       },
       yAxis: { type: 'value', scale: true },
       dataZoom: [
-        { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
-        { type: 'slider', xAxisIndex: 0, height: 24, bottom: 8, filterMode: 'none' }
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          filterMode: 'none',
+          startValue: queryStartMs,
+          endValue: queryEndMs
+        },
+        {
+          type: 'slider',
+          xAxisIndex: 0,
+          height: 24,
+          bottom: 8,
+          filterMode: 'none',
+          startValue: queryStartMs,
+          endValue: queryEndMs
+        }
       ],
       series: [...lineSeries, outlierSeries]
     };
-  }, [reviewOptionByCode, seriesData]);
+  }, [reviewOptionByCode, rootWindow, seriesData]);
 
   const onEvents = useMemo(
     () => ({
       datazoom: () => {
         const chart = chartRef.current?.getEchartsInstance();
         if (!chart || !seriesData) return;
-        const option = chart.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> };
+        const option = chart.getOption() as {
+          dataZoom?: Array<{ startValue?: unknown; endValue?: unknown; start?: number; end?: number }>;
+        };
         const zoom = option.dataZoom?.[0];
-        if (zoom?.start == null || zoom?.end == null) return;
-        scheduleWindowRefetch(zoom.start, zoom.end);
+        if (!zoom) return;
+
+        let startMs = readZoomBoundary(zoom.startValue);
+        let endMs = readZoomBoundary(zoom.endValue);
+        if (startMs == null || endMs == null) {
+          if (zoom.start == null || zoom.end == null) return;
+          const rootStartMs = parseTs(rootWindow?.start ?? seriesData.window_start);
+          const rootEndMs = parseTs(rootWindow?.end ?? seriesData.window_end);
+          if (Number.isNaN(rootStartMs) || Number.isNaN(rootEndMs) || rootEndMs <= rootStartMs) return;
+          const span = rootEndMs - rootStartMs;
+          startMs = rootStartMs + (span * zoom.start) / 100;
+          endMs = rootStartMs + (span * zoom.end) / 100;
+        }
+        scheduleWindowRefetch(startMs, endMs);
       }
     }),
-    [scheduleWindowRefetch, seriesData]
+    [rootWindow, scheduleWindowRefetch, seriesData]
   );
 
   const summaryText = seriesData
-    ? `视窗 ${formatWindowLabel(seriesData.window_start)} ~ ${formatWindowLabel(seriesData.window_end)}；离群点 ${seriesData.outliers.length}/${seriesData.outliers_total}（橙=待复核，红=已确认离群，绿=已确认非离群）`
-    : '勾选同量纲参数后加载曲线；缩放视窗将重新查询更细分辨率。';
+    ? `查询视窗 ${formatWindowLabel(seriesData.window_start)} ~ ${formatWindowLabel(seriesData.window_end)}${
+        rootWindow
+          ? `（全量 ${formatWindowLabel(rootWindow.start)} ~ ${formatWindowLabel(rootWindow.end)}）`
+          : ''
+      }；离群点 ${seriesData.outliers.length}/${seriesData.outliers_total}（橙=待复核，红=已确认离群，绿=已确认非离群）`
+    : '勾选同量纲参数后加载曲线；缩放视窗将重新查询更细分辨率，拖大 slider 可恢复全量视窗。';
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="small">
