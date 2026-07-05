@@ -1,4 +1,4 @@
-import { Button, Card, Collapse, Form, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Space, Typography, message } from 'antd';
 import { Link, useSearchParams } from 'react-router-dom';
 import { tasksApi } from '@/api/tasks';
 import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
@@ -10,8 +10,14 @@ import {
   CUSTOM_PHASE,
   CUSTOM_TIME_DISPLAY_NAME
 } from '@/pages/tasks/components/PreprocessWindowFields';
-import { timeRangeToWindowIso } from '@/pages/tasks/components/PreprocessFormFields';
+import {
+  parseFilterTemplateKey,
+  timeRangeToWindowIso
+} from '@/pages/tasks/components/PreprocessFormFields';
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
+import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
+import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
+import { canReExecuteTaskDetail } from '@/pages/tasks/utils/taskReExecute';
 
 const { Paragraph } = Typography;
 
@@ -24,6 +30,30 @@ export function PipelineTasksPage() {
   const viewRunId = urlRunId && runIdPattern.test(urlRunId) ? urlRunId : null;
   const { detail, loading, setPolling, refresh } = useTaskRunDetail(viewRunId);
 
+  const openTemplateEditor = (templateId: string, version: number) => {
+    window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
+  };
+
+  const openConflictRetry = () => {
+    if (!viewRunId || !detail) return;
+    void runPreprocessWithPreflight({
+      runId: viewRunId,
+      onOpenTemplate: openTemplateEditor,
+      execute: async (options) => {
+        if (options) {
+          await reExecuteWithConflictPolicy(
+            viewRunId,
+            options.onCommittedConflict === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
+          );
+        } else {
+          await tasksApi.reExecuteRun(viewRunId);
+        }
+        setPolling(true);
+        await refresh();
+      }
+    });
+  };
+
   return (
     <Card
       title={viewRunId ? 'PIPELINE 任务详情' : '任务编排（PIPELINE）'}
@@ -34,18 +64,23 @@ export function PipelineTasksPage() {
       }
     >
       <Paragraph type="secondary">
-        调用内部 <code>/api/v1/tasks/pipeline</code> 创建任务；须选择已发布算法模板，筛选模板仍使用系统默认。
-        需后端 Hangfire 与 ClickHouse 可用。从任务列表「详情」进入可查看完整任务信息并自动刷新进度。
+        创建 PIPELINE 任务：须选择已发布算法模板；可选启用筛选模板执行预处理（数据与元数据落盘后再运行算法），
+        或不启用预处理、直接读取 ClickHouse 已有数据运行算法。需后端 Hangfire 与 ClickHouse 可用。
       </Paragraph>
 
       {viewRunId && (
         <>
           <TaskDetailCard detail={detail} loading={loading} />
-          <div style={{ marginTop: 8 }}>
+          <Space style={{ marginTop: 8 }} wrap>
             <Button onClick={() => void refresh()} loading={loading}>
               刷新状态
             </Button>
-          </div>
+            {detail?.error_code === 'PRE_006' && detail && canReExecuteTaskDetail(detail) && (
+              <Button type="primary" danger onClick={openConflictRetry}>
+                选择策略并重复执行
+              </Button>
+            )}
+          </Space>
         </>
       )}
 
@@ -80,12 +115,28 @@ export function PipelineTasksPage() {
                       const testBatchName =
                         phasePick === CUSTOM_PHASE ? CUSTOM_TIME_DISPLAY_NAME : phasePick;
 
+                      const useFilterTemplate = Boolean(v.useFilterTemplate);
+                      let filterTemplateId: string | null = null;
+                      let filterTemplateVersion: number | null = null;
+                      if (useFilterTemplate) {
+                        const parsed = parseFilterTemplateKey(v.filterTemplateKey);
+                        filterTemplateId = parsed.filterTemplateId;
+                        filterTemplateVersion = parsed.filterTemplateVersion;
+                        if (!filterTemplateId || filterTemplateVersion == null) {
+                          message.warning('请选择筛选模板');
+                          return;
+                        }
+                      }
+
                       const res = await tasksApi.createPipeline({
                         tasookNo: v.tasookNo,
                         satelliteNo: v.satelliteNo,
                         testBatchName,
                         windowStart: win.windowStart,
                         windowEnd: win.windowEnd,
+                        useFilterTemplate,
+                        filterTemplateId,
+                        filterTemplateVersion,
                         algorithmTemplateId,
                         algorithmTemplateVersion
                       });

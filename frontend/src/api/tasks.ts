@@ -25,6 +25,7 @@ export interface CreatePipelineBody {
   testBatchName?: string | null;
   windowStart?: string | null;
   windowEnd?: string | null;
+  useFilterTemplate?: boolean | null;
   filterTemplateId?: string | null;
   filterTemplateVersion?: number | null;
   algorithmTemplateId?: string | null;

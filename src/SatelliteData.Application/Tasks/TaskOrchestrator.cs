@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using SatelliteData.Application.Pipeline;
 using SatelliteData.Domain.Tasks;
 
 namespace SatelliteData.Application.Tasks;
@@ -12,6 +13,7 @@ public sealed class TaskOrchestrator(
     IBackgroundJobScheduler scheduler,
     ITaskRunCancellationRegistry cancellationRegistry,
     PreprocessTaskValidator preprocessValidator,
+    PipelineTaskValidator pipelineValidator,
     PreprocessScheduleService scheduleService,
     ILogger<TaskOrchestrator> logger)
 {
@@ -20,7 +22,7 @@ public sealed class TaskOrchestrator(
         Guid? createdBy,
         CancellationToken cancellationToken)
     {
-        EnsureValidWindow(command.WindowStart, command.WindowEnd);
+        await pipelineValidator.ValidateAsync(command, cancellationToken).ConfigureAwait(false);
 
         var idempotencyKey = string.IsNullOrWhiteSpace(command.IdempotencyKey)
             ? BuildIdempotencyKey(command)
@@ -32,9 +34,12 @@ public sealed class TaskOrchestrator(
             return new PipelineCreateResult(existing.RunId, existing.JobId, existing.Status, Created: false);
         }
 
+        var usePreprocess = command.FilterTemplateId is not null;
         var runId = Guid.NewGuid();
         var jobId = $"JOB-{DateTime.UtcNow:yyyyMMddHHmmss}-{runId.ToString("N")[..8]}";
         var now = DateTimeOffset.UtcNow;
+        var initialStep = usePreprocess ? "preprocess_queued" : "algorithm_queued";
+        var initialProgress = usePreprocess ? 3m : TaskProgressBands.PreprocessMax;
 
         var run = new TaskRun(
             RunId: runId,
@@ -55,8 +60,8 @@ public sealed class TaskOrchestrator(
             AlgorithmTemplateVersion: command.AlgorithmTemplateVersion,
             ReportTemplateId: null,
             ReportTemplateVersion: null,
-            ProgressPercent: 3m,
-            CurrentStep: "Queued",
+            ProgressPercent: initialProgress,
+            CurrentStep: initialStep,
             StartTime: null,
             EndTime: null,
             TimeoutFlag: false,
@@ -72,14 +77,26 @@ public sealed class TaskOrchestrator(
                 runId,
                 "pipeline.created",
                 "Succeeded",
-                JsonSerializer.Serialize(new { jobId, command.TasookNo, command.SatelliteNo }),
+                JsonSerializer.Serialize(new
+                {
+                    jobId,
+                    command.TasookNo,
+                    command.SatelliteNo,
+                    usePreprocess
+                }),
                 null,
                 null,
                 now),
             cancellationToken);
 
-        var hangfireId = scheduler.EnqueuePreprocess(runId);
-        logger.LogInformation("Pipeline {RunId} queued, Hangfire {HangfireId}", runId, hangfireId);
+        var hangfireId = usePreprocess
+            ? scheduler.EnqueuePreprocess(runId)
+            : scheduler.EnqueueAlgorithm(runId);
+        logger.LogInformation(
+            "Pipeline {RunId} queued ({Mode}), Hangfire {HangfireId}",
+            runId,
+            usePreprocess ? "preprocess+algorithm" : "algorithm-only",
+            hangfireId);
 
         return new PipelineCreateResult(runId, jobId, TaskRunStatus.Queued, Created: true);
     }
@@ -245,16 +262,13 @@ public sealed class TaskOrchestrator(
         return new PipelineCreateResult(run.RunId, run.JobId, TaskRunStatus.Cancelled, Created: false);
     }
 
-    private static void EnsureValidWindow(DateTimeOffset? windowStart, DateTimeOffset? windowEnd)
-    {
-        if (windowStart is null || windowEnd is null) return;
-        if (windowStart.Value >= windowEnd.Value) throw new InvalidTaskWindowException();
-    }
-
     private static string BuildIdempotencyKey(PipelineCreateCommand command)
     {
+        var filterPart = command.FilterTemplateId is Guid filterId
+            ? $"{filterId}|{command.FilterTemplateVersion}"
+            : "none|none";
         var raw =
-            $"{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchName}|{command.WindowStart:o}|{command.WindowEnd:o}|{command.FilterTemplateId}|{command.FilterTemplateVersion}|{command.AlgorithmTemplateId}|{command.AlgorithmTemplateVersion}|{command.TriggerType}";
+            $"{command.TasookNo}|{command.SatelliteNo}|{command.TestBatchName}|{command.WindowStart:o}|{command.WindowEnd:o}|{filterPart}|{command.AlgorithmTemplateId}|{command.AlgorithmTemplateVersion}|{command.TriggerType}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
@@ -290,8 +304,8 @@ public sealed record PipelineCreateCommand(
     string? TestBatchName,
     DateTimeOffset? WindowStart,
     DateTimeOffset? WindowEnd,
-    Guid FilterTemplateId,
-    int FilterTemplateVersion,
+    Guid? FilterTemplateId,
+    int? FilterTemplateVersion,
     Guid AlgorithmTemplateId,
     int AlgorithmTemplateVersion,
     string? IdempotencyKey,

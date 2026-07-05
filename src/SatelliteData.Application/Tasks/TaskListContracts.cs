@@ -29,7 +29,8 @@ public sealed record TaskListItemDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? EndTime,
     string? ErrorCode,
-    string? ErrorMsg);
+    string? ErrorMsg,
+    bool PipelineUsesFilterTemplate = false);
 
 public sealed record TaskExecutionRecordDto(
     Guid RunId,

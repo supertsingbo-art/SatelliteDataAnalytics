@@ -42,6 +42,19 @@ public sealed class AlgorithmExecutionPipeline(
     {
         await TaskRunCancellation.ThrowIfCancelledAsync(taskRuns, runId, cancellationToken).ConfigureAwait(false);
 
+        if (run.Status == TaskRunStatus.Queued)
+        {
+            run = run with
+            {
+                Status = TaskRunStatus.Running,
+                StartTime = run.StartTime ?? DateTimeOffset.UtcNow
+            };
+            if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
+            {
+                return;
+            }
+        }
+
         run = run with { CurrentStep = "algorithm", ProgressPercent = TaskProgressBands.AlgorithmMax - 15m };
         if (!await taskRuns.UpdateIfNotCancelledAsync(run, cancellationToken).ConfigureAwait(false))
         {
@@ -123,6 +136,16 @@ public sealed class AlgorithmExecutionPipeline(
                     winStart,
                     winEnd,
                     cancellationToken);
+                if (pts.Count == 0)
+                {
+                    await FailAsync(
+                        run,
+                        "ALG_007",
+                        $"参数 {paramId} 在指定时间窗无预处理数据，请启用筛选模板执行预处理或确认已有数据",
+                        cancellationToken);
+                    return;
+                }
+
                 outputs[nodeId] = new NodeOutput { Series = pts.ToList() };
                 continue;
             }

@@ -363,7 +363,7 @@ public sealed class TaskRunProcessedDataService(
         {
             throw new TaskValidationException(
                 TaskErrorCodes.NoProcessedData,
-                "仅执行成功的预处理任务可查看数据明细");
+                "仅执行成功且包含预处理落盘的任务可查看数据明细");
         }
 
         if (run.WindowStart is null || run.WindowEnd is null)

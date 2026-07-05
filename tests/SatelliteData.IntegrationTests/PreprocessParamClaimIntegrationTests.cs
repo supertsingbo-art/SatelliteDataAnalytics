@@ -770,6 +770,66 @@ public sealed class PreprocessParamClaimIntegrationTests
         Assert.Equal("1001", result.ConflictDetails![0].ParamId);
     }
 
+    [Fact]
+    public async Task ConflictPreflight_PipelineWithoutFilter_SkipsCheck()
+    {
+        var taskRuns = new InMemoryTaskRunRepository();
+        var paramClaims = new InMemoryPreprocessParamClaimRepository();
+        var runId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        await taskRuns.InsertAsync(
+            new TaskRun(
+                runId,
+                null,
+                "PIPE-ALGO-001",
+                TaskJobType.Pipeline,
+                TaskTriggerType.Api,
+                TaskRunStatus.Queued,
+                "idem-pipe-algo",
+                "TASK-A",
+                "SAT-001",
+                "自定义时间段",
+                now,
+                now.AddMinutes(10),
+                null,
+                null,
+                Guid.NewGuid(),
+                1,
+                null,
+                null,
+                TaskProgressBands.PreprocessMax,
+                "algorithm_queued",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                now),
+            CancellationToken.None);
+
+        var planner = new PreprocessClaimPlanner(
+            new InMemoryFilterTemplateRepository(),
+            new InMemoryAssetCacheRepository(),
+            new MongoConnectionPool(new InMemoryAssetCacheRepository()),
+            new FilterRuleEvaluator(NullLogger<FilterRuleEvaluator>.Instance),
+            new FakeConditionHistoryProvider(),
+            new ConditionRangeEvaluator(NullLogger<ConditionRangeEvaluator>.Instance),
+            NullLogger<PreprocessClaimPlanner>.Instance);
+        var enricher = new PreprocessConflictEnricher(
+            new InMemoryAssetCacheRepository(),
+            new InMemoryFilterTemplateRepository(),
+            taskRuns);
+        var preflight = new PreprocessConflictPreflightService(taskRuns, paramClaims, planner, enricher);
+
+        var result = await preflight.CheckAsync(runId, CancellationToken.None);
+
+        Assert.False(result.HasConflict);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal("未启用预处理，无需冲突预检", result.PlanErrorMessage);
+    }
+
     private static JsonElement ParseJson(string json)
     {
         using var document = JsonDocument.Parse(json);

@@ -556,6 +556,7 @@ export interface TaskListItemV2 {
   end_time: string | null;
   error_code?: string | null;
   error_msg?: string | null;
+  pipeline_uses_filter?: boolean;
 }
 
 export interface TaskExecutionRecord {

@@ -14,13 +14,17 @@ public static class TaskRunStateHelper
         run.JobType == TaskJobType.Preprocess && IsTerminal(run.Status);
 
     public static bool CanReExecuteRun(TaskRun run) =>
-        run.JobType == TaskJobType.Preprocess
-        && IsTerminal(run.Status)
-        && run.ExecutionMode is null or PreprocessExecutionMode.Immediate;
+        IsTerminal(run.Status)
+        && run.ExecutionMode is null or PreprocessExecutionMode.Immediate
+        && (
+            run.JobType == TaskJobType.Preprocess
+            || (run.JobType == TaskJobType.Pipeline && run.FilterTemplateId is not null));
 
     public static bool CanViewProcessedData(TaskRun run) =>
-        run.JobType == TaskJobType.Preprocess
-        && run.Status == TaskRunStatus.Succeeded;
+        run.Status == TaskRunStatus.Succeeded
+        && (
+            run.JobType == TaskJobType.Preprocess
+            || (run.JobType == TaskJobType.Pipeline && run.FilterTemplateId is not null));
 
     public static bool CanViewAlgorithmResults(TaskRun run) =>
         run.Status == TaskRunStatus.Succeeded

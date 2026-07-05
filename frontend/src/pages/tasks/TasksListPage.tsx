@@ -129,6 +129,11 @@ type DataViewMode = 'all' | 'chart' | 'outlier-points' | 'outlier-segments' | 'v
 const DATA_DRAWER_TABLE_SCROLL_Y = 'calc(100vh - 330px)';
 const DATA_DRAWER_PAGE_SIZE = 100;
 
+function pipelineModeLabel(row: TaskListItemV2): string | null {
+  if (row.job_type !== 'PIPELINE') return null;
+  return row.pipeline_uses_filter ? '预处理+算法' : '仅算法';
+}
+
 export function TasksListPage() {
   const openTemplateEditor = (templateId: string, version: number) => {
     window.location.href = `/templates/filters/${encodeURIComponent(templateId)}/versions/${version}`;
@@ -973,7 +978,10 @@ export function TasksListPage() {
                     算法结果
                   </Button>
                 )}
-                {r.error_code === 'PRE_006' && r.run_id && !r.can_view_data && (
+                {r.error_code === 'PRE_006' &&
+                  r.run_id &&
+                  r.can_re_execute &&
+                  (r.job_type === 'PREPROCESS' || r.pipeline_uses_filter) && (
                   <Button size="small" danger onClick={() => openConflictModal(r)}>
                     参数冲突
                   </Button>
@@ -1040,6 +1048,11 @@ export function TasksListPage() {
           { title: '类型', dataIndex: 'item_type', width: 88 },
           { title: 'job_id', dataIndex: 'job_id', width: 200, ellipsis: true },
           { title: '任务类型', dataIndex: 'job_type', width: 100 },
+          {
+            title: 'PIPELINE 模式',
+            width: 110,
+            render: (_: unknown, r: TaskListItemV2) => pipelineModeLabel(r) ?? '—'
+          },
           {
             title: '处理类型',
             dataIndex: 'execution_mode',

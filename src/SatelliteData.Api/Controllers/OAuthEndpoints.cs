@@ -92,6 +92,29 @@ public static class OAuthEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
+            if (request.AlgorithmTemplateId is null || request.AlgorithmTemplateVersion is null)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("invalid_request", "algorithm_template_id and version are required"),
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
+            Guid? filterTemplateId;
+            int? filterTemplateVersion;
+            try
+            {
+                (filterTemplateId, filterTemplateVersion) = PipelineTaskValidator.ResolveFilterTemplate(
+                    request.UseFilterTemplate,
+                    request.FilterTemplateId,
+                    request.FilterTemplateVersion);
+            }
+            catch (TaskValidationException ex)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("invalid_request", ex.Message),
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
             var trigger = ParseTrigger(request.Trigger);
             var cmd = new PipelineCreateCommand(
                 request.TasookNo,
@@ -99,10 +122,10 @@ public static class OAuthEndpoints
                 request.TestBatchId,
                 request.WindowStart,
                 request.WindowEnd,
-                request.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
-                request.FilterTemplateVersion ?? 1,
-                request.AlgorithmTemplateId ?? PipelineDevIds.DefaultAlgorithmTemplateId,
-                request.AlgorithmTemplateVersion ?? 1,
+                filterTemplateId,
+                filterTemplateVersion,
+                request.AlgorithmTemplateId.Value,
+                request.AlgorithmTemplateVersion.Value,
                 request.IdempotencyKey,
                 trigger);
 
@@ -116,6 +139,12 @@ public static class OAuthEndpoints
                 return Results.Json(
                     new OAuthErrorContract("invalid_request", ex.Message),
                     statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (TaskValidationException ex)
+            {
+                return Results.Json(
+                    new OAuthErrorContract("invalid_request", ex.Message),
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
             }
 
             var body = new AcceptedJobResponse(result.JobId, result.RunId, null, result.Status.ToString());

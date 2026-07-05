@@ -42,14 +42,23 @@ public sealed class PreprocessClaimPlanner(
 
     public async Task<PreprocessClaimPlanResult> PlanAsync(TaskRun run, CancellationToken cancellationToken)
     {
-        if (run.JobType != TaskJobType.Preprocess)
+        if (run.JobType == TaskJobType.Preprocess)
+        {
+            if (run.FilterTemplateId is null || run.FilterTemplateVersion is null)
+            {
+                return PreprocessClaimPlanResult.Fail("PRE_002", "PREPROCESS 任务缺少筛选模板外键");
+            }
+        }
+        else if (run.JobType == TaskJobType.Pipeline)
+        {
+            if (run.FilterTemplateId is null || run.FilterTemplateVersion is null)
+            {
+                return PreprocessClaimPlanResult.Fail("PRE_002", "PIPELINE 未启用筛选模板，无需参数冲突预检");
+            }
+        }
+        else
         {
             return PreprocessClaimPlanResult.Fail("PRE_002", "仅预处理任务支持参数冲突预检");
-        }
-
-        if (run.FilterTemplateId is null || run.FilterTemplateVersion is null)
-        {
-            return PreprocessClaimPlanResult.Fail("PRE_002", "PREPROCESS 任务缺少筛选模板外键");
         }
 
         if (run.WindowStart is null || run.WindowEnd is null)

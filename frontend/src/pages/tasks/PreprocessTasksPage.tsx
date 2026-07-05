@@ -1,7 +1,6 @@
 import { Button, Card, Collapse, Form, Space, Typography, message } from 'antd';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { tasksApi } from '@/api/tasks';
-import type { TaskRunDetail } from '@/api/types';
 import {
   PreprocessFormFields,
   parseFilterTemplateKey,
@@ -21,18 +20,11 @@ import { TaskDetailCard } from '@/pages/tasks/components/TaskDetailCard';
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
 import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
 import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
+import { canReExecuteTaskDetail } from '@/pages/tasks/utils/taskReExecute';
 
 const { Paragraph } = Typography;
 
 const runIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function canReExecuteDetail(d: TaskRunDetail): boolean {
-  return (
-    d.job_type === 'PREPROCESS' &&
-    ['Failed', 'Succeeded', 'Timeout', 'Cancelled'].includes(d.status) &&
-    (d.execution_mode === 'IMMEDIATE' || d.execution_mode == null)
-  );
-}
 
 export function PreprocessTasksPage() {
   const [form] = Form.useForm();
@@ -86,7 +78,7 @@ export function PreprocessTasksPage() {
             <Button onClick={() => void refresh()} loading={loading}>
               刷新状态
             </Button>
-            {detail?.error_code === 'PRE_006' && detail && canReExecuteDetail(detail) && (
+            {detail?.error_code === 'PRE_006' && detail && canReExecuteTaskDetail(detail) && (
               <Button type="primary" danger onClick={openConflictRetry}>
                 选择策略并重复执行
               </Button>

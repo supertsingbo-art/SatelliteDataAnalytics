@@ -84,11 +84,26 @@ public sealed class PreprocessPipeline(
         var needsAlgorithm = run.JobType == TaskJobType.Pipeline;
         if (run.FilterTemplateId is null || run.FilterTemplateVersion is null)
         {
-            await FailAsync(
-                run,
-                "PIPE_001",
-                needsAlgorithm ? "PIPELINE 任务缺少筛选模板外键" : "PREPROCESS 任务缺少筛选模板外键",
-                cancellationToken);
+            if (run.JobType == TaskJobType.Preprocess)
+            {
+                await FailAsync(
+                    run,
+                    "PIPE_001",
+                    "PREPROCESS 任务缺少筛选模板外键",
+                    cancellationToken);
+                return;
+            }
+
+            if (needsAlgorithm)
+            {
+                logger.LogWarning(
+                    "Pipeline run {RunId} reached preprocess without filter template; enqueue algorithm",
+                    runId);
+                scheduler.EnqueueAlgorithm(runId);
+                return;
+            }
+
+            await FailAsync(run, "PIPE_001", "PIPELINE 任务缺少筛选模板外键", cancellationToken);
             return;
         }
 

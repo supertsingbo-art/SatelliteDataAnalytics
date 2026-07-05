@@ -87,12 +87,19 @@ export function TaskDetailCard({ detail, loading, title = '任务详情' }: Prop
         <Descriptions.Item label="开始时间">{formatTime(detail.window_start)}</Descriptions.Item>
         <Descriptions.Item label="结束时间">{formatTime(detail.window_end)}</Descriptions.Item>
         <Descriptions.Item label="筛选模板" span={2}>
-          {formatTemplateDisplay(
-            detail.filter_template_name,
-            detail.filter_template_version,
-            detail.filter_template_id
-          )}
+          {detail.job_type === 'PIPELINE' && !detail.filter_template_id
+            ? '未启用（仅算法）'
+            : formatTemplateDisplay(
+                detail.filter_template_name,
+                detail.filter_template_version,
+                detail.filter_template_id
+              )}
         </Descriptions.Item>
+        {detail.job_type === 'PIPELINE' && (
+          <Descriptions.Item label="执行模式" span={2}>
+            {detail.filter_template_id ? '预处理 + 算法' : '仅算法（读已有预处理数据）'}
+          </Descriptions.Item>
+        )}
         {(detail.job_type === 'PIPELINE' || detail.algorithm_template_id) && (
           <Descriptions.Item label="算法模板" span={2}>
             {formatTemplateDisplay(

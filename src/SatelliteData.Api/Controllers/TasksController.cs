@@ -51,7 +51,8 @@ public sealed class TasksController(
         [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
         [property: JsonPropertyName("end_time")] DateTimeOffset? EndTime,
         [property: JsonPropertyName("error_code")] string? ErrorCode,
-        [property: JsonPropertyName("error_msg")] string? ErrorMsg);
+        [property: JsonPropertyName("error_msg")] string? ErrorMsg,
+        [property: JsonPropertyName("pipeline_uses_filter")] bool PipelineUsesFilterTemplate);
 
     public sealed record TaskExecutionRecordResponse(
         [property: JsonPropertyName("run_id")] Guid RunId,
@@ -225,6 +226,7 @@ public sealed class TasksController(
         string? TestBatchName,
         DateTimeOffset? WindowStart,
         DateTimeOffset? WindowEnd,
+        bool? UseFilterTemplate,
         Guid? FilterTemplateId,
         int? FilterTemplateVersion,
         Guid? AlgorithmTemplateId,
@@ -273,16 +275,42 @@ public sealed class TasksController(
         [FromBody] CreatePipelineBody body,
         CancellationToken cancellationToken)
     {
+        if (body.AlgorithmTemplateId is null || body.AlgorithmTemplateVersion is null)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(
+                    TaskErrorCodes.AlgorithmTemplateRequired,
+                    "请选择算法模板",
+                    HttpContext));
+        }
+
+        Guid? filterTemplateId;
+        int? filterTemplateVersion;
+        try
+        {
+            (filterTemplateId, filterTemplateVersion) = PipelineTaskValidator.ResolveFilterTemplate(
+                body.UseFilterTemplate,
+                body.FilterTemplateId,
+                body.FilterTemplateVersion);
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
+        }
+
         var cmd = new PipelineCreateCommand(
-            body.TasookNo,
-            body.SatelliteNo,
+            body.TasookNo.Trim(),
+            body.SatelliteNo.Trim(),
             body.TestBatchName,
             body.WindowStart,
             body.WindowEnd,
-            body.FilterTemplateId ?? PipelineDevIds.DefaultFilterTemplateId,
-            body.FilterTemplateVersion ?? 1,
-            body.AlgorithmTemplateId ?? PipelineDevIds.DefaultAlgorithmTemplateId,
-            body.AlgorithmTemplateVersion ?? 1,
+            filterTemplateId,
+            filterTemplateVersion,
+            body.AlgorithmTemplateId.Value,
+            body.AlgorithmTemplateVersion.Value,
             body.IdempotencyKey,
             TaskTriggerType.Api);
 
@@ -295,6 +323,12 @@ public sealed class TasksController(
         {
             return BadRequest(
                 ApiResponse<object>.Fail(InvalidTaskWindowException.Code, "window_start 必须早于 window_end", HttpContext));
+        }
+        catch (TaskValidationException ex)
+        {
+            return StatusCode(
+                StatusCodes.Status422UnprocessableEntity,
+                ApiResponse<object>.Fail(ex.ErrorCode, ex.Message, HttpContext));
         }
 
         return Ok(ApiResponse<AcceptedJobResponse>.Ok(
@@ -935,7 +969,8 @@ public sealed class TasksController(
             i.CreatedAt,
             i.EndTime,
             i.ErrorCode,
-            i.ErrorMsg);
+            i.ErrorMsg,
+            i.PipelineUsesFilterTemplate);
 
     private static TaskExecutionRecordResponse ToExecutionRecord(TaskExecutionRecordDto r) =>
         new(

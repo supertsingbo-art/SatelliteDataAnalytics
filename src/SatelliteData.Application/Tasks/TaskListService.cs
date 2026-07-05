@@ -91,7 +91,8 @@ public sealed class TaskListService(
             run.CreatedAt,
             run.EndTime,
             run.ErrorCode,
-            run.ErrorMsg);
+            run.ErrorMsg,
+            PipelineUsesFilterTemplate: run.JobType == TaskJobType.Pipeline && run.FilterTemplateId is not null);
 
     private static TaskListItemDto ToScheduleItem(
         PreprocessSchedule schedule,
@@ -126,7 +127,8 @@ public sealed class TaskListService(
             schedule.CreatedAt,
             latest?.EndTime,
             latest?.ErrorCode,
-            latest?.ErrorMsg);
+            latest?.ErrorMsg,
+            PipelineUsesFilterTemplate: false);
 
     private async Task<TaskExecutionRecordDto> ToExecutionRecordAsync(
         TaskRun run,

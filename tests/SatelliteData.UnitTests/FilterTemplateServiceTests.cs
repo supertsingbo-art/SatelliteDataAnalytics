@@ -206,6 +206,7 @@ public sealed class FilterTemplateServiceTests
                 Scheduler,
                 new TaskRunCancellationRegistry(),
                 validator,
+                new PipelineTaskValidator(AssetCache, TemplateRepository, new InMemoryAlgorithmTemplateRepository(), GroupService),
                 ScheduleService,
                 NullLogger<TaskOrchestrator>.Instance);
             RunLifecycleService = new TaskRunLifecycleService(

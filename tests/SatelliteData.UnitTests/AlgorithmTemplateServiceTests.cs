@@ -174,6 +174,13 @@ public sealed class AlgorithmTemplateServiceTests
                     new SatelliteGroupService(
                         new InMemorySatelliteGroupRepository(),
                         new InMemorySatelliteGroupMemberRepository())),
+                new PipelineTaskValidator(
+                    new InMemoryAssetCacheRepository(),
+                    new InMemoryFilterTemplateRepository(),
+                    new InMemoryAlgorithmTemplateRepository(),
+                    new SatelliteGroupService(
+                        new InMemorySatelliteGroupRepository(),
+                        new InMemorySatelliteGroupMemberRepository())),
                 new PreprocessScheduleService(
                     new InMemoryPreprocessScheduleRepository(),
                     TaskRuns,

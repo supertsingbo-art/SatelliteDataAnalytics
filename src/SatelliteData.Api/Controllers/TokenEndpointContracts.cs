@@ -19,6 +19,7 @@ public sealed record CreatePipelineJobRequest(
     [property: JsonPropertyName("test_batch_id")] string? TestBatchId,
     [property: JsonPropertyName("window_start")] DateTimeOffset? WindowStart,
     [property: JsonPropertyName("window_end")] DateTimeOffset? WindowEnd,
+    [property: JsonPropertyName("use_filter_template")] bool? UseFilterTemplate,
     [property: JsonPropertyName("filter_template_id")] Guid? FilterTemplateId,
     [property: JsonPropertyName("filter_template_version")] int? FilterTemplateVersion,
     [property: JsonPropertyName("algorithm_template_id")] Guid? AlgorithmTemplateId,

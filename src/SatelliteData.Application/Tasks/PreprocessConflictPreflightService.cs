@@ -22,7 +22,18 @@ public sealed class PreprocessConflictPreflightService(
         var run = await taskRuns.GetByRunIdAsync(runId, cancellationToken).ConfigureAwait(false)
             ?? throw new TaskValidationException(TaskErrorCodes.NotFound, "任务不存在");
 
-        if (run.JobType != TaskJobType.Preprocess)
+        if (run.JobType == TaskJobType.Pipeline && run.FilterTemplateId is null)
+        {
+            return new PreprocessConflictPreflightDto(
+                false,
+                null,
+                null,
+                null,
+                null,
+                "未启用预处理，无需冲突预检");
+        }
+
+        if (run.JobType is not TaskJobType.Preprocess and not TaskJobType.Pipeline)
         {
             return new PreprocessConflictPreflightDto(
                 false,
@@ -30,7 +41,7 @@ public sealed class PreprocessConflictPreflightService(
                 null,
                 null,
                 "PRE_002",
-                "仅预处理任务支持参数冲突预检");
+                "仅预处理或启用筛选模板的 PIPELINE 任务支持参数冲突预检");
         }
 
         var plan = await claimPlanner.PlanAsync(run, cancellationToken).ConfigureAwait(false);

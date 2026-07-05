@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SatelliteData.Application.Pipeline;
 using SatelliteData.Domain.Tasks;
 
 namespace SatelliteData.Application.Tasks;
@@ -51,15 +52,19 @@ public sealed class TaskRunLifecycleService(
 
         if (!TaskRunStateHelper.CanReExecuteRun(run))
         {
-            throw new TaskValidationException(TaskErrorCodes.NotReExecutable, "仅已结束的立即预处理任务可重复执行");
+            throw new TaskValidationException(
+                TaskErrorCodes.NotReExecutable,
+                "仅已结束的立即预处理任务或启用筛选模板的 PIPELINE 任务可重复执行");
         }
 
+        var usePreprocess = run.JobType == TaskJobType.Preprocess
+                            || run.FilterTemplateId is not null;
         run = run with
         {
             Status = TaskRunStatus.Queued,
             HangfireJobId = null,
-            CurrentStep = "pending",
-            ProgressPercent = 3m,
+            CurrentStep = usePreprocess ? "preprocess_queued" : "algorithm_queued",
+            ProgressPercent = usePreprocess ? 3m : TaskProgressBands.PreprocessMax,
             StartTime = null,
             EndTime = null,
             ErrorCode = null,
@@ -69,7 +74,9 @@ public sealed class TaskRunLifecycleService(
         };
         await taskRuns.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
 
-        var hangfireId = scheduler.EnqueuePreprocess(runId);
+        var hangfireId = usePreprocess
+            ? scheduler.EnqueuePreprocess(runId)
+            : scheduler.EnqueueAlgorithm(runId);
         if (conflictOptions is null)
         {
             conflictOptionStore.Clear(runId);
@@ -78,11 +85,15 @@ public sealed class TaskRunLifecycleService(
         {
             conflictOptionStore.Set(runId, conflictOptions);
         }
-        run = run with { HangfireJobId = hangfireId, CurrentStep = "queued" };
+        run = run with { HangfireJobId = hangfireId, CurrentStep = usePreprocess ? "preprocess_queued" : "algorithm_queued" };
         await taskRuns.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
 
         var now = DateTimeOffset.UtcNow;
-        logger.LogInformation("Re-execute preprocess {RunId}, Hangfire {JobId}", runId, hangfireId);
+        logger.LogInformation(
+            "Re-execute task {RunId} ({Mode}), Hangfire {JobId}",
+            runId,
+            usePreprocess ? "preprocess" : "algorithm",
+            hangfireId);
         return new ExecuteTaskResultDto(
             TaskDisplayStatus.ForRun(run, now),
             run.RunId,
