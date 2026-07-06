@@ -1,5 +1,4 @@
 import { Button, Modal, Space, Typography } from 'antd';
-import { Link } from 'react-router-dom';
 import type { PreprocessConflictDetail } from '@/api/types';
 import {
   PreprocessConflictPanel,
@@ -59,7 +58,7 @@ export function openPreprocessConflictModal(options: OpenPreprocessConflictModal
         2) <Text strong>已完成冲突（状态：{formatConflictStatus('COMMITTED')}）</Text>：可覆盖或跳过。
       </Text>
       {panel}
-      {detailHref && <Link to={detailHref}>查看任务详情</Link>}
+      {detailHref && <a href={detailHref}>查看任务详情</a>}
       <Text type="secondary">选择「暂不处理」可关闭弹窗，稍后再试（例如等待或先取消冲突任务）。</Text>
     </Space>
   );
@@ -117,7 +116,7 @@ export function openPreprocessConflictModal(options: OpenPreprocessConflictModal
     content: (
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         {panel}
-        {detailHref && <Link to={detailHref}>查看任务详情</Link>}
+        {detailHref && <a href={detailHref}>查看任务详情</a>}
       </Space>
     )
   });
