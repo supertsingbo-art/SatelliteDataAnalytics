@@ -20,7 +20,9 @@ public static class PreprocessExecutionModeMapper
         && run.ExecutionMode is null or PreprocessExecutionMode.Immediate;
 
     public static bool CanManualExecuteRun(TaskRun run) =>
-        run.JobType == TaskJobType.Preprocess && IsImmediatePending(run);
+        run.JobType == TaskJobType.Preprocess
+        && run.Status == TaskRunStatus.Queued
+        && run.ExecutionMode is null or PreprocessExecutionMode.Immediate;
 
     public static bool CanManualExecuteSchedule(PreprocessSchedule schedule) => schedule.Enabled;
 }

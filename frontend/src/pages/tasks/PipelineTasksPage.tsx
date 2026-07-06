@@ -17,6 +17,7 @@ import {
 import { useTaskRunDetail } from '@/pages/tasks/hooks/useTaskRunDetail';
 import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
 import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
+import { notifyTaskActionError } from '@/pages/tasks/utils/taskActionError';
 import { canReExecuteTaskDetail } from '@/pages/tasks/utils/taskReExecute';
 
 const { Paragraph } = Typography;
@@ -36,22 +37,28 @@ export function PipelineTasksPage() {
 
   const openConflictRetry = () => {
     if (!viewRunId || !detail) return;
-    void runPreprocessWithPreflight({
-      runId: viewRunId,
-      onOpenTemplate: openTemplateEditor,
-      execute: async (options) => {
-        if (options) {
-          await reExecuteWithConflictPolicy(
-            viewRunId,
-            options.onCommittedConflict === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
-          );
-        } else {
-          await tasksApi.reExecuteRun(viewRunId);
-        }
-        setPolling(true);
-        await refresh();
+    void (async () => {
+      try {
+        await runPreprocessWithPreflight({
+          runId: viewRunId,
+          onOpenTemplate: openTemplateEditor,
+          execute: async (options) => {
+            if (options) {
+              await reExecuteWithConflictPolicy(
+                viewRunId,
+                options.onCommittedConflict === 'OVERWRITE' ? 'OVERWRITE' : 'SKIP'
+              );
+            } else {
+              await tasksApi.reExecuteRun(viewRunId);
+            }
+            setPolling(true);
+            await refresh();
+          }
+        });
+      } catch (error) {
+        notifyTaskActionError(error, '重复执行失败');
       }
-    });
+    })();
   };
 
   return (

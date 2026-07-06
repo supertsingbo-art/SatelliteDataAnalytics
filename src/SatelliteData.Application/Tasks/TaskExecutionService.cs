@@ -24,11 +24,11 @@ public sealed class TaskExecutionService(
         }
 
         var now = DateTimeOffset.UtcNow;
+        var isImmediateMode = run.ExecutionMode is null or PreprocessExecutionMode.Immediate;
 
-        if (PreprocessExecutionModeMapper.IsImmediatePending(run)
-            || run.ExecutionMode == PreprocessExecutionMode.Immediate)
+        if (isImmediateMode)
         {
-            if (!string.IsNullOrWhiteSpace(run.HangfireJobId))
+            if (run.Status == TaskRunStatus.Running && !string.IsNullOrWhiteSpace(run.HangfireJobId))
             {
                 return ToResult(run, now);
             }

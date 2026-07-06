@@ -42,6 +42,11 @@ public static class TaskDisplayStatus
             return Scheduled;
         }
 
+        if (run.Status == TaskRunStatus.Queued && !string.IsNullOrWhiteSpace(run.HangfireJobId))
+        {
+            return Running;
+        }
+
         return run.Status.ToString();
     }
 

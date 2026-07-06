@@ -43,6 +43,7 @@ import { AlgorithmResultsDrawer } from '@/pages/tasks/components/AlgorithmResult
 import { openPreprocessConflictModal } from '@/pages/tasks/utils/preprocessConflictModal';
 import { reExecuteWithConflictPolicy } from '@/pages/tasks/utils/preprocessConflictRetry';
 import { runPreprocessWithPreflight } from '@/pages/tasks/utils/preprocessConflictPreflight';
+import { notifyTaskActionError } from '@/pages/tasks/utils/taskActionError';
 
 const { Paragraph, Text } = Typography;
 
@@ -84,6 +85,12 @@ const cancellableStatuses = new Set(['Queued', 'Running']);
 
 function rowKey(r: TaskListItemV2): string {
   return `${r.item_type}:${r.item_id}`;
+}
+
+function isSubmittedQueuedRun(row: TaskListItemV2): boolean {
+  if (row.status !== 'Queued') return false;
+  const step = (row.current_step ?? '').trim().toLowerCase();
+  return step === 'queued' || step === 'preprocess_queued';
 }
 
 function canExecute(row: TaskListItemV2): boolean {
@@ -275,7 +282,8 @@ export function TasksListPage() {
       (r) =>
         r.display_status === '任务执行中' ||
         r.display_status === '待执行' ||
-        r.status === 'Running'
+        r.status === 'Running' ||
+        isSubmittedQueuedRun(r)
     );
     if (!needsPoll) {
       if (pollRef.current) {
@@ -329,8 +337,11 @@ export function TasksListPage() {
           }
         });
       }
-    } catch {
-      /* axios 已提示 */
+    } catch (error) {
+      const parsed = notifyTaskActionError(error, '执行失败');
+      if (parsed?.code === 'PRE_006') {
+        openConflictModal(row);
+      }
     } finally {
       setExecutingKey(null);
     }
@@ -358,8 +369,11 @@ export function TasksListPage() {
           await load();
         }
       });
-    } catch {
-      /* axios 已提示 */
+    } catch (error) {
+      const parsed = notifyTaskActionError(error, '重复执行失败');
+      if (parsed?.code === 'PRE_006') {
+        openConflictModal(row);
+      }
     } finally {
       setExecutingKey(null);
     }
